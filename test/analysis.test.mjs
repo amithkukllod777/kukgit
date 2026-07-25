@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { loadConfig } from '../src/config.mjs';
+import { openDatabase, seedCore, uid } from '../src/db.mjs';
+import { analyzeRepository } from '../src/analysis.mjs';
+import { createBareRepository, createDemoCommit } from '../src/git.mjs';
+
+test('produces a deterministic repository health report', (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-analysis-test-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const config = loadConfig({ dataDir, databasePath: path.join(dataDir, 'test.db'), repositoriesDir: path.join(dataDir, 'repos'), tempDir: path.join(dataDir, 'tmp'), nodeEnv: 'test', adminEmail: 'test@example.com', adminPassword: 'secure-test-password', adminName: 'Test User' });
+  const db = openDatabase(config);
+  t.after(() => db.close());
+  seedCore(db, config);
+  const user = db.prepare('SELECT id FROM users LIMIT 1').get();
+  const org = db.prepare('SELECT id FROM organizations LIMIT 1').get();
+  const repoId = uid('repo');
+  createBareRepository(config, 'kuklabs', 'analysis-demo');
+  createDemoCommit(config, 'kuklabs', 'analysis-demo');
+  db.prepare(`INSERT INTO repositories (id, organization_id, slug, name, description, visibility, default_branch, created_by) VALUES (?, ?, 'analysis-demo', 'Analysis Demo', '', 'private', 'main', ?)`).run(repoId, org.id, user.id);
+  const repo = db.prepare(`SELECT r.*, 'kuklabs' AS org_slug FROM repositories r WHERE id = ?`).get(repoId);
+  const result = analyzeRepository(config, db, repo, 'main');
+  assert.equal(result.ref, 'main');
+  assert.ok(result.score >= 50 && result.score <= 100);
+  assert.ok(result.metrics.files >= 4);
+  assert.ok(result.languages.some((language) => language.name === 'JavaScript'));
+});

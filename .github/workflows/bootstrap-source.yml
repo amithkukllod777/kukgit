@@ -1,16 +1,10 @@
-name: Bootstrap KukGit source
+name: Publish KukGit Foundation MVP
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".bootstrap/source.part*"
-      - ".github/workflows/bootstrap-source.yml"
   pull_request:
     branches: [main]
     paths:
-      - ".bootstrap/source.part*"
-      - ".bootstrap/trigger.txt"
+      - ".bootstrap/**"
       - ".github/workflows/bootstrap-source.yml"
   workflow_dispatch:
 
@@ -30,7 +24,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .bootstrap/source.part* | base64 --decode > /tmp/kukgit-source.tar.gz
+          {
+            cat .bootstrap/source.part01 .bootstrap/source.part02 .bootstrap/source.part03 .bootstrap/source.part04
+            cat .bootstrap/fix05/chunk00 .bootstrap/fix05/chunk01 .bootstrap/fix05v2/chunk02 .bootstrap/fix05v2/chunk03 .bootstrap/fix05/chunk04_05 .bootstrap/fix05/chunk06_07
+            cat .bootstrap/source.part06 .bootstrap/source.part07
+            cat .bootstrap/fix08/chunk00_01 .bootstrap/fix08/chunk02_03 .bootstrap/fix08/chunk04_05 .bootstrap/fix08/chunk06_07
+            cat .bootstrap/source.part09 .bootstrap/source.part10 .bootstrap/source.part11 .bootstrap/source.part12 .bootstrap/source.part13
+          } | base64 --decode > /tmp/kukgit-source.tar.gz
           echo "ac2006b7a1f96e2a2ee765d086cde7fb9919fcdd7dd6af4072ed3f8cdf3fbb82  /tmp/kukgit-source.tar.gz" | sha256sum -c -
           gzip -t /tmp/kukgit-source.tar.gz
 
@@ -38,12 +38,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          cp .github/workflows/bootstrap-source.yml /tmp/bootstrap-source.yml
           mkdir -p /tmp/kukgit-source
           tar -xzf /tmp/kukgit-source.tar.gz -C /tmp/kukgit-source
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -a /tmp/kukgit-source/. .
+          mkdir -p .github/workflows
+          rm -f .github/workflows/ci.yml
+          cp /tmp/bootstrap-source.yml .github/workflows/bootstrap-source.yml
 
-      - name: Commit KukGit Foundation MVP
+      - name: Commit KukGit Foundation MVP release branch
         shell: bash
         run: |
           set -euo pipefail
@@ -51,4 +55,4 @@ jobs:
           git config user.email "buildbot@kuklabs.com"
           git add -A
           git commit -m "feat: publish KukGit v0.1.0 Foundation MVP"
-          git push origin HEAD:main
+          git push --force origin HEAD:refs/heads/release/kukgit-v0.1.0

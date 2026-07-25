@@ -1,0 +1,28 @@
+services:
+  kukgit:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8787
+      HOST: 0.0.0.0
+      KUKGIT_BASE_URL: ${KUKGIT_BASE_URL:-http://localhost:8787}
+      KUKGIT_ADMIN_EMAIL: ${KUKGIT_ADMIN_EMAIL}
+      KUKGIT_ADMIN_PASSWORD: ${KUKGIT_ADMIN_PASSWORD}
+      KUKGIT_ADMIN_NAME: ${KUKGIT_ADMIN_NAME:-KukGit Administrator}
+      KUKGIT_DEV_GIT_TOKEN: ${KUKGIT_DEV_GIT_TOKEN}
+      KUKGIT_COOKIE_SECURE: ${KUKGIT_COOKIE_SECURE:-false}
+    ports:
+      - "8787:8787"
+    volumes:
+      - kukgit_data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8787/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  kukgit_data:
