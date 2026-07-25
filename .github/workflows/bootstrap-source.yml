@@ -6,6 +6,12 @@ on:
     paths:
       - ".bootstrap/source.part*"
       - ".github/workflows/bootstrap-source.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".bootstrap/source.part*"
+      - ".bootstrap/trigger.txt"
+      - ".github/workflows/bootstrap-source.yml"
   workflow_dispatch:
 
 permissions:
@@ -46,5 +52,3 @@ jobs:
           git add -A
           git commit -m "feat: publish KukGit v0.1.0 Foundation MVP"
           git push origin HEAD:main
-
-# Triggered after all source parts were uploaded.
