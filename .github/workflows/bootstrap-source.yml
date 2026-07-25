@@ -38,12 +38,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          cp .github/workflows/bootstrap-source.yml /tmp/bootstrap-source.yml
           mkdir -p /tmp/kukgit-source
           tar -xzf /tmp/kukgit-source.tar.gz -C /tmp/kukgit-source
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -a /tmp/kukgit-source/. .
+          mkdir -p .github/workflows
+          rm -f .github/workflows/ci.yml
+          cp /tmp/bootstrap-source.yml .github/workflows/bootstrap-source.yml
 
-      - name: Commit and publish KukGit Foundation MVP
+      - name: Commit KukGit Foundation MVP release branch
         shell: bash
         run: |
           set -euo pipefail
@@ -51,4 +55,4 @@ jobs:
           git config user.email "buildbot@kuklabs.com"
           git add -A
           git commit -m "feat: publish KukGit v0.1.0 Foundation MVP"
-          git push origin HEAD:main
+          git push --force origin HEAD:refs/heads/release/kukgit-v0.1.0
