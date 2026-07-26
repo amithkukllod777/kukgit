@@ -8,14 +8,13 @@ import { loadConfig } from '../src/config.mjs';
 import { openDatabase, seedCore, uid } from '../src/db.mjs';
 import { createBareRepository, createBranch, createDemoCommit, resolveRef } from '../src/git.mjs';
 import { notifyFailedCommitStatus } from '../src/notification-events.mjs';
+import { listNotifications, migrateNotifications } from '../src/notifications.mjs';
+import { scheduleWebhookFailureAlerts } from '../src/operations-notifications.mjs';
 import {
-  listNotifications,
-  migrateNotifications,
   notifyPullRequestCreated,
   notifyPullRequestMerged,
   notifyPullRequestReview,
-} from '../src/notifications.mjs';
-import { scheduleWebhookFailureAlerts } from '../src/operations-notifications.mjs';
+} from '../src/pull-request-notifications.mjs';
 import { migrateRepositoryAccess } from '../src/repository-access.mjs';
 import { migrateWebhooks } from '../src/webhooks.mjs';
 
