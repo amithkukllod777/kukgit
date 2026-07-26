@@ -26,6 +26,10 @@ import {
   startNotificationWorker,
 } from './src/notifications.mjs';
 import {
+  createOperationsNotificationCapture,
+  startOperationalNotificationWorker,
+} from './src/operations-notifications.mjs';
+import {
   createPullRequestDiffsApiHandler,
   migratePullRequestDiffs,
 } from './src/pull-request-diffs-safe.mjs';
@@ -123,9 +127,11 @@ const lifecycleDispatch = createRepositoryLifecycleGuard({ config, db, next: ssh
 const maintenanceDispatch = createMaintenanceGuard({ config, next: lifecycleDispatch });
 const collaborationNotificationDispatch = createCollaborationNotificationCapture({ config, db, next: maintenanceDispatch });
 const notificationEventDispatch = createNotificationEventCapture({ config, db, next: collaborationNotificationDispatch });
-const capturedDispatch = createWebhookEventCapture({ config, db, next: notificationEventDispatch });
+const operationsNotificationDispatch = createOperationsNotificationCapture({ config, db, next: notificationEventDispatch });
+const capturedDispatch = createWebhookEventCapture({ config, db, next: operationsNotificationDispatch });
 const stopWebhookWorker = startWebhookWorker(db, config);
 const stopNotificationWorker = startNotificationWorker(db, config);
+const stopOperationalNotificationWorker = startOperationalNotificationWorker(db, config);
 const server = http.createServer(capturedDispatch);
 
 server.listen(config.port, config.host, () => {
@@ -157,6 +163,7 @@ function shutdown(signal) {
   console.log(`\n${signal} received. Shutting down KukGit...`);
   stopWebhookWorker();
   stopNotificationWorker();
+  stopOperationalNotificationWorker();
   server.close(() => {
     try { db.close(); } catch {}
     process.exit(0);
