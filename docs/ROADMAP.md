@@ -90,6 +90,19 @@ Progress delivered:
 - restricted static authorized_keys generation fallback
 - SSH clone URL and key-management browser interfaces
 - SSH key last-used timestamps and Git SSH audit events
+- merge-base-correct pull-request comparisons
+- Git-native added, modified, deleted, renamed, copied and binary file metadata
+- per-file addition and deletion statistics
+- parsed unified diff hunks with old and new line numbers
+- unified and side-by-side Files Changed browser views
+- paginated file summaries and lazy per-file patch loading
+- whitespace display toggle and raw patch copy
+- actual-patch-only inline review anchors
+- same-side, same-hunk multi-line review ranges
+- file-level binary review threads
+- stable anchor hashes with merge-base and head SHA history
+- large diff safety limits and phantom-line sanitization
+- diff API permission, path, anchor and CSRF enforcement
 
 Remaining:
 
@@ -98,7 +111,6 @@ Remaining:
 - organization signup and invitation email delivery
 - token rotation reminders and expiring-token notifications
 - PostgreSQL migration
-- unified diff rendering and diff-hunk anchors
 - email and in-app notifications
 - Git LFS
 - backups and restore automation
