@@ -12,14 +12,14 @@ import {
 import {
   createCollaborationNotificationCapture,
   createInvitationResendApiHandler,
-} from './src/collaboration-notifications.mjs';
+} from './src/collaboration-notifications-safe.mjs';
 import { createCollaborationApiHandler, migrateCollaboration } from './src/collaboration.mjs';
 import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
 import { smtpConfigured } from './src/email-transport.mjs';
 import { ensureGitAvailable } from './src/git.mjs';
 import { createGitLfsHandler, migrateGitLfs } from './src/git-lfs-safe.mjs';
-import { createNotificationEventCapture } from './src/notification-events.mjs';
+import { createNotificationEventCapture } from './src/notification-events-safe.mjs';
 import {
   createNotificationsApiHandler,
   migrateNotifications,
