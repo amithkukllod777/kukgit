@@ -17,6 +17,9 @@ import { createCollaborationApiHandler, migrateCollaboration } from './src/colla
 import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
 import { smtpConfigured } from './src/email-transport.mjs';
+import { createExternalCollaboratorAccessPrivacyApiHandler } from './src/external-collaborator-access-privacy.mjs';
+import { createExternalCollaboratorDiscoveryApiHandler } from './src/external-collaborator-discovery.mjs';
+import { createExternalCollaboratorLifecycleGuard } from './src/external-collaborator-lifecycle-guard.mjs';
 import { ensureGitAvailable } from './src/git.mjs';
 import { createGitLfsHandler, migrateGitLfs } from './src/git-lfs-safe.mjs';
 import { createNotificationEventCapture } from './src/notification-events-safe.mjs';
@@ -38,6 +41,10 @@ import {
   createRepositoryAccessGuard,
   migrateRepositoryAccess,
 } from './src/repository-access.mjs';
+import {
+  createRepositoryInvitationsApiHandler,
+  migrateRepositoryInvitations,
+} from './src/repository-invitations.mjs';
 import {
   createRepositoryLifecycleApiHandler,
   createRepositoryLifecycleGuard,
@@ -72,6 +79,7 @@ const gitVersion = ensureGitAvailable();
 const db = openDatabase(config);
 migrateCollaboration(db);
 migrateRepositoryAccess(db);
+migrateRepositoryInvitations(db);
 migrateBranchGovernance(db);
 migrateReviewThreads(db);
 migratePullRequestDiffs(db);
@@ -89,10 +97,14 @@ const reviewThreadGuardedApp = createReviewThreadMergeGuard({ config, db, app: s
 const governedApp = createBranchGovernanceGuard({ config, db, app: reviewThreadGuardedApp });
 const tokenApi = createTokenApiHandler({ config, db });
 const notificationsApi = createNotificationsApiHandler({ config, db });
+const externalDiscoveryApi = createExternalCollaboratorDiscoveryApiHandler({ config, db });
 const collaborationApi = createCollaborationApiHandler({ config, db });
 const invitationResendApi = createInvitationResendApiHandler({ config, db });
+const repositoryInvitationsApi = createRepositoryInvitationsApiHandler({ config, db });
 const backupsApi = createLfsAwareBackupsApiHandler({ config, db });
 const gitLfsApi = createGitLfsHandler({ config, db });
+const externalLifecycleGuard = createExternalCollaboratorLifecycleGuard({ config, db });
+const externalAccessPrivacyApi = createExternalCollaboratorAccessPrivacyApiHandler({ config, db });
 const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
 const repositoryLifecycleApi = createRepositoryLifecycleApiHandler({ config, db });
 const sshKeysApi = createSshKeysApiHandler({ config, db });
@@ -106,12 +118,16 @@ const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app: gov
 async function dispatch(req, res) {
   if (await tokenApi(req, res)) return;
   if (await notificationsApi(req, res)) return;
+  if (await externalDiscoveryApi(req, res)) return;
   if (await invitationResendApi(req, res)) return;
   if (await collaborationApi(req, res)) return;
+  if (await repositoryInvitationsApi(req, res)) return;
   if (await backupsApi(req, res)) return;
   if (await gitLfsApi(req, res)) return;
+  if (await externalLifecycleGuard(req, res)) return;
   if (await repositoryLifecycleApi(req, res)) return;
   if (await sshKeysApi(req, res)) return;
+  if (await externalAccessPrivacyApi(req, res)) return;
   if (await repositoryAccessApi(req, res)) return;
   if (await branchGovernanceApi(req, res)) return;
   if (await pullRequestDiffsApi(req, res)) return;

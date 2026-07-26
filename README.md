@@ -2,7 +2,7 @@
 
 **KukGit is an AI-first Git hosting and developer operating system from Kuklabs Inc.**
 
-This repository contains the working KukGit foundation. It is not a visual mockup: it creates real bare Git repositories, supports Git smart HTTP and SSH clone/push, stores multi-tenant metadata, offers repository browsing, issues, pull requests, governed reviews, verified backups, Git LFS, notifications, transactional email and local repository-health analysis.
+This repository contains the working KukGit foundation. It is not a visual mockup: it creates real bare Git repositories, supports Git smart HTTP and SSH clone/push, stores multi-tenant metadata, offers repository browsing, issues, pull requests, governed reviews, verified backups, Git LFS, notifications, transactional email, external repository collaboration and local repository-health analysis.
 
 > Product direction: Git hosting + collaboration + AI review + CI/CD + package/container registries + cloud development and deployment.
 
@@ -24,6 +24,11 @@ This repository contains the working KukGit foundation. It is not a visual mocku
 - Organization member directory
 - Teams with maintainers, members and auditable lifecycle management
 - Direct repository collaborators and repository team access grants
+- Repository-only external collaborators without organization membership
+- Expiring exact-email repository invitations, revoke and secure resend
+- External collaborator discovery restricted to explicitly shared repositories
+- Organization member and team privacy for external users
+- Browser, Git HTTP, SSH and Git LFS authorization for external access
 - Read, Triage, Write, Maintain and Admin permission hierarchy
 - Effective permission calculation across organization role, direct grant and team grants
 - Durable per-user notification inbox, unread counts and delivery preferences
@@ -55,11 +60,11 @@ This repository contains the working KukGit foundation. It is not a visual mocku
 - Audit log
 - Responsive Kuklabs-branded web interface
 - No runtime npm dependencies
-- Automated tests for API, Git, LFS, backup/restore, collaboration, access, governance, reviews, checks, webhooks, notifications, SMTP and security helpers
+- Automated tests for API, Git, LFS, backup/restore, collaboration, external access, governance, reviews, checks, webhooks, notifications, SMTP and security helpers
 
 ## Important scope boundary
 
-This is the **Private Alpha foundation**, not yet a GitHub/GitLab replacement. Production work still required includes One Kuklabs Account/SSO/MFA, external collaborators, hosted CI runners and workflow execution, PostgreSQL and distributed jobs, package/container registries, billing and usage metering, abuse controls, scalable object storage, broader administration and high-availability deployment.
+This is the **Private Alpha foundation**, not yet a GitHub/GitLab replacement. Production work still required includes One Kuklabs Account/SSO/MFA, hosted CI runners and workflow execution, PostgreSQL and distributed jobs, package/container registries, billing and usage metering, abuse controls, scalable object storage, broader administration and high-availability deployment.
 
 ## Local quick start
 
@@ -145,6 +150,14 @@ Open **Organizations → Organization collaboration** to invite users, review in
 
 KukGit queues invitation email for existing and external users. Organization Admins can revoke an old invitation and send a fresh secure link with **Resend email**. Read [Organization Collaboration](docs/ORGANIZATION_COLLABORATION.md).
 
+## External repository collaborators
+
+Open **Repository → Settings → External collaborators** to invite a client, contractor or partner without adding them to the organization. Select Read, Triage, Write, Maintain or Admin permission and a 7-, 14- or 30-day invitation expiry.
+
+Acceptance is restricted to the exact invited email and creates only a direct repository grant. External users discover only explicitly shared repositories, while organization members, teams and other repositories remain hidden. The same permission applies to browser actions, Personal Access Token Git HTTP, SSH Git and Git LFS.
+
+External Repository Admins cannot transfer ownership or move a repository to Trash without actual organization Admin or Owner membership. Read [External Repository Collaborators](docs/EXTERNAL_COLLABORATORS.md).
+
 ## Notifications and transactional email
 
 The topbar notification bell provides a durable user inbox with unread counts, internal links and read lifecycle. Open **Settings → Notification preferences** to choose in-app and email delivery for organization, security, pull-request, status-check and operations categories.
@@ -153,7 +166,7 @@ Configure SMTP through `KUKGIT_SMTP_*` and `KUKGIT_EMAIL_*` environment variable
 
 ## Repository access
 
-Open a repository and select **Settings** to manage direct collaborator permissions, team grants and effective permission sources. KukGit combines organization role baseline, direct grants and team grants; the highest permission wins. Read [Repository Access](docs/REPOSITORY_ACCESS.md).
+Open a repository and select **Settings** to manage direct collaborator permissions, external invitations, team grants and effective permission sources. KukGit combines organization role baseline, direct grants and team grants; the highest permission wins. Read [Repository Access](docs/REPOSITORY_ACCESS.md).
 
 ## Branch protection and reviews
 

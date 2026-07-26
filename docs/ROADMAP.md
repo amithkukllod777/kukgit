@@ -156,16 +156,33 @@ Progress delivered:
 - topbar notification bell, unread badge and notification drawer
 - Settings notification preferences and email administration
 - notification, email and SMTP production runbook
+- repository-only external collaborators without organization membership
+- SHA-256 hashed, expiring one-time repository invitation tokens
+- exact invited-email acceptance, revoke, resend and replay protection
+- existing-user in-app delivery and external transactional email delivery
+- direct repository grant creation without `org_members` insertion
+- repository-only dashboard, repository, issue and pull-request discovery
+- organization member, team and team-grant privacy for external users
+- external collaborator permission update and immediate access removal
+- scoped browser authorization through exact repository request context
+- Personal Access Token Git HTTP authorization for external collaborators
+- user SSH-key Git authorization for external collaborators
+- Git LFS download and upload authorization for external collaborators
+- external Repository Admin Settings and archive authority
+- organization Admin/Owner requirement for repository transfer and Trash
+- external invitation and collaborator audit events without token exposure
+- external collaborator Settings and acceptance interfaces
+- external collaborator security and operations runbook
 
 Remaining:
 
 - One Kuklabs Account/AuthKit
-- external repository collaborators
 - organization self-service signup
 - PostgreSQL migration
 - broader admin console and tenant support tools
 - real-time WebSocket notification delivery
 - provider bounce and complaint processing
+- external access expiry after acceptance and review campaigns
 
 ## Phase 2 — Public beta
 
