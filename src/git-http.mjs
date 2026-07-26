@@ -1,6 +1,7 @@
-import path from 'node:path';
+import { audit, orgAccess } from './db.mjs';
 import { spawnGitHttpBackend } from './git.mjs';
 import { safeEqual } from './security.mjs';
+import { verifyPersonalAccessToken } from './tokens.mjs';
 
 function parseBasicAuth(header = '') {
   if (!header.startsWith('Basic ')) return null;
@@ -15,11 +16,27 @@ function parseBasicAuth(header = '') {
 
 function rejectAuth(res) {
   res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="KukGit"', 'Content-Type': 'text/plain; charset=utf-8' });
-  res.end('Authentication required.\n');
+  res.end('Authentication required. Use a scoped KukGit personal access token.\n');
 }
 
 export function isGitHttpPath(pathname) {
   return pathname.startsWith('/git/') && pathname.includes('.git');
+}
+
+export function authorizeGitCredential(db, config, { credential, orgSlug, isPush }) {
+  const presented = String(credential ?? '');
+  if (!presented) return null;
+
+  if (!config.isProduction && config.gitToken && safeEqual(presented, config.gitToken)) {
+    return { authType: 'development-token', userId: null, username: 'kukgit-development-token', organization: null };
+  }
+
+  const requiredScope = isPush ? 'repo:write' : 'repo:read';
+  const token = verifyPersonalAccessToken(db, presented, requiredScope);
+  if (!token) return null;
+  const organization = orgAccess(db, token.userId, orgSlug, isPush ? 'developer' : 'viewer');
+  if (!organization) return null;
+  return { authType: 'personal-access-token', userId: token.userId, username: token.email, tokenId: token.id, organization };
 }
 
 export function handleGitHttp(req, res, { config, db, pathname, queryString }) {
@@ -29,7 +46,11 @@ export function handleGitHttp(req, res, { config, db, pathname, queryString }) {
     return res.end('Repository not found.\n');
   }
   const [, orgSlug, repoSlug, suffix = '/'] = match;
-  const repo = db.prepare(`SELECT r.visibility FROM repositories r JOIN organizations o ON o.id = r.organization_id WHERE o.slug = ? AND r.slug = ?`).get(orgSlug, repoSlug);
+  const repo = db.prepare(`
+    SELECT r.id, r.visibility, r.organization_id AS organizationId
+    FROM repositories r JOIN organizations o ON o.id = r.organization_id
+    WHERE o.slug = ? AND r.slug = ?
+  `).get(orgSlug, repoSlug);
   if (!repo) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end('Repository not found.\n');
@@ -37,9 +58,20 @@ export function handleGitHttp(req, res, { config, db, pathname, queryString }) {
 
   const isPush = suffix.includes('git-receive-pack') || queryString.includes('service=git-receive-pack');
   const requiresAuth = isPush || repo.visibility !== 'public';
+  let authenticated = null;
   if (requiresAuth) {
     const credentials = parseBasicAuth(req.headers.authorization);
-    if (!credentials || !config.gitToken || !safeEqual(credentials.password, config.gitToken)) return rejectAuth(res);
+    const credential = credentials?.password || (credentials?.username?.startsWith('kgp_') ? credentials.username : '');
+    authenticated = authorizeGitCredential(db, config, { credential, orgSlug, isPush });
+    if (!authenticated) return rejectAuth(res);
+    audit(db, {
+      organizationId: repo.organizationId,
+      userId: authenticated.userId,
+      action: isPush ? 'git.push' : 'git.fetch',
+      targetType: 'repository',
+      targetId: repo.id,
+      metadata: { repository: repoSlug, authType: authenticated.authType },
+    });
   }
 
   const env = {
@@ -50,7 +82,7 @@ export function handleGitHttp(req, res, { config, db, pathname, queryString }) {
     QUERY_STRING: queryString,
     CONTENT_TYPE: req.headers['content-type'] ?? '',
     CONTENT_LENGTH: req.headers['content-length'] ?? '',
-    REMOTE_USER: requiresAuth ? 'kukgit-user' : '',
+    REMOTE_USER: authenticated?.username ?? '',
     REMOTE_ADDR: req.socket.remoteAddress ?? '',
     SERVER_PROTOCOL: `HTTP/${req.httpVersion}`,
   };
