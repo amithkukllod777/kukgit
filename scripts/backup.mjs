@@ -3,14 +3,16 @@ import path from 'node:path';
 import { audit, openDatabase } from '../src/db.mjs';
 import { loadConfig } from '../src/config.mjs';
 import {
-  createVerifiedBackup,
   getMaintenanceState,
   listBackupSnapshots,
   pruneBackupSnapshots,
-  restoreBackupArchive,
   setMaintenanceState,
-  verifyBackupArchive,
 } from '../src/backups.mjs';
+import {
+  createVerifiedBackup,
+  restoreBackupArchive,
+  verifyBackupArchive,
+} from '../src/backups-lfs.mjs';
 
 function argument(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -52,6 +54,7 @@ const command = process.argv[2];
 const config = loadConfig();
 fs.mkdirSync(config.tempDir, { recursive: true, mode: 0o700 });
 fs.mkdirSync(config.backupsDir, { recursive: true, mode: 0o700 });
+fs.mkdirSync(config.lfsDir, { recursive: true, mode: 0o700 });
 
 try {
   if (!command || ['help', '--help', '-h'].includes(command)) {
