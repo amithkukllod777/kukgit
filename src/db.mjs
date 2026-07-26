@@ -159,18 +159,27 @@ export function audit(db, { organizationId = null, userId = null, action, target
 
 export function orgAccess(db, userId, orgSlug, minimumRole = 'viewer') {
   const roleRank = { viewer: 1, developer: 2, maintainer: 3, admin: 4, owner: 5 };
+  const repositoryPermissionRank = { read: 1, triage: 1, write: 2, maintain: 3, admin: 4 };
+  const requiredRepositoryRank = { viewer: 1, developer: 2, maintainer: 3, admin: 4, owner: 5 };
+  const repositoryContext = currentRepositoryAccess();
+  if (repositoryContext?.allowed && repositoryContext.userId === userId && repositoryContext.orgSlug === orgSlug) {
+    if ((repositoryPermissionRank[repositoryContext.permission] ?? 0) < (requiredRepositoryRank[minimumRole] ?? Number.POSITIVE_INFINITY)) return null;
+    const organization = db.prepare('SELECT id, slug, name, plan FROM organizations WHERE slug = ?').get(orgSlug);
+    if (!organization) return null;
+    return {
+      ...organization,
+      role: repositoryContext.organizationRole ?? null,
+      repositoryPermission: repositoryContext.permission,
+      externalRepositoryAccess: Boolean(repositoryContext.external),
+    };
+  }
+
   const row = db.prepare(`
     SELECT o.id, o.slug, o.name, o.plan, om.role
     FROM organizations o JOIN org_members om ON om.organization_id = o.id
     WHERE o.slug = ? AND om.user_id = ?
   `).get(orgSlug, userId);
   if (!row) return null;
-
-  const repositoryContext = currentRepositoryAccess();
-  if (repositoryContext?.allowed && repositoryContext.userId === userId && repositoryContext.orgSlug === orgSlug) {
-    return { ...row, repositoryPermission: repositoryContext.permission };
-  }
-
   if (roleRank[row.role] < roleRank[minimumRole]) return null;
   return row;
 }
