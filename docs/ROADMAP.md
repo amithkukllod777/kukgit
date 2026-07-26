@@ -190,10 +190,24 @@ Progress delivered:
 - One Kuklabs Account login, signup and OTP web interface
 - AuthKit production rollout, rollback, key-rotation and incident runbook
 - automated identity, encryption, refresh, revocation, CSRF and production-boundary tests
+- authenticated organization self-service workspace creation
+- atomic free-plan organization, Owner membership and default Developers-team provisioning
+- creator auto-added to the default team as Maintainer
+- verified AuthKit email requirement for production workspace creation
+- globally unique workspace slugs and reserved system/product namespaces
+- transaction-time slug collision handling and complete rollback on failure
+- configurable per-user organization ownership limit
+- organization description, HTTPS website, company-size and onboarding metadata
+- guided zero-organization onboarding interface
+- Create organization action for existing members below their limit
+- repository-only external collaborator exemption from forced onboarding
+- same-origin, request-size and organization-profile validation
+- self-service organization audit events without sensitive identity data
+- organization onboarding rollout, support and operations runbook
+- automated atomicity, limit, reserved-slug, identity and CSRF tests
 
 Remaining:
 
-- organization self-service signup
 - PostgreSQL migration
 - broader admin console and tenant support tools
 - real-time WebSocket notification delivery
