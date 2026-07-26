@@ -26,6 +26,7 @@ import {
   createReviewThreadsApiHandler,
   migrateReviewThreads,
 } from './src/review-threads.mjs';
+import { createSshKeysArchiveGuard } from './src/ssh-keys-archive-guard.mjs';
 import { createSshKeysApiHandler, migrateSshKeys } from './src/ssh-keys.mjs';
 import {
   createStatusCheckMergeGuard,
@@ -84,7 +85,8 @@ async function dispatch(req, res) {
   return governedApp(req, res);
 }
 
-const lifecycleDispatch = createRepositoryLifecycleGuard({ config, db, next: dispatch });
+const sshArchiveDispatch = createSshKeysArchiveGuard({ config, db, next: dispatch });
+const lifecycleDispatch = createRepositoryLifecycleGuard({ config, db, next: sshArchiveDispatch });
 const capturedDispatch = createWebhookEventCapture({ config, db, next: lifecycleDispatch });
 const stopWebhookWorker = startWebhookWorker(db, config);
 const server = http.createServer(capturedDispatch);
