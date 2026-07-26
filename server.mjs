@@ -2,6 +2,10 @@ import fs from 'node:fs';
 import http from 'node:http';
 import { createApp } from './src/app.mjs';
 import {
+  createBackupsApiHandler,
+  createMaintenanceGuard,
+} from './src/backups.mjs';
+import {
   createBranchGovernanceApiHandler,
   createBranchGovernanceGuard,
   installExistingBranchProtectionHooks,
@@ -48,6 +52,7 @@ import {
 const config = loadConfig();
 fs.mkdirSync(config.repositoriesDir, { recursive: true });
 fs.mkdirSync(config.tempDir, { recursive: true });
+fs.mkdirSync(config.backupsDir, { recursive: true });
 const gitVersion = ensureGitAvailable();
 const db = openDatabase(config);
 migrateCollaboration(db);
@@ -67,6 +72,7 @@ const reviewThreadGuardedApp = createReviewThreadMergeGuard({ config, db, app: s
 const governedApp = createBranchGovernanceGuard({ config, db, app: reviewThreadGuardedApp });
 const tokenApi = createTokenApiHandler({ config, db });
 const collaborationApi = createCollaborationApiHandler({ config, db });
+const backupsApi = createBackupsApiHandler({ config, db });
 const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
 const repositoryLifecycleApi = createRepositoryLifecycleApiHandler({ config, db });
 const sshKeysApi = createSshKeysApiHandler({ config, db });
@@ -80,6 +86,7 @@ const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app: gov
 async function dispatch(req, res) {
   if (await tokenApi(req, res)) return;
   if (await collaborationApi(req, res)) return;
+  if (await backupsApi(req, res)) return;
   if (await repositoryLifecycleApi(req, res)) return;
   if (await sshKeysApi(req, res)) return;
   if (await repositoryAccessApi(req, res)) return;
@@ -94,13 +101,15 @@ async function dispatch(req, res) {
 
 const sshArchiveDispatch = createSshKeysArchiveGuard({ config, db, next: dispatch });
 const lifecycleDispatch = createRepositoryLifecycleGuard({ config, db, next: sshArchiveDispatch });
-const capturedDispatch = createWebhookEventCapture({ config, db, next: lifecycleDispatch });
+const maintenanceDispatch = createMaintenanceGuard({ config, next: lifecycleDispatch });
+const capturedDispatch = createWebhookEventCapture({ config, db, next: maintenanceDispatch });
 const stopWebhookWorker = startWebhookWorker(db, config);
 const server = http.createServer(capturedDispatch);
 
 server.listen(config.port, config.host, () => {
   console.log(`\nKukGit v0.1.0 is running at ${config.baseUrl}`);
   console.log(`${gitVersion}; data: ${config.dataDir}`);
+  console.log(`Backups: ${config.backupsDir}; retention: ${config.backupRetentionCount} snapshots / ${config.backupRetentionDays} days`);
   console.log(`SSH clone endpoint: ${config.sshUser}@${config.sshHost}:${config.sshPort}`);
   if (seeded.seeded && !config.isProduction) {
     console.log(`Development admin: ${config.adminEmail}`);

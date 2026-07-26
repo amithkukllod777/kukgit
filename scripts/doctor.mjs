@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { loadConfig } from '../src/config.mjs';
 
@@ -23,6 +24,25 @@ check('Repository directory', () => {
   fs.mkdirSync(config.repositoriesDir, { recursive: true });
   fs.accessSync(config.repositoriesDir, fs.constants.R_OK | fs.constants.W_OK);
   return config.repositoriesDir;
+});
+check('Backup directory', () => {
+  fs.mkdirSync(config.backupsDir, { recursive: true, mode: 0o700 });
+  fs.accessSync(config.backupsDir, fs.constants.R_OK | fs.constants.W_OK);
+  if (path.resolve(config.backupsDir) === path.resolve(config.repositoriesDir)) throw new Error('KUKGIT_BACKUPS_DIR cannot equal the repository directory');
+  return config.backupsDir;
+});
+check('Backup retention', () => {
+  if (!Number.isInteger(config.backupRetentionCount) || config.backupRetentionCount < 1 || config.backupRetentionCount > 10000) throw new Error('KUKGIT_BACKUP_RETENTION_COUNT must be between 1 and 10000');
+  if (!Number.isInteger(config.backupRetentionDays) || config.backupRetentionDays < 1 || config.backupRetentionDays > 36500) throw new Error('KUKGIT_BACKUP_RETENTION_DAYS must be between 1 and 36500');
+  return `${config.backupRetentionCount} snapshots / ${config.backupRetentionDays} days`;
+});
+check('Maintenance and lock paths', () => {
+  for (const value of [config.maintenancePath, config.backupLockPath]) {
+    fs.mkdirSync(path.dirname(value), { recursive: true, mode: 0o700 });
+    fs.accessSync(path.dirname(value), fs.constants.R_OK | fs.constants.W_OK);
+  }
+  if (path.resolve(config.maintenancePath) === path.resolve(config.backupLockPath)) throw new Error('Maintenance and backup lock paths must be different');
+  return `${config.maintenancePath}; ${config.backupLockPath}`;
 });
 check('Production password', () => !config.isProduction || config.adminPassword !== 'KukGit@2026' ? 'configured' : (() => { throw new Error('KUKGIT_ADMIN_PASSWORD must be changed'); })());
 check('Git HTTP token', () => config.gitToken && config.gitToken !== 'kukgit-dev-token-change-me' ? 'configured' : 'development default — change before sharing');
