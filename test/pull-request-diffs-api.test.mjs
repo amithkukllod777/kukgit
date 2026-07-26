@@ -11,7 +11,7 @@ import { migrateCollaboration } from '../src/collaboration.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { openDatabase, seedCore, uid } from '../src/db.mjs';
 import { createBareRepository, createDemoCommit, repoDiskPath } from '../src/git.mjs';
-import { createPullRequestDiffsApiHandler, migratePullRequestDiffs } from '../src/pull-request-diffs.mjs';
+import { createPullRequestDiffsApiHandler, migratePullRequestDiffs } from '../src/pull-request-diffs-safe.mjs';
 import { migrateRepositoryAccess } from '../src/repository-access.mjs';
 import { migrateReviewThreads } from '../src/review-threads.mjs';
 
