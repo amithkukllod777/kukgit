@@ -33,6 +33,7 @@ function recordSchemaVersion(db) {
     ON CONFLICT(key) DO UPDATE SET
       value = excluded.value,
       updated_at = CURRENT_TIMESTAMP
+    WHERE kukgit_schema_metadata.value <> excluded.value
   `).run(KUKGIT_SCHEMA_VERSION);
 }
 
