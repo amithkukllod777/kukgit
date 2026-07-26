@@ -2,7 +2,7 @@
 
 **KukGit is an AI-first Git hosting and developer operating system from Kuklabs Inc.**
 
-This repository contains the working KukGit foundation. It is not a visual mockup: it creates real bare Git repositories, supports Git smart HTTP and SSH clone/push, stores multi-tenant metadata, offers repository browsing, issues, pull requests, governed reviews, verified backups, Git LFS and local repository-health analysis.
+This repository contains the working KukGit foundation. It is not a visual mockup: it creates real bare Git repositories, supports Git smart HTTP and SSH clone/push, stores multi-tenant metadata, offers repository browsing, issues, pull requests, governed reviews, verified backups, Git LFS, notifications, transactional email and local repository-health analysis.
 
 > Product direction: Git hosting + collaboration + AI review + CI/CD + package/container registries + cloud development and deployment.
 
@@ -15,15 +15,20 @@ This repository contains the working KukGit foundation. It is not a visual mocku
 - Git LFS Batch API, verified uploads, range downloads, quotas and deduplication
 - Scoped personal access tokens with browser and CLI lifecycle management
 - Token expiry, revocation, last-used tracking and one-time secret display
+- Personal-access-token expiry reminders without secret exposure
 - Production Git authorization by token scope plus effective repository permission
 - Mirror import for public HTTPS/SSH repositories
 - Organizations and role-based access control
 - Expiring organization invitations with email verification, one-time acceptance links and revocation
+- Transactional organization invitation email and secure resend
 - Organization member directory
 - Teams with maintainers, members and auditable lifecycle management
 - Direct repository collaborators and repository team access grants
 - Read, Triage, Write, Maintain and Admin permission hierarchy
 - Effective permission calculation across organization role, direct grant and team grants
+- Durable per-user notification inbox, unread counts and delivery preferences
+- Dependency-free SMTP transport, durable email outbox, retries and delivery history
+- Pull-request, review, merge, status-check and operational notifications
 - Repository archive, organization transfer, recoverable Trash, restore and permanent purge
 - Exact-branch protection rules
 - Pull-request approval and change-request reviews
@@ -38,21 +43,23 @@ This repository contains the working KukGit foundation. It is not a visual mocku
 - Exact-branch required status-check policies and current-head freshness
 - Repository webhook subscriptions with encrypted secrets and HMAC-signed deliveries
 - HTTPS/public-network target enforcement, SSRF protection and bounded retries
+- Terminal webhook failure alerts for the instance administrator
 - Repository code browser: branches, commits, folders and files
 - Browser branch creation and file commits
 - Issues with status and priority
 - Pull requests with branch comparison and merge
 - Verified `.kgbak` snapshots, integrity checks, dry-run restore and disaster recovery
+- Backup and Git LFS operational alerts
 - KukAI local repository health analysis
 - Security, test, CI, documentation and governance checks
 - Audit log
 - Responsive Kuklabs-branded web interface
 - No runtime npm dependencies
-- Automated tests for API, Git, LFS, backup/restore, collaboration, access, governance, reviews, checks, webhooks and security helpers
+- Automated tests for API, Git, LFS, backup/restore, collaboration, access, governance, reviews, checks, webhooks, notifications, SMTP and security helpers
 
 ## Important scope boundary
 
-This is the **Private Alpha foundation**, not yet a GitHub/GitLab replacement. Production work still required includes One Kuklabs Account/SSO/MFA, external collaborators, hosted CI runners and workflow execution, PostgreSQL and distributed jobs, package/container registries, email/in-app notifications, billing and usage metering, abuse controls, scalable object storage, advanced administration and high-availability deployment.
+This is the **Private Alpha foundation**, not yet a GitHub/GitLab replacement. Production work still required includes One Kuklabs Account/SSO/MFA, external collaborators, hosted CI runners and workflow execution, PostgreSQL and distributed jobs, package/container registries, billing and usage metering, abuse controls, scalable object storage, broader administration and high-availability deployment.
 
 ## Local quick start
 
@@ -134,7 +141,15 @@ Open **Repository → Settings → Git Large File Storage** to review usage and 
 
 ## Organization collaboration
 
-Open **Organizations → Organization collaboration** to invite users, review invitation status, manage members and create teams. Invitation tokens are shown only once and acceptance requires the exact invited account email. Read [Organization Collaboration](docs/ORGANIZATION_COLLABORATION.md).
+Open **Organizations → Organization collaboration** to invite users, review invitation status, manage members and create teams. Invitation tokens are shown only once and acceptance requires the exact invited account email.
+
+KukGit queues invitation email for existing and external users. Organization Admins can revoke an old invitation and send a fresh secure link with **Resend email**. Read [Organization Collaboration](docs/ORGANIZATION_COLLABORATION.md).
+
+## Notifications and transactional email
+
+The topbar notification bell provides a durable user inbox with unread counts, internal links and read lifecycle. Open **Settings → Notification preferences** to choose in-app and email delivery for organization, security, pull-request, status-check and operations categories.
+
+Configure SMTP through `KUKGIT_SMTP_*` and `KUKGIT_EMAIL_*` environment variables. KukGit supports direct TLS or STARTTLS, a durable outbox, bounded retries, delivery-attempt history and Admin retry controls. Read [Notifications and Transactional Email](docs/NOTIFICATIONS_AND_EMAIL.md).
 
 ## Repository access
 
@@ -211,7 +226,7 @@ npm test          # Run automated tests
 ```text
 kukgit/
 ├── public/                 # Dependency-free web application
-├── src/                    # API, auth, access, Git, LFS, backups, reviews and workflow services
+├── src/                    # Auth, Git, LFS, access, reviews, backups, notifications and email services
 ├── scripts/                # Seed, doctor, token, SSH and backup administration
 ├── test/                   # Node test suite
 ├── docs/                   # Product, architecture, operations and security docs
