@@ -1,7 +1,22 @@
 import crypto from 'node:crypto';
+import { currentRequestIdentity } from './identity-context.mjs';
 import { hashToken, normalizeEmail, parseCookies, randomToken, safeEqual, serializeCookie, httpError } from './security.mjs';
 
 const SESSION_SECONDS = 60 * 60 * 24 * 14;
+const schemaCache = new WeakMap();
+
+function authSchema(db) {
+  let cached = schemaCache.get(db);
+  if (cached) return cached;
+  const sessionColumns = new Set(db.prepare('PRAGMA table_info(sessions)').all().map((row) => row.name));
+  const userColumns = new Set(db.prepare('PRAGMA table_info(users)').all().map((row) => row.name));
+  cached = {
+    sessionAuthMode: sessionColumns.has('auth_mode'),
+    userAuthSource: userColumns.has('auth_source'),
+  };
+  schemaCache.set(db, cached);
+  return cached;
+}
 
 export function hashPassword(password) {
   const value = String(password ?? '');
@@ -25,7 +40,12 @@ export function verifyPassword(password, encoded) {
 export function createSession(db, userId) {
   const token = randomToken();
   const expiresAt = new Date(Date.now() + SESSION_SECONDS * 1000).toISOString();
-  db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)').run(hashToken(token), userId, expiresAt);
+  if (authSchema(db).sessionAuthMode) {
+    db.prepare("INSERT INTO sessions (token_hash, user_id, expires_at, auth_mode) VALUES (?, ?, ?, 'local')")
+      .run(hashToken(token), userId, expiresAt);
+  } else {
+    db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)').run(hashToken(token), userId, expiresAt);
+  }
   return { token, expiresAt };
 }
 
@@ -43,13 +63,17 @@ export function clearSessionCookie(secure) {
 }
 
 export function currentUser(db, req) {
+  const requestIdentity = currentRequestIdentity();
+  if (requestIdentity?.resolved) return requestIdentity.user;
+
   const cookies = parseCookies(req.headers.cookie);
   const token = cookies.kukgit_session;
   if (!token) return null;
+  const authModeCondition = authSchema(db).sessionAuthMode ? "AND s.auth_mode = 'local'" : '';
   const row = db.prepare(`
     SELECT u.id, u.email, u.display_name AS displayName, s.expires_at AS expiresAt
     FROM sessions s JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = ?
+    WHERE s.token_hash = ? ${authModeCondition}
   `).get(hashToken(token));
   if (!row) return null;
   if (new Date(row.expiresAt).getTime() <= Date.now()) {
@@ -67,7 +91,13 @@ export function requireUser(db, req) {
 
 export function authenticate(db, email, password) {
   const normalized = normalizeEmail(email);
-  const user = db.prepare('SELECT id, email, display_name AS displayName, password_hash AS passwordHash FROM users WHERE email = ?').get(normalized);
-  if (!user || !verifyPassword(password, user.passwordHash)) throw httpError(401, 'Incorrect email or password.', 'INVALID_CREDENTIALS');
+  const authSourceColumn = authSchema(db).userAuthSource ? ', auth_source AS authSource' : '';
+  const user = db.prepare(`
+    SELECT id, email, display_name AS displayName, password_hash AS passwordHash${authSourceColumn}
+    FROM users WHERE email = ?
+  `).get(normalized);
+  if (!user || (user.authSource && user.authSource !== 'local') || !verifyPassword(password, user.passwordHash)) {
+    throw httpError(401, 'Incorrect email or password.', 'INVALID_CREDENTIALS');
+  }
   return user;
 }

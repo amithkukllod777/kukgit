@@ -170,7 +170,13 @@ test('retries failed deliveries, stops after five attempts and supports redelive
 });
 
 test('production webhook targets require HTTPS and reject private networks', async () => {
-  const config = loadConfig({ nodeEnv: 'production', webhookEncryptionKey: 'production-test-key' });
+  const config = loadConfig({
+    nodeEnv: 'production',
+    authMode: 'authkit',
+    authkitBaseUrl: 'https://auth.kuklabs.com',
+    authkitEncryptionKey: 'production-authkit-test-key-with-more-than-32-characters',
+    webhookEncryptionKey: 'production-test-key',
+  });
   await assert.rejects(
     resolveWebhookTarget(config, 'http://example.com/hook'),
     (error) => error.code === 'WEBHOOK_HTTPS_REQUIRED',

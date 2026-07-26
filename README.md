@@ -2,12 +2,19 @@
 
 **KukGit is an AI-first Git hosting and developer operating system from Kuklabs Inc.**
 
-This repository contains the working KukGit foundation. It is not a visual mockup: it creates real bare Git repositories, supports Git smart HTTP and SSH clone/push, stores multi-tenant metadata, offers repository browsing, issues, pull requests, governed reviews, verified backups, Git LFS, notifications, transactional email, external repository collaboration and local repository-health analysis.
+This repository contains the working KukGit foundation. It is not a visual mockup: it creates real bare Git repositories, supports Git smart HTTP and SSH clone/push, stores multi-tenant metadata, offers repository browsing, issues, pull requests, governed reviews, verified backups, Git LFS, notifications, transactional email, external repository collaboration, One Kuklabs Account and local repository-health analysis.
 
 > Product direction: Git hosting + collaboration + AI review + CI/CD + package/container registries + cloud development and deployment.
 
 ## What works in v0.1.0
 
+- One Kuklabs Account production authentication through central AuthKit
+- Stable central `kuklabs_user_id` mapped one-to-one to KukGit product profiles
+- AuthKit password, signup, OTP and Google ID-token flows
+- Server-side encrypted access and rotating refresh-token custody
+- Central product-access and signed-in device-session validation
+- Verified-email identity linking with duplicate-account conflict protection
+- Production local-password authentication disabled by default
 - Real bare Git repository creation
 - Public and private repository metadata
 - Git smart HTTP clone and authenticated push
@@ -60,11 +67,11 @@ This repository contains the working KukGit foundation. It is not a visual mocku
 - Audit log
 - Responsive Kuklabs-branded web interface
 - No runtime npm dependencies
-- Automated tests for API, Git, LFS, backup/restore, collaboration, external access, governance, reviews, checks, webhooks, notifications, SMTP and security helpers
+- Automated tests for identity, API, Git, LFS, backup/restore, collaboration, external access, governance, reviews, checks, webhooks, notifications, SMTP and security helpers
 
 ## Important scope boundary
 
-This is the **Private Alpha foundation**, not yet a GitHub/GitLab replacement. Production work still required includes One Kuklabs Account/SSO/MFA, hosted CI runners and workflow execution, PostgreSQL and distributed jobs, package/container registries, billing and usage metering, abuse controls, scalable object storage, broader administration and high-availability deployment.
+This is the **Private Alpha foundation**, not yet a GitHub/GitLab replacement. Production work still required includes hosted CI runners and workflow execution, PostgreSQL and distributed jobs, package/container registries, billing and usage metering, abuse controls, scalable object storage, broader administration, enterprise SSO/MFA policy controls and high-availability deployment.
 
 ## Local quick start
 
@@ -93,7 +100,29 @@ Email: admin@kuklabs.local
 Password: KukGit@2026
 ```
 
-These defaults are strictly for local development. Set strong environment values before any shared deployment.
+These defaults are strictly for isolated local development. Local password authentication is rejected by default in production.
+
+## One Kuklabs Account
+
+Production defaults to central AuthKit. KukGit sends `X-Kuklabs-Product: kukgit` to the shared `/v1/auth/*` contract and never creates or verifies a separate production password.
+
+The browser receives only a random HttpOnly KukGit bridge cookie. AuthKit access and rotating refresh tokens remain encrypted server-side with AES-256-GCM. Protected requests validate the central account, KukGit product membership and the current AuthKit device session; centrally revoked sessions are removed locally and require a new login.
+
+Required production configuration:
+
+```bash
+NODE_ENV=production
+KUKGIT_AUTH_MODE=authkit
+KUKGIT_AUTHKIT_BASE_URL=https://auth.kuklabs.com
+KUKGIT_AUTHKIT_PRODUCT_ID=kukgit
+KUKGIT_AUTHKIT_ENCRYPTION_KEY=<at-least-32-random-characters>
+KUKGIT_COOKIE_SECURE=true
+KUKGIT_ADMIN_EMAIL=<verified-founder-email>
+```
+
+Existing KukGit users are linked lazily by verified normalized email while keeping the same local product user ID, repository ownership, organization membership, PATs and SSH keys. Conflicting identities fail closed instead of being automatically merged.
+
+Read [One Kuklabs Account and AuthKit](docs/ONE_KUKLABS_ACCOUNT.md) before staging or production deployment.
 
 ## Git clone and push authentication
 
@@ -225,7 +254,7 @@ Snapshots include SQLite metadata, Git bundles and all recorded Git LFS objects.
 ```bash
 npm run dev       # Watch-mode server
 npm start         # Start server
-npm run seed      # Seed founder, Kuklabs organization and demo repository
+npm run seed      # Seed local-development founder and demo repository
 npm run doctor    # Check runtime requirements and configuration
 npm run token --  # Create, list or revoke personal access tokens
 npm run backup -- # Create, verify, restore and prune verified snapshots
@@ -239,7 +268,7 @@ npm test          # Run automated tests
 ```text
 kukgit/
 ├── public/                 # Dependency-free web application
-├── src/                    # Auth, Git, LFS, access, reviews, backups, notifications and email services
+├── src/                    # Identity, Git, LFS, access, reviews, backups, notifications and email services
 ├── scripts/                # Seed, doctor, token, SSH and backup administration
 ├── test/                   # Node test suite
 ├── docs/                   # Product, architecture, operations and security docs

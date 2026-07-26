@@ -173,10 +173,26 @@ Progress delivered:
 - external invitation and collaborator audit events without token exposure
 - external collaborator Settings and acceptance interfaces
 - external collaborator security and operations runbook
+- One Kuklabs Account through the central `/v1/auth/*` AuthKit contract
+- stable one-to-one `kuklabs_user_id` mapping to KukGit product profiles
+- verified-email linking that preserves existing KukGit foreign-key identity
+- duplicate central-ID and email-link conflict protection
+- production default to AuthKit with local-password authentication blocked
+- password, signup, OTP and Google ID-token proxy flows
+- random HttpOnly browser bridge cookies without browser token exposure
+- AES-256-GCM encrypted AuthKit access and refresh tokens at rest
+- access-token refresh with central rotating refresh-token replacement
+- request-scoped central identity for existing authorization code
+- central `/me`, product-access and active device-session validation
+- immediate local bridge removal after central device-session revocation
+- fail-closed protected browser APIs during AuthKit outages
+- password-free founder organization bootstrap after verified central login
+- One Kuklabs Account login, signup and OTP web interface
+- AuthKit production rollout, rollback, key-rotation and incident runbook
+- automated identity, encryption, refresh, revocation, CSRF and production-boundary tests
 
 Remaining:
 
-- One Kuklabs Account/AuthKit
 - organization self-service signup
 - PostgreSQL migration
 - broader admin console and tenant support tools
