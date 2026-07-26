@@ -12,6 +12,10 @@ import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
 import { ensureGitAvailable } from './src/git.mjs';
 import {
+  createPullRequestDiffsApiHandler,
+  migratePullRequestDiffs,
+} from './src/pull-request-diffs.mjs';
+import {
   createRepositoryAccessApiHandler,
   createRepositoryAccessGuard,
   migrateRepositoryAccess,
@@ -50,6 +54,7 @@ migrateCollaboration(db);
 migrateRepositoryAccess(db);
 migrateBranchGovernance(db);
 migrateReviewThreads(db);
+migratePullRequestDiffs(db);
 migrateStatusChecks(db);
 migrateWebhooks(db);
 migrateRepositoryLifecycle(db);
@@ -66,6 +71,7 @@ const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
 const repositoryLifecycleApi = createRepositoryLifecycleApiHandler({ config, db });
 const sshKeysApi = createSshKeysApiHandler({ config, db });
 const branchGovernanceApi = createBranchGovernanceApiHandler({ config, db });
+const pullRequestDiffsApi = createPullRequestDiffsApiHandler({ config, db });
 const reviewThreadsApi = createReviewThreadsApiHandler({ config, db });
 const statusChecksApi = createStatusChecksApiHandler({ config, db });
 const webhooksApi = createWebhooksApiHandler({ config, db });
@@ -78,6 +84,7 @@ async function dispatch(req, res) {
   if (await sshKeysApi(req, res)) return;
   if (await repositoryAccessApi(req, res)) return;
   if (await branchGovernanceApi(req, res)) return;
+  if (await pullRequestDiffsApi(req, res)) return;
   if (await reviewThreadsApi(req, res)) return;
   if (await statusChecksApi(req, res)) return;
   if (await webhooksApi(req, res)) return;
