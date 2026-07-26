@@ -11,7 +11,8 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Real bare Git repository creation
 - Public and private repository metadata
 - Git smart HTTP clone and authenticated push
-- Scoped personal access tokens with expiry, revocation and last-used tracking
+- Scoped personal access tokens with browser and CLI lifecycle management
+- Token expiry, revocation, last-used tracking and one-time secret display
 - Production Git authorization by token scope plus organization role
 - Mirror import for public HTTPS/SSH repositories
 - Organizations and role-based access control
@@ -28,7 +29,7 @@ This repository contains the first working KukGit foundation. It is not a visual
 
 ## Important scope boundary
 
-This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, SSO/MFA, browser token management, large-scale object storage, distributed job queues, CI runners, package/container registries, LFS, webhooks, email, billing, abuse controls and high-availability deployment.
+This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, SSO/MFA, organization invitations and teams, large-scale object storage, distributed job queues, CI runners, package/container registries, LFS, webhooks, email, billing, abuse controls and high-availability deployment.
 
 ## Local quick start
 
@@ -75,7 +76,7 @@ git push http://developer:<KUKGIT_DEV_GIT_TOKEN>@localhost:8787/git/kuklabs/kukg
 
 The shared development token is disabled automatically in production. Production clone/push for protected repositories requires a scoped KukGit personal access token.
 
-Create a 90-day read/write token:
+Create a token from **Settings → Personal access tokens** in the KukGit interface, or create a 90-day read/write token from the server CLI:
 
 ```bash
 npm run token -- create \
@@ -85,7 +86,7 @@ npm run token -- create \
   --days 90
 ```
 
-Then use the returned `kgp_...` value as the HTTP Basic password. Read [Personal Access Tokens](docs/PERSONAL_ACCESS_TOKENS.md) for listing, revocation and operational guidance.
+Then use the returned `kgp_...` value as the HTTP Basic password. Read [Personal Access Tokens](docs/PERSONAL_ACCESS_TOKENS.md) for browser management, listing, revocation and operational guidance.
 
 ## Commands
 
