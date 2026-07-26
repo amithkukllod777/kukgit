@@ -4,6 +4,7 @@ import { createApp } from './src/app.mjs';
 import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
 import { ensureGitAvailable } from './src/git.mjs';
+import { createTokenApiHandler } from './src/token-api.mjs';
 
 const config = loadConfig();
 fs.mkdirSync(config.repositoriesDir, { recursive: true });
@@ -11,7 +12,12 @@ fs.mkdirSync(config.tempDir, { recursive: true });
 const gitVersion = ensureGitAvailable();
 const db = openDatabase(config);
 const seeded = seedCore(db, config);
-const server = http.createServer(createApp({ config, db }));
+const app = createApp({ config, db });
+const tokenApi = createTokenApiHandler({ config, db });
+const server = http.createServer(async (req, res) => {
+  if (await tokenApi(req, res)) return;
+  return app(req, res);
+});
 
 server.listen(config.port, config.host, () => {
   console.log(`\nKukGit v0.1.0 is running at ${config.baseUrl}`);
