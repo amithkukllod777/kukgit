@@ -77,7 +77,13 @@ function routeState() {
 
 function invitationRoute() {
   const raw = location.hash || '';
-  return raw.startsWith('#/accept-invite') || raw.startsWith('#/accept-repo-invite') || raw.includes('repoInviteToken=');
+  const pendingOrganizationInvitation = sessionStorage.getItem('kukgit_pending_invitation');
+  return Boolean(
+    pendingOrganizationInvitation ||
+    raw.startsWith('#/accept-invite') ||
+    raw.startsWith('#/accept-repo-invite') ||
+    raw.includes('repoInviteToken='),
+  );
 }
 
 function getOnboardingStatus(force = false) {
