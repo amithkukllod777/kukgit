@@ -2,80 +2,127 @@
 
 **KukGit is an AI-first Git hosting and developer operating system from Kuklabs Inc.**
 
-This repository contains the working KukGit foundation. It is not a visual mockup: it creates real bare Git repositories, supports Git smart HTTP and SSH clone/push, stores multi-tenant metadata, offers repository browsing, issues, pull requests, governed reviews, verified backups, Git LFS, notifications, transactional email, external repository collaboration, One Kuklabs Account, self-service organization onboarding and local repository-health analysis.
+This repository is a working Private Alpha foundation, not a visual mockup. KukGit creates real bare Git repositories, supports Git smart HTTP and SSH, provides repository collaboration and governance, uses One Kuklabs Account, and includes verified backup and PostgreSQL-migration tooling.
 
-> Product direction: Git hosting + collaboration + AI review + CI/CD + package/container registries + cloud development and deployment.
+> Product direction: Git hosting + collaboration + AI review + CI/CD + registries + cloud development and deployment.
 
-## What works in v0.1.0
+## Current capability
+
+### Identity and tenancy
 
 - One Kuklabs Account production authentication through central AuthKit
-- Stable central `kuklabs_user_id` mapped one-to-one to KukGit product profiles
-- AuthKit password, signup, OTP and Google ID-token flows
+- Stable `kuklabs_user_id` mapped one-to-one to a KukGit product profile
+- Password, signup, OTP and Google ID-token flows
 - Server-side encrypted access and rotating refresh-token custody
-- Central product-access and signed-in device-session validation
-- Verified-email identity linking with duplicate-account conflict protection
+- Central product-access and active device-session validation
+- Verified-email linking with duplicate-account conflict protection
 - Production local-password authentication disabled by default
-- Self-service organization workspace creation for authenticated users
+- Self-service organization creation
 - Atomic Owner membership and default Developers-team provisioning
 - Configurable organization ownership limits and reserved-slug protection
-- Guided zero-organization onboarding without disrupting repository-only collaborators
+- Guided zero-organization onboarding
+- Organizations, roles, invitations, teams and member administration
+
+### Git and repository storage
+
 - Real bare Git repository creation
-- Public and private repository metadata
-- Git smart HTTP clone and authenticated push
-- Git-over-SSH with user keys and repository deploy keys
-- Git LFS Batch API, verified uploads, range downloads, quotas and deduplication
-- Scoped personal access tokens with browser and CLI lifecycle management
-- Token expiry, revocation, last-used tracking and one-time secret display
-- Personal-access-token expiry reminders without secret exposure
-- Production Git authorization by token scope plus effective repository permission
-- Mirror import for public HTTPS/SSH repositories
-- Organizations and role-based access control
-- Expiring organization invitations with email verification, one-time acceptance links and revocation
-- Transactional organization invitation email and secure resend
-- Organization member directory
-- Teams with maintainers, members and auditable lifecycle management
-- Direct repository collaborators and repository team access grants
-- Repository-only external collaborators without organization membership
-- Expiring exact-email repository invitations, revoke and secure resend
-- External collaborator discovery restricted to explicitly shared repositories
-- Organization member and team privacy for external users
-- Browser, Git HTTP, SSH and Git LFS authorization for external access
-- Read, Triage, Write, Maintain and Admin permission hierarchy
-- Effective permission calculation across organization role, direct grant and team grants
-- Durable per-user notification inbox, unread counts and delivery preferences
-- Dependency-free SMTP transport, durable email outbox, retries and delivery history
-- Pull-request, review, merge, status-check and operational notifications
-- Repository archive, organization transfer, recoverable Trash, restore and permanent purge
-- Exact-branch protection rules
-- Pull-request approval and change-request reviews
-- Required approval counts and stale-approval detection
-- Direct browser commit and Git push protection for guarded branches
-- Pull-request merge-policy enforcement
-- Git-native unified and side-by-side pull-request diffs
-- Actual patch-line and multi-line review anchors
-- Threaded replies, resolution, reopening and outdated-thread detection
-- Commit status records with Pending, Success, Failure and Error states
-- PAT-authenticated CI and integration status publishing
-- Exact-branch required status-check policies and current-head freshness
-- Repository webhook subscriptions with encrypted secrets and HMAC-signed deliveries
-- HTTPS/public-network target enforcement, SSRF protection and bounded retries
-- Terminal webhook failure alerts for the instance administrator
-- Repository code browser: branches, commits, folders and files
+- Public, internal and private repository metadata
+- Git smart HTTP clone, fetch and authenticated push
+- Git over SSH with user keys and repository deploy keys
+- Scoped Personal Access Tokens
+- Token expiry, revocation, last-used tracking and one-time display
+- Public HTTPS/SSH repository mirror import
+- Browser code, branch, commit, folder and file views
 - Browser branch creation and file commits
-- Issues with status and priority
-- Pull requests with branch comparison and merge
-- Verified `.kgbak` snapshots, integrity checks, dry-run restore and disaster recovery
-- Backup and Git LFS operational alerts
-- KukAI local repository health analysis
-- Security, test, CI, documentation and governance checks
-- Audit log
-- Responsive Kuklabs-branded web interface
-- No runtime npm dependencies
-- Automated tests for identity, onboarding, API, Git, LFS, backup/restore, collaboration, external access, governance, reviews, checks, webhooks, notifications, SMTP and security helpers
+- Repository archive, transfer, recoverable Trash, restore and purge
 
-## Important scope boundary
+### Git Large File Storage
 
-This is the **Private Alpha foundation**, not yet a GitHub/GitLab replacement. Production work still required includes hosted CI runners and workflow execution, PostgreSQL and distributed jobs, package/container registries, billing and usage metering, abuse controls, scalable object storage, broader administration, enterprise SSO/MFA policy controls and high-availability deployment.
+- Git LFS Batch API
+- SHA-256 verified streaming uploads
+- content-addressed deduplication
+- byte-range downloads and ETags
+- repository and instance quotas
+- HTTPS and SSH authorization
+- integrity inspection and orphan cleanup
+- LFS-aware verified backups
+
+### Repository access and external collaboration
+
+- Read, Triage, Write, Maintain and Admin permissions
+- effective permission calculation across organization, direct and team sources
+- direct repository collaborators and team grants
+- repository-only external collaborators without organization membership
+- expiring exact-email repository invitations
+- secure revoke, resend and replay protection
+- external-user privacy for organization members, teams and unrelated repositories
+- browser, PAT Git HTTP, SSH and LFS enforcement from one access model
+
+### Pull requests and governance
+
+- issues with status and priority
+- pull requests with branch comparison and merge
+- exact-branch protection policies
+- required pull requests and approvals
+- stale-approval handling
+- protected browser and Git pushes
+- Git-native unified and side-by-side diffs
+- real patch-line and multi-line review anchors
+- threaded review conversations, resolution and outdated detection
+- required current-head status checks
+- PAT-authenticated status publishing
+
+### Events, notifications and operations
+
+- signed repository webhooks with encrypted secrets
+- HTTPS/public-network target enforcement and SSRF protection
+- bounded retries, delivery history and manual redelivery
+- durable in-app notifications and unread counts
+- per-category notification preferences
+- dependency-free SMTP transport
+- durable email outbox, retries and delivery history
+- organization, review, status, webhook, backup and LFS alerts
+- audit log
+- responsive Kuklabs-branded interface
+
+### Backup and recovery
+
+- portable verified `.kgbak` snapshots
+- transactionally consistent SQLite metadata snapshot
+- Git bundle creation and `git fsck`
+- Git LFS object inclusion and SHA-256 verification
+- archive entry checksums and traversal protection
+- dry-run and atomic restore
+- maintenance mode, operation locks and retention controls
+
+### PostgreSQL migration foundation
+
+- centralized two-phase application migration runner
+- explicit KukGit schema version metadata
+- actual migrated SQLite schema inventory
+- foreign-key-safe import order
+- PostgreSQL DDL generation for every current metadata table
+- deterministic per-table NDJSON export
+- canonical schema and manifest JSON
+- SHA-256, byte-size and row-count verification
+- symbolic-link and non-regular-file rejection
+- permanent PostgreSQL preflight in CI
+
+**Important:** the live KukGit metadata runtime is still SQLite. The PostgreSQL runtime adapter, importer, dual-system rehearsal and production cutover are separate follow-up milestones.
+
+## Scope boundary
+
+KukGit is not yet a full GitHub/GitLab replacement. Major remaining production work includes:
+
+- asynchronous PostgreSQL runtime adapter and controlled cutover
+- hosted CI runners and workflow execution
+- package and container registries
+- subscriptions, quotas and usage metering
+- scalable object storage and distributed jobs
+- broader tenant-support administration
+- abuse controls and moderation
+- high availability and regional deployment
+- enterprise SSO/SCIM and advanced compliance controls
 
 ## Local quick start
 
@@ -97,20 +144,24 @@ Open:
 http://localhost:8787
 ```
 
-Development account:
+Local development account:
 
 ```text
 Email: admin@kuklabs.local
 Password: KukGit@2026
 ```
 
-These defaults are strictly for isolated local development. Local password authentication is rejected by default in production.
+These defaults are for isolated local development only.
 
 ## One Kuklabs Account
 
-Production defaults to central AuthKit. KukGit sends `X-Kuklabs-Product: kukgit` to the shared `/v1/auth/*` contract and never creates or verifies a separate production password.
+Production defaults to central AuthKit and sends:
 
-The browser receives only a random HttpOnly KukGit bridge cookie. AuthKit access and rotating refresh tokens remain encrypted server-side with AES-256-GCM. Protected requests validate the central account, KukGit product membership and the current AuthKit device session; centrally revoked sessions are removed locally and require a new login.
+```text
+X-Kuklabs-Product: kukgit
+```
+
+The browser receives only a random HttpOnly KukGit bridge cookie. AuthKit access and rotating refresh tokens remain encrypted server-side with AES-256-GCM.
 
 Required production configuration:
 
@@ -124,45 +175,57 @@ KUKGIT_COOKIE_SECURE=true
 KUKGIT_ADMIN_EMAIL=<verified-founder-email>
 ```
 
-Existing KukGit users are linked lazily by verified normalized email while keeping the same local product user ID, repository ownership, organization membership, PATs and SSH keys. Conflicting identities fail closed instead of being automatically merged.
+Read [One Kuklabs Account and AuthKit](docs/ONE_KUKLABS_ACCOUNT.md).
 
-Read [One Kuklabs Account and AuthKit](docs/ONE_KUKLABS_ACCOUNT.md) before staging or production deployment.
+## Organization onboarding
 
-## Organization self-service onboarding
-
-A verified Kuklabs Account user can create a free organization workspace from **Organizations → Create organization**. A user with no organization and no repository-only access is guided automatically to the onboarding screen after sign-in.
-
-Workspace creation is one database transaction: KukGit creates the organization, assigns the creator as Owner, creates a default Developers team and adds the creator as Team Maintainer. Any failure rolls back the complete workspace.
-
-Configure the maximum number of non-system organizations one user may own:
+A verified Kuklabs Account user can create a free organization from **Organizations → Create organization**. KukGit creates the organization, Owner membership and default Developers team in one transaction.
 
 ```bash
 KUKGIT_ORGANIZATION_OWNER_LIMIT=5
 ```
 
-Workspace slugs are globally unique and protect system/product names such as `kuklabs`, `kukgit`, `admin`, `api`, `auth`, `git`, `repositories` and `settings`. Optional organization websites must use HTTPS.
+Read [Organization Self-Service Onboarding](docs/ORGANIZATION_ONBOARDING.md).
 
-Repository-only external collaborators are not forced to create an organization; they continue to see only repositories explicitly shared with them.
+## PostgreSQL migration foundation
 
-Read [Organization Self-Service Onboarding](docs/ORGANIZATION_ONBOARDING.md) for API contracts, slug policy, rollout and support procedures.
+Inspect the current migrated SQLite schema:
 
-## Git clone and push authentication
+```bash
+npm run db:postgres -- inventory
+npm run db:postgres -- preflight
+```
 
-Public repositories can be cloned without authentication:
+Create and verify a deterministic metadata bundle:
+
+```bash
+npm run db:postgres -- export --out /secure/migrations/kukgit-cutover
+npm run db:postgres -- verify --bundle /secure/migrations/kukgit-cutover
+```
+
+Generate DDL only:
+
+```bash
+npm run db:postgres -- ddl --out /secure/migrations/kukgit-schema.sql
+```
+
+The bundle contains sensitive metadata and must be stored encrypted with restricted access. Its SHA-256 values detect corruption; they are not digital signatures.
+
+Bare Git repositories, LFS object bytes and `.kgbak` archives are not copied into the metadata bundle.
+
+Read [PostgreSQL Migration Foundation](docs/POSTGRESQL_MIGRATION.md) before any migration rehearsal.
+
+## Git authentication
+
+Public clone:
 
 ```bash
 git clone http://localhost:8787/git/kuklabs/kukgit-demo.git
 ```
 
-For local development, Git smart HTTP accepts `KUKGIT_DEV_GIT_TOKEN` as the HTTP Basic password:
+Protected clone/fetch requires a `repo:read` PAT plus Repository Read permission. Push requires `repo:write` plus Repository Write permission.
 
-```bash
-git push http://developer:<KUKGIT_DEV_GIT_TOKEN>@localhost:8787/git/kuklabs/kukgit-demo.git main
-```
-
-The shared development token is disabled automatically in production. Protected clone/fetch requires a read-capable personal access token plus effective Repository Read permission. Push requires a `repo:write` personal access token plus effective Repository Write permission.
-
-Create a token from **Settings → Personal access tokens** or from the server CLI:
+Create tokens from **Settings → Personal access tokens** or:
 
 ```bash
 npm run token -- create \
@@ -172,148 +235,64 @@ npm run token -- create \
   --days 90
 ```
 
-Use the returned `kgp_...` value as the HTTP Basic password. Read [Personal Access Tokens](docs/PERSONAL_ACCESS_TOKENS.md).
+Read [Personal Access Tokens](docs/PERSONAL_ACCESS_TOKENS.md) and [SSH Keys and Git over SSH](docs/SSH_KEYS.md).
 
-## Git SSH access
+## Collaboration and governance guides
 
-Users can register Ed25519, ECDSA or RSA public keys from **Settings → SSH keys**. Repository Admins can add read-only or read/write deploy keys from **Repository → Settings**.
+- [Organization Collaboration](docs/ORGANIZATION_COLLABORATION.md)
+- [External Repository Collaborators](docs/EXTERNAL_COLLABORATORS.md)
+- [Repository Access](docs/REPOSITORY_ACCESS.md)
+- [Branch Governance](docs/BRANCH_GOVERNANCE.md)
+- [Pull Request Diffs](docs/PULL_REQUEST_DIFFS.md)
+- [Review Threads](docs/REVIEW_THREADS.md)
+- [Required Status Checks](docs/REQUIRED_STATUS_CHECKS.md)
+- [Repository Webhooks](docs/WEBHOOKS.md)
 
-SSH authorization uses forced commands, repository permissions and the same branch-protection hooks as HTTP pushes. Read [SSH Keys and Git over SSH](docs/SSH_KEYS.md) for OpenSSH deployment, `AuthorizedKeysCommand`, static fallback generation and operational controls.
+## Operations guides
 
-## Git Large File Storage
-
-Enable Git LFS on a developer machine and track large-file patterns:
-
-```bash
-git lfs install
-git lfs track "*.zip"
-git add .gitattributes
-git commit -m "Track archives with Git LFS"
-```
-
-KukGit supports HTTPS and SSH remotes, repository-scoped authorization, SHA-256 verified streaming uploads, content-addressed deduplication, byte-range downloads, quotas, Admin integrity checks and LFS-aware verified backups.
-
-Open **Repository → Settings → Git Large File Storage** to review usage and object health. Read [Git Large File Storage](docs/GIT_LFS.md) for protocol, storage, quotas, security, GC and backup behavior.
-
-## Organization collaboration
-
-Open **Organizations → Organization collaboration** to invite users, review invitation status, manage members and create teams. Invitation tokens are shown only once and acceptance requires the exact invited account email.
-
-KukGit queues invitation email for existing and external users. Organization Admins can revoke an old invitation and send a fresh secure link with **Resend email**. Read [Organization Collaboration](docs/ORGANIZATION_COLLABORATION.md).
-
-## External repository collaborators
-
-Open **Repository → Settings → External collaborators** to invite a client, contractor or partner without adding them to the organization. Select Read, Triage, Write, Maintain or Admin permission and a 7-, 14- or 30-day invitation expiry.
-
-Acceptance is restricted to the exact invited email and creates only a direct repository grant. External users discover only explicitly shared repositories, while organization members, teams and other repositories remain hidden. The same permission applies to browser actions, Personal Access Token Git HTTP, SSH Git and Git LFS.
-
-External Repository Admins cannot transfer ownership or move a repository to Trash without actual organization Admin or Owner membership. Read [External Repository Collaborators](docs/EXTERNAL_COLLABORATORS.md).
-
-## Notifications and transactional email
-
-The topbar notification bell provides a durable user inbox with unread counts, internal links and read lifecycle. Open **Settings → Notification preferences** to choose in-app and email delivery for organization, security, pull-request, status-check and operations categories.
-
-Configure SMTP through `KUKGIT_SMTP_*` and `KUKGIT_EMAIL_*` environment variables. KukGit supports direct TLS or STARTTLS, a durable outbox, bounded retries, delivery-attempt history and Admin retry controls. Read [Notifications and Transactional Email](docs/NOTIFICATIONS_AND_EMAIL.md).
-
-## Repository access
-
-Open a repository and select **Settings** to manage direct collaborator permissions, external invitations, team grants and effective permission sources. KukGit combines organization role baseline, direct grants and team grants; the highest permission wins. Read [Repository Access](docs/REPOSITORY_ACCESS.md).
-
-## Branch protection and reviews
-
-Repository Admins can protect exact branches, require pull requests, require approvals, dismiss stale approvals and block direct browser/Git changes. Reviewers with Repository Write permission can approve, request changes or comment. Read [Branch Governance](docs/BRANCH_GOVERNANCE.md).
-
-## Pull-request diffs and review conversations
-
-The Pull requests page provides merge-base-correct unified and side-by-side patches, file navigation, whitespace controls, binary/rename metadata and comments anchored only to real patch lines. Shift-click creates same-side, same-hunk ranges.
-
-Review threads support replies, resolve/reopen actions and outdated history after the head changes. Repository Admins may require all active threads resolved before merge. Read [Pull Request Diffs](docs/PULL_REQUEST_DIFFS.md) and [Review Threads](docs/REVIEW_THREADS.md).
-
-## Required status checks
-
-Repository Admins can require CI/integration contexts for an exact base branch. Every selected context must report Success for the current pull-request head SHA; missing, Pending, Failure and Error states block merge.
-
-Trusted runners publish with a scoped `repo:write` personal access token:
-
-```bash
-curl -X POST \
-  -H "Authorization: Bearer <kgp_token>" \
-  -H "Content-Type: application/json" \
-  http://localhost:8787/api/status-checks/kuklabs/kukgit-demo/commits/<40-character-sha>/statuses \
-  -d '{"context":"test","state":"success","description":"All tests passed"}'
-```
-
-Read [Required Status Checks](docs/REQUIRED_STATUS_CHECKS.md).
-
-## Repository webhooks
-
-Repository Admins can create webhook subscriptions from **Repository → Settings**. KukGit sends signed JSON events for push, issue, pull-request, review and status activity.
-
-```text
-X-KukGit-Event: push
-X-KukGit-Delivery: whd_example
-X-KukGit-Signature-256: sha256=<HMAC digest>
-```
-
-Webhook secrets are displayed once, encrypted at rest and used to sign the exact raw request body. Production URLs must use HTTPS and resolve to public networks. Read [Repository Webhooks](docs/WEBHOOKS.md).
-
-## Verified backups and recovery
-
-Create and verify portable snapshots:
-
-```bash
-npm run backup -- maintenance on --reason "Scheduled backup"
-npm run backup -- create
-npm run backup -- list
-npm run backup -- verify --archive <file.kgbak>
-npm run backup -- maintenance off
-```
-
-Snapshots include SQLite metadata, Git bundles and all recorded Git LFS objects. Restore supports dry-run validation and writes only to a missing or empty target directory. Read [Verified Backups and Disaster Recovery](docs/BACKUPS_AND_DISASTER_RECOVERY.md).
+- [Notifications and Transactional Email](docs/NOTIFICATIONS_AND_EMAIL.md)
+- [Git Large File Storage](docs/GIT_LFS.md)
+- [Verified Backups and Disaster Recovery](docs/BACKUPS_AND_DISASTER_RECOVERY.md)
+- [PostgreSQL Migration Foundation](docs/POSTGRESQL_MIGRATION.md)
 
 ## Commands
 
 ```bash
-npm run dev       # Watch-mode server
-npm start         # Start server
-npm run seed      # Seed local-development founder and demo repository
-npm run doctor    # Check runtime requirements and configuration
-npm run token --  # Create, list or revoke personal access tokens
-npm run backup -- # Create, verify, restore and prune verified snapshots
-npm run ssh:authorized-keys # Generate restricted static authorized_keys fallback
-npm run check     # Validate JavaScript source syntax
-npm test          # Run automated tests
+npm run dev                  # Watch-mode server
+npm start                    # Start server
+npm run seed                 # Seed local-development data
+npm run doctor               # Runtime/configuration checks
+npm run token --             # PAT lifecycle
+npm run backup --            # Backup, verify, restore and prune
+npm run db:postgres --       # PostgreSQL inventory/export/verify/DDL
+npm run ssh:authorized-keys  # Generate restricted authorized_keys fallback
+npm run check                # JavaScript syntax validation
+npm test                     # Automated test suite
 ```
 
 ## Repository layout
 
 ```text
 kukgit/
-├── public/                 # Dependency-free web application
-├── src/                    # Identity, onboarding, Git, LFS, access, reviews, backups, notifications and email services
-├── scripts/                # Seed, doctor, token, SSH and backup administration
-├── test/                   # Node test suite
-├── docs/                   # Product, architecture, operations and security docs
-├── infra/                  # Container, reverse-proxy and OpenSSH deployment files
-├── data/                   # Local runtime data (not committed)
-├── server.mjs              # HTTP application entry point
-└── CLAUDE.md               # Coding-agent operating instructions
+├── public/       # Dependency-free web application
+├── src/          # Identity, DB, Git, LFS, access, review and operations services
+├── scripts/      # Seed, doctor, token, backup, SSH and DB migration commands
+├── test/         # Node test suite
+├── docs/         # Architecture, security and operations guides
+├── infra/        # Container, proxy and OpenSSH deployment files
+├── data/         # Local runtime data, never committed
+├── server.mjs    # HTTP application entry point
+└── CLAUDE.md     # Coding-agent instructions
 ```
 
 ## Architecture decision
 
-KukGit is built with a hybrid approach:
+- Kuklabs owns the product logic, UI, tenancy, permissions, billing, AI and workflows.
+- Proven Git is the repository object engine.
+- KukGit does not copy GitHub, GitLab, Gitea or Forgejo product code.
+- Storage and database migrations are phased and verified rather than rewritten as a big bang.
 
-- Kuklabs owns product logic, UI, tenancy, permissions, billing, AI, workflows and integrations.
-- Proven Git itself is used as the repository object engine.
-- No GitHub/GitLab/Gitea/Forgejo product repository is cloned or copied.
-- Open-source building blocks may be integrated later under compatible licenses.
-
-See [Architecture](docs/ARCHITECTURE.md) and [Roadmap](docs/ROADMAP.md).
-
-## Security
-
-Read [SECURITY.md](SECURITY.md) before deploying. Development defaults are intentionally easy to run and are not approved for internet exposure.
+See [Architecture](docs/ARCHITECTURE.md), [Roadmap](docs/ROADMAP.md) and [Security](SECURITY.md).
 
 ## Ownership
 
