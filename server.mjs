@@ -1,10 +1,8 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import { createApp } from './src/app.mjs';
-import {
-  createBackupsApiHandler,
-  createMaintenanceGuard,
-} from './src/backups.mjs';
+import { createMaintenanceGuard } from './src/backups.mjs';
+import { createLfsAwareBackupsApiHandler } from './src/backups-lfs.mjs';
 import {
   createBranchGovernanceApiHandler,
   createBranchGovernanceGuard,
@@ -75,7 +73,7 @@ const reviewThreadGuardedApp = createReviewThreadMergeGuard({ config, db, app: s
 const governedApp = createBranchGovernanceGuard({ config, db, app: reviewThreadGuardedApp });
 const tokenApi = createTokenApiHandler({ config, db });
 const collaborationApi = createCollaborationApiHandler({ config, db });
-const backupsApi = createBackupsApiHandler({ config, db });
+const backupsApi = createLfsAwareBackupsApiHandler({ config, db });
 const gitLfsApi = createGitLfsHandler({ config, db });
 const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
 const repositoryLifecycleApi = createRepositoryLifecycleApiHandler({ config, db });
