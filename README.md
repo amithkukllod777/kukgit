@@ -2,7 +2,7 @@
 
 **KukGit is an AI-first Git hosting and developer operating system from Kuklabs Inc.**
 
-This repository contains the working KukGit foundation. It is not a visual mockup: it creates real bare Git repositories, supports Git smart HTTP and SSH clone/push, stores multi-tenant metadata, offers repository browsing, issues, pull requests, governed reviews, verified backups, Git LFS, notifications, transactional email, external repository collaboration, One Kuklabs Account and local repository-health analysis.
+This repository contains the working KukGit foundation. It is not a visual mockup: it creates real bare Git repositories, supports Git smart HTTP and SSH clone/push, stores multi-tenant metadata, offers repository browsing, issues, pull requests, governed reviews, verified backups, Git LFS, notifications, transactional email, external repository collaboration, One Kuklabs Account, self-service organization onboarding and local repository-health analysis.
 
 > Product direction: Git hosting + collaboration + AI review + CI/CD + package/container registries + cloud development and deployment.
 
@@ -15,6 +15,10 @@ This repository contains the working KukGit foundation. It is not a visual mocku
 - Central product-access and signed-in device-session validation
 - Verified-email identity linking with duplicate-account conflict protection
 - Production local-password authentication disabled by default
+- Self-service organization workspace creation for authenticated users
+- Atomic Owner membership and default Developers-team provisioning
+- Configurable organization ownership limits and reserved-slug protection
+- Guided zero-organization onboarding without disrupting repository-only collaborators
 - Real bare Git repository creation
 - Public and private repository metadata
 - Git smart HTTP clone and authenticated push
@@ -67,7 +71,7 @@ This repository contains the working KukGit foundation. It is not a visual mocku
 - Audit log
 - Responsive Kuklabs-branded web interface
 - No runtime npm dependencies
-- Automated tests for identity, API, Git, LFS, backup/restore, collaboration, external access, governance, reviews, checks, webhooks, notifications, SMTP and security helpers
+- Automated tests for identity, onboarding, API, Git, LFS, backup/restore, collaboration, external access, governance, reviews, checks, webhooks, notifications, SMTP and security helpers
 
 ## Important scope boundary
 
@@ -123,6 +127,24 @@ KUKGIT_ADMIN_EMAIL=<verified-founder-email>
 Existing KukGit users are linked lazily by verified normalized email while keeping the same local product user ID, repository ownership, organization membership, PATs and SSH keys. Conflicting identities fail closed instead of being automatically merged.
 
 Read [One Kuklabs Account and AuthKit](docs/ONE_KUKLABS_ACCOUNT.md) before staging or production deployment.
+
+## Organization self-service onboarding
+
+A verified Kuklabs Account user can create a free organization workspace from **Organizations → Create organization**. A user with no organization and no repository-only access is guided automatically to the onboarding screen after sign-in.
+
+Workspace creation is one database transaction: KukGit creates the organization, assigns the creator as Owner, creates a default Developers team and adds the creator as Team Maintainer. Any failure rolls back the complete workspace.
+
+Configure the maximum number of non-system organizations one user may own:
+
+```bash
+KUKGIT_ORGANIZATION_OWNER_LIMIT=5
+```
+
+Workspace slugs are globally unique and protect system/product names such as `kuklabs`, `kukgit`, `admin`, `api`, `auth`, `git`, `repositories` and `settings`. Optional organization websites must use HTTPS.
+
+Repository-only external collaborators are not forced to create an organization; they continue to see only repositories explicitly shared with them.
+
+Read [Organization Self-Service Onboarding](docs/ORGANIZATION_ONBOARDING.md) for API contracts, slug policy, rollout and support procedures.
 
 ## Git clone and push authentication
 
@@ -268,7 +290,7 @@ npm test          # Run automated tests
 ```text
 kukgit/
 ├── public/                 # Dependency-free web application
-├── src/                    # Identity, Git, LFS, access, reviews, backups, notifications and email services
+├── src/                    # Identity, onboarding, Git, LFS, access, reviews, backups, notifications and email services
 ├── scripts/                # Seed, doctor, token, SSH and backup administration
 ├── test/                   # Node test suite
 ├── docs/                   # Product, architecture, operations and security docs
