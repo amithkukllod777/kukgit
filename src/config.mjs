@@ -6,6 +6,7 @@ const root = path.resolve(here, '..');
 
 export function loadConfig(overrides = {}) {
   const dataDir = path.resolve(overrides.dataDir ?? process.env.KUKGIT_DATA_DIR ?? path.join(root, 'data'));
+  const isProduction = (overrides.nodeEnv ?? process.env.NODE_ENV) === 'production';
   return {
     root,
     host: overrides.host ?? process.env.HOST ?? '0.0.0.0',
@@ -16,12 +17,13 @@ export function loadConfig(overrides = {}) {
     repositoriesDir: overrides.repositoriesDir ?? path.join(dataDir, 'repos'),
     tempDir: overrides.tempDir ?? path.join(dataDir, 'tmp'),
     publicDir: path.join(root, 'public'),
-    isProduction: (overrides.nodeEnv ?? process.env.NODE_ENV) === 'production',
+    isProduction,
     cookieSecure: String(overrides.cookieSecure ?? process.env.KUKGIT_COOKIE_SECURE ?? 'false') === 'true',
     adminEmail: overrides.adminEmail ?? process.env.KUKGIT_ADMIN_EMAIL ?? 'admin@kuklabs.local',
     adminPassword: overrides.adminPassword ?? process.env.KUKGIT_ADMIN_PASSWORD ?? 'KukGit@2026',
     adminName: overrides.adminName ?? process.env.KUKGIT_ADMIN_NAME ?? 'Amit Kumar Kuklod',
     gitToken: overrides.gitToken ?? process.env.KUKGIT_DEV_GIT_TOKEN ?? 'kukgit-dev-token-change-me',
+    webhookEncryptionKey: overrides.webhookEncryptionKey ?? process.env.KUKGIT_WEBHOOK_ENCRYPTION_KEY ?? (isProduction ? '' : 'kukgit-development-webhook-key-change-me'),
     aiEndpoint: overrides.aiEndpoint ?? process.env.KUKGIT_AI_ENDPOINT ?? '',
     aiApiKey: overrides.aiApiKey ?? process.env.KUKGIT_AI_API_KEY ?? '',
   };

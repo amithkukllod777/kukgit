@@ -60,6 +60,16 @@ Progress delivered:
 - server-side merge blocking for missing, pending, failed or errored checks
 - status-check Settings and pull-request browser interfaces
 - status policy and publisher audit events
+- repository webhook subscriptions and event filters
+- AES-256-GCM encrypted webhook secrets
+- HMAC-SHA256 signed JSON deliveries
+- HTTPS and public-network target enforcement
+- DNS address pinning and SSRF protection
+- pending, processing, success and failure delivery lifecycle
+- bounded exponential retries, ping and manual redelivery
+- automatic push, issue, pull-request, review and status event capture
+- webhook Settings and delivery-history browser interface
+- webhook lifecycle and redelivery audit events
 
 Remaining:
 
@@ -71,7 +81,6 @@ Remaining:
 - PostgreSQL migration
 - repository transfer, archive and delete
 - unified diff rendering and diff-hunk anchors
-- webhook delivery and retry system
 - email and in-app notifications
 - Git LFS
 - backups and restore automation

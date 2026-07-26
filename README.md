@@ -39,6 +39,12 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Exact-branch required status-check policies
 - Current-head status freshness and stale-result isolation
 - Missing, pending, failed and errored check merge blocking
+- Repository webhook subscriptions with event filters
+- AES-256-GCM encrypted webhook secrets
+- HMAC-SHA256 signed webhook deliveries
+- HTTPS/public-network target enforcement and SSRF protection
+- Delivery history, bounded retries, ping and manual redelivery
+- Automatic push, issue, pull-request, review and status event capture
 - Repository code browser: branches, commits, folders and files
 - Browser branch creation and file commits
 - Issues with status and priority
@@ -48,11 +54,11 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Audit log
 - Responsive Kuklabs-branded web interface
 - No runtime npm dependencies
-- Automated tests for API, Git engine, collaboration, repository access, branch governance, review threads, status checks, analysis and security helpers
+- Automated tests for API, Git engine, collaboration, repository access, governance, reviews, status checks, webhooks, analysis and security helpers
 
 ## Important scope boundary
 
-This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, One Kuklabs Account/SSO/MFA, external collaborators, true unified diff rendering and code-line patch context, hosted CI runners, workflow execution, large-scale object storage, distributed job queues, package/container registries, LFS, webhooks, email, billing, abuse controls and high-availability deployment.
+This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, One Kuklabs Account/SSO/MFA, external collaborators, true unified diff rendering and code-line patch context, hosted CI runners, workflow execution, large-scale object storage, distributed job queues, package/container registries, LFS, email, billing, abuse controls and high-availability deployment.
 
 ## Local quick start
 
@@ -174,6 +180,28 @@ curl -X POST \
 
 A new pull-request head commit requires fresh results; prior commit statuses are never reused for merge. Read [Required Status Checks](docs/REQUIRED_STATUS_CHECKS.md) for publishing, branch policies, permissions and merge enforcement.
 
+## Repository webhooks
+
+Repository Admins can create webhook subscriptions from **Repository → Settings**. KukGit sends signed JSON events for push, issue, pull-request, review and status activity.
+
+Each delivery includes:
+
+```text
+X-KukGit-Event: push
+X-KukGit-Delivery: whd_example
+X-KukGit-Signature-256: sha256=<HMAC digest>
+```
+
+Webhook secrets are displayed once, encrypted at rest and used to sign the exact raw request body. Production URLs must use HTTPS and resolve to public networks. Failed deliveries retry with bounded exponential backoff and can be manually redelivered from the delivery history.
+
+Set a stable production encryption key before creating webhooks:
+
+```text
+KUKGIT_WEBHOOK_ENCRYPTION_KEY=<high-entropy-random-value>
+```
+
+Read [Repository Webhooks](docs/WEBHOOKS.md) for signature verification, target validation, retries, API endpoints and operational guidance.
+
 ## Commands
 
 ```bash
@@ -191,7 +219,7 @@ npm test          # Run automated tests
 ```text
 kukgit/
 ├── public/                 # Dependency-free web application
-├── src/                    # API, auth, access, governance, reviews, checks, database, Git and analysis services
+├── src/                    # API, auth, access, governance, reviews, checks, webhooks, database and Git services
 ├── scripts/                # Seed, environment doctor and token administration
 ├── test/                   # Node test suite
 ├── docs/                   # Product, architecture, business and security docs

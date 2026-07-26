@@ -27,6 +27,12 @@ import {
   migrateStatusChecks,
 } from './src/status-checks.mjs';
 import { createTokenApiHandler } from './src/token-api.mjs';
+import {
+  createWebhookEventCapture,
+  createWebhooksApiHandler,
+  migrateWebhooks,
+  startWebhookWorker,
+} from './src/webhooks.mjs';
 
 const config = loadConfig();
 fs.mkdirSync(config.repositoriesDir, { recursive: true });
@@ -38,6 +44,7 @@ migrateRepositoryAccess(db);
 migrateBranchGovernance(db);
 migrateReviewThreads(db);
 migrateStatusChecks(db);
+migrateWebhooks(db);
 const seeded = seedCore(db, config);
 installExistingBranchProtectionHooks(config, db);
 const app = createApp({ config, db });
@@ -50,17 +57,24 @@ const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
 const branchGovernanceApi = createBranchGovernanceApiHandler({ config, db });
 const reviewThreadsApi = createReviewThreadsApiHandler({ config, db });
 const statusChecksApi = createStatusChecksApiHandler({ config, db });
+const webhooksApi = createWebhooksApiHandler({ config, db });
 const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app: governedApp });
-const server = http.createServer(async (req, res) => {
+
+async function dispatch(req, res) {
   if (await tokenApi(req, res)) return;
   if (await collaborationApi(req, res)) return;
   if (await repositoryAccessApi(req, res)) return;
   if (await branchGovernanceApi(req, res)) return;
   if (await reviewThreadsApi(req, res)) return;
   if (await statusChecksApi(req, res)) return;
+  if (await webhooksApi(req, res)) return;
   if (await repositoryAccessGuard(req, res)) return;
   return governedApp(req, res);
-});
+}
+
+const capturedDispatch = createWebhookEventCapture({ config, db, next: dispatch });
+const stopWebhookWorker = startWebhookWorker(db, config);
+const server = http.createServer(capturedDispatch);
 
 server.listen(config.port, config.host, () => {
   console.log(`\nKukGit v0.1.0 is running at ${config.baseUrl}`);
@@ -72,10 +86,14 @@ server.listen(config.port, config.host, () => {
   if (!config.isProduction && config.gitToken === 'kukgit-dev-token-change-me') {
     console.warn('WARNING: Set KUKGIT_DEV_GIT_TOKEN before sharing this server.');
   }
+  if (config.isProduction && !config.webhookEncryptionKey) {
+    console.warn('WARNING: KUKGIT_WEBHOOK_ENCRYPTION_KEY is required before creating production webhooks.');
+  }
 });
 
 function shutdown(signal) {
   console.log(`\n${signal} received. Shutting down KukGit...`);
+  stopWebhookWorker();
   server.close(() => {
     try { db.close(); } catch {}
     process.exit(0);
