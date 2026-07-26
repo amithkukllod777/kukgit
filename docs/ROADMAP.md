@@ -103,6 +103,20 @@ Progress delivered:
 - stable anchor hashes with merge-base and head SHA history
 - large diff safety limits and phantom-line sanitization
 - diff API permission, path, anchor and CSRF enforcement
+- transactionally consistent SQLite metadata snapshots
+- active, trashed and empty repository snapshot coverage
+- Git bundle creation, ref manifests and source `git fsck` verification
+- dependency-free compressed portable backup archives
+- SHA-256 entry checksums, footer validation and manifest enforcement
+- absolute-path, duplicate-entry and traversal protection
+- SQLite integrity, foreign-key and repository-count verification
+- Git bundle verification and restored repository `git fsck`
+- dry-run and atomic empty-directory restore workflows
+- operation locks and maintenance-mode write quiescing
+- retention listing and two-condition pruning policy
+- backup create, list, verify, restore, prune and maintenance CLI
+- instance-admin backup API and Settings status interface
+- backup operation audit events and disaster-recovery runbook
 
 Remaining:
 
@@ -113,7 +127,6 @@ Remaining:
 - PostgreSQL migration
 - email and in-app notifications
 - Git LFS
-- backups and restore automation
 - admin console and tenant support tools
 
 ## Phase 2 — Public beta
