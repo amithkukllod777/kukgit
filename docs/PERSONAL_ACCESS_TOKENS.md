@@ -13,7 +13,18 @@ New tokens begin with `kgp_`. KukGit shows the plaintext value only once and sto
 
 Repository visibility and organization membership are checked in addition to token scope.
 
-## Create a token
+## Create and manage tokens in the browser
+
+1. Sign in to KukGit.
+2. Open **Settings**.
+3. In **Personal access tokens**, enter a device or integration name.
+4. Choose an expiry and the minimum required scopes.
+5. Select **Create personal access token**.
+6. Copy the `kgp_...` value immediately and store it in a secure password manager.
+
+The Settings page lists safe token prefixes, scopes, expiry, last-use time and status. It never displays token hashes or previously issued plaintext values. Revocation takes effect immediately on the next Git authentication attempt.
+
+## Create a token from the server CLI
 
 ```bash
 npm run token -- create \
@@ -25,7 +36,7 @@ npm run token -- create \
 
 Copy the returned `kgp_...` value immediately. It cannot be displayed again.
 
-## List tokens
+## List tokens from the server CLI
 
 ```bash
 npm run token -- list --email admin@kuklabs.local
@@ -33,7 +44,7 @@ npm run token -- list --email admin@kuklabs.local
 
 The list shows token IDs, safe prefixes, scopes, expiry, last use and status. It never shows token plaintext or hashes.
 
-## Revoke a token
+## Revoke a token from the server CLI
 
 ```bash
 npm run token -- revoke \
@@ -42,6 +53,16 @@ npm run token -- revoke \
 ```
 
 Revocation takes effect on the next authentication attempt.
+
+## Browser API
+
+Authenticated browser sessions can use:
+
+- `GET /api/settings/tokens` — list safe token metadata and available scopes.
+- `POST /api/settings/tokens` — create a token. Supported expiry presets are 7, 30, 60, 90, 180 and 365 days.
+- `DELETE /api/settings/tokens/:id` — revoke a token owned by the current user.
+
+Write requests enforce same-origin protection. Creation and revocation are recorded in the KukGit audit log without storing or logging plaintext token values.
 
 ## Clone and push
 
