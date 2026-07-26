@@ -101,6 +101,9 @@ export function handleGitHttp(req, res, { config, db, pathname, queryString }) {
     REMOTE_USER: authenticated?.username ?? '',
     REMOTE_ADDR: req.socket.remoteAddress ?? '',
     SERVER_PROTOCOL: `HTTP/${req.httpVersion}`,
+    KUKGIT_DATABASE_PATH: config.databasePath,
+    KUKGIT_REPOSITORY_ID: repo.id,
+    KUKGIT_AUTH_USER_ID: authenticated?.userId ?? '',
   };
 
   const child = spawnGitHttpBackend({ env });

@@ -40,6 +40,13 @@ Progress delivered:
 - browser repository API enforcement
 - Git smart HTTP clone/fetch/push repository enforcement
 - repository access-management interface and audit events
+- exact-branch protection rules
+- pull-request approve, request-changes and comment reviews
+- required approval count and stale-approval detection
+- server-side merge-policy enforcement
+- protected-branch browser commit blocking
+- Git pre-receive protection for direct pushes
+- branch-governance browser interface and audit events
 
 Remaining:
 
@@ -50,8 +57,8 @@ Remaining:
 - SSH keys and deploy keys
 - PostgreSQL migration
 - repository transfer, archive and delete
-- branch protection and required reviews
-- comments, review threads and approvals
+- code-line review threads and review resolution
+- required CI status checks
 - webhooks
 - email and in-app notifications
 - Git LFS
