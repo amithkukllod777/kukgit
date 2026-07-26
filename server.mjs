@@ -16,6 +16,11 @@ import {
   createRepositoryAccessGuard,
   migrateRepositoryAccess,
 } from './src/repository-access.mjs';
+import {
+  createReviewThreadMergeGuard,
+  createReviewThreadsApiHandler,
+  migrateReviewThreads,
+} from './src/review-threads.mjs';
 import { createTokenApiHandler } from './src/token-api.mjs';
 
 const config = loadConfig();
@@ -26,20 +31,24 @@ const db = openDatabase(config);
 migrateCollaboration(db);
 migrateRepositoryAccess(db);
 migrateBranchGovernance(db);
+migrateReviewThreads(db);
 const seeded = seedCore(db, config);
 installExistingBranchProtectionHooks(config, db);
 const app = createApp({ config, db });
-const governedApp = createBranchGovernanceGuard({ config, db, app });
+const reviewThreadGuardedApp = createReviewThreadMergeGuard({ config, db, app });
+const governedApp = createBranchGovernanceGuard({ config, db, app: reviewThreadGuardedApp });
 const tokenApi = createTokenApiHandler({ config, db });
 const collaborationApi = createCollaborationApiHandler({ config, db });
 const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
 const branchGovernanceApi = createBranchGovernanceApiHandler({ config, db });
+const reviewThreadsApi = createReviewThreadsApiHandler({ config, db });
 const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app: governedApp });
 const server = http.createServer(async (req, res) => {
   if (await tokenApi(req, res)) return;
   if (await collaborationApi(req, res)) return;
   if (await repositoryAccessApi(req, res)) return;
   if (await branchGovernanceApi(req, res)) return;
+  if (await reviewThreadsApi(req, res)) return;
   if (await repositoryAccessGuard(req, res)) return;
   return governedApp(req, res);
 });
