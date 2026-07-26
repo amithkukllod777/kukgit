@@ -53,7 +53,7 @@ export function currentUser(db, req) {
   const row = db.prepare(`
     SELECT u.id, u.email, u.display_name AS displayName, s.expires_at AS expiresAt
     FROM sessions s JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = ? AND COALESCE(s.auth_mode, 'local') = 'local'
+    WHERE s.token_hash = ?
   `).get(hashToken(token));
   if (!row) return null;
   if (new Date(row.expiresAt).getTime() <= Date.now()) {
@@ -72,11 +72,10 @@ export function requireUser(db, req) {
 export function authenticate(db, email, password) {
   const normalized = normalizeEmail(email);
   const user = db.prepare(`
-    SELECT id, email, display_name AS displayName, password_hash AS passwordHash,
-      COALESCE(auth_source, 'local') AS authSource
+    SELECT id, email, display_name AS displayName, password_hash AS passwordHash
     FROM users WHERE email = ?
   `).get(normalized);
-  if (!user || user.authSource !== 'local' || !verifyPassword(password, user.passwordHash)) {
+  if (!user || !verifyPassword(password, user.passwordHash)) {
     throw httpError(401, 'Incorrect email or password.', 'INVALID_CREDENTIALS');
   }
   return user;
