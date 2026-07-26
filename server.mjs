@@ -5,6 +5,11 @@ import { createCollaborationApiHandler, migrateCollaboration } from './src/colla
 import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
 import { ensureGitAvailable } from './src/git.mjs';
+import {
+  createRepositoryAccessApiHandler,
+  createRepositoryAccessGuard,
+  migrateRepositoryAccess,
+} from './src/repository-access.mjs';
 import { createTokenApiHandler } from './src/token-api.mjs';
 
 const config = loadConfig();
@@ -13,13 +18,18 @@ fs.mkdirSync(config.tempDir, { recursive: true });
 const gitVersion = ensureGitAvailable();
 const db = openDatabase(config);
 migrateCollaboration(db);
+migrateRepositoryAccess(db);
 const seeded = seedCore(db, config);
 const app = createApp({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
 const collaborationApi = createCollaborationApiHandler({ config, db });
+const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
+const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app });
 const server = http.createServer(async (req, res) => {
   if (await tokenApi(req, res)) return;
   if (await collaborationApi(req, res)) return;
+  if (await repositoryAccessApi(req, res)) return;
+  if (await repositoryAccessGuard(req, res)) return;
   return app(req, res);
 });
 
