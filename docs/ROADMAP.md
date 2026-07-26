@@ -79,6 +79,17 @@ Progress delivered:
 - Owner-only permanent purge with storage quarantine rollback
 - repository lifecycle Settings and Trash interfaces
 - lifecycle audit and repository webhook events
+- Ed25519, ECDSA and RSA user SSH public keys
+- SHA-256 fingerprint validation and active-key reuse prevention
+- repository-scoped read-only and read/write deploy keys
+- effective repository permission enforcement for user SSH keys
+- forced-command Git upload-pack and receive-pack authorization
+- shell-injection and path-traversal command rejection
+- archived repository and branch-protection enforcement for SSH pushes
+- dynamic OpenSSH AuthorizedKeysCommand integration
+- restricted static authorized_keys generation fallback
+- SSH clone URL and key-management browser interfaces
+- SSH key last-used timestamps and Git SSH audit events
 
 Remaining:
 
@@ -86,7 +97,6 @@ Remaining:
 - external repository collaborators
 - organization signup and invitation email delivery
 - token rotation reminders and expiring-token notifications
-- SSH keys and deploy keys
 - PostgreSQL migration
 - unified diff rendering and diff-hunk anchors
 - email and in-app notifications
