@@ -2,8 +2,10 @@ import { spawnSync } from 'node:child_process';
 import { migrateCollaboration } from '../src/collaboration.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { openDatabase } from '../src/db.mjs';
+import { createLfsSshAuthentication, migrateGitLfs } from '../src/git-lfs.mjs';
 import { migrateRepositoryAccess } from '../src/repository-access.mjs';
 import { migrateRepositoryLifecycle } from '../src/repository-lifecycle.mjs';
+import { authorizeLfsSshAuthentication } from '../src/ssh-lfs.mjs';
 import { authorizeSshCommand, migrateSshKeys } from '../src/ssh-keys.mjs';
 
 function argument(name) {
@@ -22,6 +24,16 @@ try {
   migrateRepositoryAccess(db);
   migrateRepositoryLifecycle(db);
   migrateSshKeys(db);
+  migrateGitLfs(db);
+
+  if (originalCommand.startsWith('git-lfs-authenticate ')) {
+    const authorization = authorizeLfsSshAuthentication(db, { keyKind, keyId, originalCommand });
+    const response = createLfsSshAuthentication(config, authorization);
+    db.close();
+    process.stdout.write(`${JSON.stringify(response)}\n`);
+    process.exit(0);
+  }
+
   const authorization = authorizeSshCommand(db, config, { keyKind, keyId, originalCommand });
   db.close();
 
