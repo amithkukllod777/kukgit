@@ -27,17 +27,24 @@ Progress delivered:
 - CLI token lifecycle management
 - browser personal-access-token creation, one-time display, listing and revocation
 - same-origin protected token API and token lifecycle audit events
-- production Git HTTP enforcement by token scope and organization role
+- production Git HTTP enforcement by token scope and effective repository permission
 - authenticated Git fetch/push audit events
 - organization invitations with role, expiry, secure one-time links and revocation
 - email-verified invitation acceptance with replay protection
 - organization member directory
 - teams with maintainers, members and auditable lifecycle management
+- direct repository collaborators
+- repository team access grants
+- Read, Triage, Write, Maintain and Admin permission hierarchy
+- effective permission calculation across organization, direct and team sources
+- browser repository API enforcement
+- Git smart HTTP clone/fetch/push repository enforcement
+- repository access-management interface and audit events
 
 Remaining:
 
 - One Kuklabs Account/AuthKit
-- repository collaborators and repository team access enforcement
+- external repository collaborators
 - organization signup and invitation email delivery
 - token rotation reminders and expiring-token notifications
 - SSH keys and deploy keys
