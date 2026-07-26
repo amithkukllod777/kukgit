@@ -25,6 +25,11 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Effective permission calculation across organization role, direct grant and team grants
 - Browser API and Git clone/push repository-permission enforcement
 - Repository access-management interface
+- Exact-branch protection rules
+- Pull-request approval and change-request reviews
+- Required approval counts and stale-approval detection
+- Direct browser commit and Git push protection for guarded branches
+- Pull-request merge-policy enforcement
 - Repository code browser: branches, commits, folders and files
 - Browser branch creation and file commits
 - Issues with status and priority
@@ -34,11 +39,11 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Audit log
 - Responsive Kuklabs-branded web interface
 - No runtime npm dependencies
-- Automated tests for API, Git engine, collaboration, repository access, analysis and security helpers
+- Automated tests for API, Git engine, collaboration, repository access, branch governance, analysis and security helpers
 
 ## Important scope boundary
 
-This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, One Kuklabs Account/SSO/MFA, external collaborators, branch protection, review approvals, large-scale object storage, distributed job queues, CI runners, package/container registries, LFS, webhooks, email, billing, abuse controls and high-availability deployment.
+This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, One Kuklabs Account/SSO/MFA, external collaborators, review threads and code-line comments, large-scale object storage, distributed job queues, CI runners, package/container registries, LFS, webhooks, email, billing, abuse controls and high-availability deployment.
 
 ## Local quick start
 
@@ -120,6 +125,17 @@ Open a repository and select **Settings** to manage:
 
 KukGit combines organization role baseline, direct grants and every applicable team grant. The highest permission wins. Read [Repository Access](docs/REPOSITORY_ACCESS.md) for the complete authorization and Git enforcement model.
 
+## Branch protection and reviews
+
+Repository Admins can protect exact branches from **Repository → Settings**. A rule can:
+
+- require changes through a pull request
+- require 0–10 active approvals
+- dismiss approvals when the pull-request head changes
+- block browser commits and direct Git pushes
+
+Reviewers with repository Write permission can approve, request changes or comment from the repository Pull requests page. KukGit records each review against the current head SHA and blocks merge until the active policy is satisfied. Read [Branch Governance](docs/BRANCH_GOVERNANCE.md) for API, hook and merge-policy details.
+
 ## Commands
 
 ```bash
@@ -137,7 +153,7 @@ npm test          # Run automated tests
 ```text
 kukgit/
 ├── public/                 # Dependency-free web application
-├── src/                    # API, auth, access, collaboration, database, Git and analysis services
+├── src/                    # API, auth, access, governance, collaboration, database, Git and analysis services
 ├── scripts/                # Seed, environment doctor and token administration
 ├── test/                   # Node test suite
 ├── docs/                   # Product, architecture, business and security docs
