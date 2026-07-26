@@ -19,4 +19,5 @@ jobs:
       - run: git --version
       - run: npm run doctor
       - run: npm run check
+      - run: npm run db:postgres -- preflight
       - run: npm test
