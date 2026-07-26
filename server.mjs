@@ -10,6 +10,8 @@ import {
   createAuthKitIdentityMiddleware,
   migrateAuthKitIdentity,
 } from './src/authkit-identity.mjs';
+import { createSecureAuthKitLoginApiHandler } from './src/authkit-secure-login.mjs';
+import { createAuthKitCentralSessionGuard } from './src/authkit-session-guard.mjs';
 import { createMaintenanceGuard } from './src/backups.mjs';
 import { createLfsAwareBackupsApiHandler } from './src/backups-lfs.mjs';
 import {
@@ -106,6 +108,7 @@ const app = createApp({ config, db });
 const statusGuardedApp = createStatusCheckMergeGuard({ config, db, app });
 const reviewThreadGuardedApp = createReviewThreadMergeGuard({ config, db, app: statusGuardedApp });
 const governedApp = createBranchGovernanceGuard({ config, db, app: reviewThreadGuardedApp });
+const secureAuthKitLoginApi = createSecureAuthKitLoginApiHandler({ config, db });
 const authKitApi = createAuthKitApiHandler({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
 const notificationsApi = createNotificationsApiHandler({ config, db });
@@ -128,6 +131,7 @@ const webhooksApi = createWebhooksApiHandler({ config, db });
 const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app: governedApp });
 
 async function dispatch(req, res) {
+  if (await secureAuthKitLoginApi(req, res)) return;
   if (await authKitApi(req, res)) return;
   if (await tokenApi(req, res)) return;
   if (await notificationsApi(req, res)) return;
@@ -159,7 +163,8 @@ const notificationEventDispatch = createNotificationEventCapture({ config, db, n
 const operationsNotificationDispatch = createOperationsNotificationCapture({ config, db, next: notificationEventDispatch });
 const capturedDispatch = createWebhookEventCapture({ config, db, next: operationsNotificationDispatch });
 const authKitBootstrapDispatch = createAuthKitBootstrapGuard({ config, db, next: capturedDispatch });
-const identityDispatch = createAuthKitIdentityMiddleware({ config, db, next: authKitBootstrapDispatch });
+const centralSessionDispatch = createAuthKitCentralSessionGuard({ config, db, next: authKitBootstrapDispatch });
+const identityDispatch = createAuthKitIdentityMiddleware({ config, db, next: centralSessionDispatch });
 const stopWebhookWorker = startWebhookWorker(db, config);
 const stopNotificationWorker = startNotificationWorker(db, config);
 const stopOperationalNotificationWorker = startOperationalNotificationWorker(db, config);
