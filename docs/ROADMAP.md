@@ -25,6 +25,8 @@ Progress delivered:
 - `repo:read` and `repo:write` authorization
 - token expiry, revocation and last-used tracking
 - CLI token lifecycle management
+- browser personal-access-token creation, one-time display, listing and revocation
+- same-origin protected token API and token lifecycle audit events
 - production Git HTTP enforcement by token scope and organization role
 - authenticated Git fetch/push audit events
 
@@ -32,7 +34,7 @@ Remaining:
 
 - One Kuklabs Account/AuthKit
 - invitations, teams and repository collaborators
-- browser personal-access-token management and rotation UX
+- token rotation reminders and expiring-token notifications
 - SSH keys and deploy keys
 - PostgreSQL migration
 - repository transfer, archive and delete
