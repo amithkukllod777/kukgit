@@ -26,6 +26,7 @@ import {
   createReviewThreadsApiHandler,
   migrateReviewThreads,
 } from './src/review-threads.mjs';
+import { createSshKeysApiHandler, migrateSshKeys } from './src/ssh-keys.mjs';
 import {
   createStatusCheckMergeGuard,
   createStatusChecksApiHandler,
@@ -51,6 +52,7 @@ migrateReviewThreads(db);
 migrateStatusChecks(db);
 migrateWebhooks(db);
 migrateRepositoryLifecycle(db);
+migrateSshKeys(db);
 const seeded = seedCore(db, config);
 installExistingBranchProtectionHooks(config, db);
 const app = createApp({ config, db });
@@ -61,6 +63,7 @@ const tokenApi = createTokenApiHandler({ config, db });
 const collaborationApi = createCollaborationApiHandler({ config, db });
 const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
 const repositoryLifecycleApi = createRepositoryLifecycleApiHandler({ config, db });
+const sshKeysApi = createSshKeysApiHandler({ config, db });
 const branchGovernanceApi = createBranchGovernanceApiHandler({ config, db });
 const reviewThreadsApi = createReviewThreadsApiHandler({ config, db });
 const statusChecksApi = createStatusChecksApiHandler({ config, db });
@@ -71,6 +74,7 @@ async function dispatch(req, res) {
   if (await tokenApi(req, res)) return;
   if (await collaborationApi(req, res)) return;
   if (await repositoryLifecycleApi(req, res)) return;
+  if (await sshKeysApi(req, res)) return;
   if (await repositoryAccessApi(req, res)) return;
   if (await branchGovernanceApi(req, res)) return;
   if (await reviewThreadsApi(req, res)) return;
@@ -88,6 +92,7 @@ const server = http.createServer(capturedDispatch);
 server.listen(config.port, config.host, () => {
   console.log(`\nKukGit v0.1.0 is running at ${config.baseUrl}`);
   console.log(`${gitVersion}; data: ${config.dataDir}`);
+  console.log(`SSH clone endpoint: ${config.sshUser}@${config.sshHost}:${config.sshPort}`);
   if (seeded.seeded && !config.isProduction) {
     console.log(`Development admin: ${config.adminEmail}`);
     console.log('Development password is configured from KUKGIT_ADMIN_PASSWORD (default documented in README).');
