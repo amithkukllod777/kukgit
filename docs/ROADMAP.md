@@ -52,6 +52,14 @@ Progress delivered:
 - outdated-thread detection by pull-request head SHA
 - optional active-thread resolution requirement before merge
 - review-thread API, browser interface and audit events
+- commit status records keyed by repository, SHA and context
+- pending, success, failure and error status states
+- PAT-authenticated trusted status publishing API
+- exact-branch required status-check policies
+- current-head freshness and stale-result isolation
+- server-side merge blocking for missing, pending, failed or errored checks
+- status-check Settings and pull-request browser interfaces
+- status policy and publisher audit events
 
 Remaining:
 
@@ -63,8 +71,7 @@ Remaining:
 - PostgreSQL migration
 - repository transfer, archive and delete
 - unified diff rendering and diff-hunk anchors
-- required CI status checks
-- webhooks
+- webhook delivery and retry system
 - email and in-app notifications
 - Git LFS
 - backups and restore automation
