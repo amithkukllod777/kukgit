@@ -19,9 +19,20 @@ Status: delivered in v0.1.0
 
 Target: reliable internal use by Kuklabs
 
+Progress delivered:
+
+- scoped personal access token storage
+- `repo:read` and `repo:write` authorization
+- token expiry, revocation and last-used tracking
+- CLI token lifecycle management
+- production Git HTTP enforcement by token scope and organization role
+- authenticated Git fetch/push audit events
+
+Remaining:
+
 - One Kuklabs Account/AuthKit
 - invitations, teams and repository collaborators
-- scoped personal access tokens
+- browser personal-access-token management and rotation UX
 - SSH keys and deploy keys
 - PostgreSQL migration
 - repository transfer, archive and delete
