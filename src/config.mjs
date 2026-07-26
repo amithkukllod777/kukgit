@@ -9,6 +9,31 @@ function booleanValue(value, fallback = false) {
   return String(value).toLowerCase() === 'true';
 }
 
+function positiveNumber(value, label) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) throw new Error(`${label} must be a positive number.`);
+  return number;
+}
+
+function validateAuthKitUrl(value, isProduction) {
+  let url;
+  try { url = new URL(value); }
+  catch { throw new Error('KUKGIT_AUTHKIT_BASE_URL must be a valid absolute URL.'); }
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new Error('KUKGIT_AUTHKIT_BASE_URL must use HTTP or HTTPS.');
+  }
+  if (isProduction && url.protocol !== 'https:') {
+    throw new Error('KUKGIT_AUTHKIT_BASE_URL must use HTTPS in production.');
+  }
+  if (url.username || url.password) {
+    throw new Error('KUKGIT_AUTHKIT_BASE_URL must not contain embedded credentials.');
+  }
+  url.pathname = url.pathname.replace(/\/$/, '');
+  url.search = '';
+  url.hash = '';
+  return url.toString().replace(/\/$/, '');
+}
+
 export function loadConfig(overrides = {}) {
   const dataDir = path.resolve(overrides.dataDir ?? process.env.KUKGIT_DATA_DIR ?? path.join(root, 'data'));
   const isProduction = (overrides.nodeEnv ?? process.env.NODE_ENV) === 'production';
@@ -18,8 +43,11 @@ export function loadConfig(overrides = {}) {
     overrides.allowLocalAuthInProduction ?? process.env.KUKGIT_ALLOW_LOCAL_AUTH_IN_PRODUCTION,
     false,
   );
-  const authkitBaseUrl = String(overrides.authkitBaseUrl ?? process.env.KUKGIT_AUTHKIT_BASE_URL ?? '').replace(/\/$/, '');
+  const authkitBaseUrlRaw = String(overrides.authkitBaseUrl ?? process.env.KUKGIT_AUTHKIT_BASE_URL ?? '').trim();
+  const authkitProductId = String(overrides.authkitProductId ?? process.env.KUKGIT_AUTHKIT_PRODUCT_ID ?? 'kukgit').trim().toLowerCase();
   const authkitEncryptionKey = overrides.authkitEncryptionKey ?? process.env.KUKGIT_AUTHKIT_ENCRYPTION_KEY ?? (isProduction ? '' : 'kukgit-development-authkit-encryption-key-change-me');
+  const authkitTimeoutMs = positiveNumber(overrides.authkitTimeoutMs ?? process.env.KUKGIT_AUTHKIT_TIMEOUT_MS ?? 8000, 'KUKGIT_AUTHKIT_TIMEOUT_MS');
+  const authkitRefreshTtlDays = positiveNumber(overrides.authkitRefreshTtlDays ?? process.env.KUKGIT_AUTHKIT_REFRESH_TTL_DAYS ?? 60, 'KUKGIT_AUTHKIT_REFRESH_TTL_DAYS');
 
   if (!['local', 'authkit'].includes(authMode)) {
     throw new Error('KUKGIT_AUTH_MODE must be local or authkit.');
@@ -27,11 +55,20 @@ export function loadConfig(overrides = {}) {
   if (isProduction && authMode === 'local' && !allowLocalAuthInProduction) {
     throw new Error('Local KukGit password authentication is disabled in production. Use KUKGIT_AUTH_MODE=authkit.');
   }
-  if (authMode === 'authkit' && !authkitBaseUrl) {
-    throw new Error('KUKGIT_AUTHKIT_BASE_URL is required when AuthKit authentication is enabled.');
+  if (!/^[a-z0-9_-]{2,32}$/.test(authkitProductId)) {
+    throw new Error('KUKGIT_AUTHKIT_PRODUCT_ID must contain 2-32 lowercase letters, numbers, underscores or hyphens.');
   }
-  if (authMode === 'authkit' && String(authkitEncryptionKey).length < 32) {
-    throw new Error('KUKGIT_AUTHKIT_ENCRYPTION_KEY must contain at least 32 characters.');
+  let authkitBaseUrl = '';
+  if (authMode === 'authkit') {
+    if (!authkitBaseUrlRaw) {
+      throw new Error('KUKGIT_AUTHKIT_BASE_URL is required when AuthKit authentication is enabled.');
+    }
+    authkitBaseUrl = validateAuthKitUrl(authkitBaseUrlRaw, isProduction);
+    if (String(authkitEncryptionKey).length < 32) {
+      throw new Error('KUKGIT_AUTHKIT_ENCRYPTION_KEY must contain at least 32 characters.');
+    }
+  } else if (authkitBaseUrlRaw) {
+    authkitBaseUrl = validateAuthKitUrl(authkitBaseUrlRaw, false);
   }
 
   return {
@@ -60,10 +97,10 @@ export function loadConfig(overrides = {}) {
     authMode,
     allowLocalAuthInProduction,
     authkitBaseUrl,
-    authkitProductId: String(overrides.authkitProductId ?? process.env.KUKGIT_AUTHKIT_PRODUCT_ID ?? 'kukgit').toLowerCase(),
+    authkitProductId,
     authkitEncryptionKey,
-    authkitTimeoutMs: Number(overrides.authkitTimeoutMs ?? process.env.KUKGIT_AUTHKIT_TIMEOUT_MS ?? 8000),
-    authkitRefreshTtlDays: Number(overrides.authkitRefreshTtlDays ?? process.env.KUKGIT_AUTHKIT_REFRESH_TTL_DAYS ?? 60),
+    authkitTimeoutMs,
+    authkitRefreshTtlDays,
     adminEmail: overrides.adminEmail ?? process.env.KUKGIT_ADMIN_EMAIL ?? 'admin@kuklabs.local',
     adminPassword: overrides.adminPassword ?? process.env.KUKGIT_ADMIN_PASSWORD ?? 'KukGit@2026',
     adminName: overrides.adminName ?? process.env.KUKGIT_ADMIN_NAME ?? 'Amit Kumar Kuklod',
