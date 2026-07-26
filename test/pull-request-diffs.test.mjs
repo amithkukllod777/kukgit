@@ -15,7 +15,7 @@ import {
   migratePullRequestDiffs,
   parseUnifiedPatch,
   validateDiffAnchor,
-} from '../src/pull-request-diffs.mjs';
+} from '../src/pull-request-diffs-safe.mjs';
 import { migrateRepositoryAccess } from '../src/repository-access.mjs';
 import { migrateReviewThreads, listReviewThreads } from '../src/review-threads.mjs';
 
