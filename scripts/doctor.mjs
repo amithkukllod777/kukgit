@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { loadConfig } from '../src/config.mjs';
+import { normalizeEmail } from '../src/security.mjs';
 
 const config = loadConfig();
 const checks = [];
@@ -78,6 +79,27 @@ check('Webhook encryption key', () => {
   if (!config.webhookEncryptionKey) throw new Error('KUKGIT_WEBHOOK_ENCRYPTION_KEY must be configured');
   if (config.isProduction && config.webhookEncryptionKey.length < 32) throw new Error('KUKGIT_WEBHOOK_ENCRYPTION_KEY must be at least 32 characters in production');
   return config.isProduction ? 'configured' : 'development key — change before sharing';
+});
+check('Transactional email', () => {
+  const configured = Boolean(String(config.smtpHost || '').trim());
+  if (!configured) {
+    if (config.isProduction) throw new Error('KUKGIT_SMTP_HOST must be configured in production');
+    return 'disabled in development';
+  }
+  if (!/^[A-Za-z0-9.-]+$/.test(config.smtpHost) || config.smtpHost.startsWith('.') || config.smtpHost.endsWith('.')) throw new Error('KUKGIT_SMTP_HOST is invalid');
+  if (!Number.isInteger(config.smtpPort) || config.smtpPort < 1 || config.smtpPort > 65535) throw new Error('KUKGIT_SMTP_PORT must be between 1 and 65535');
+  normalizeEmail(config.emailFrom);
+  if (config.emailReplyTo) normalizeEmail(config.emailReplyTo);
+  if ((config.smtpUser && !config.smtpPassword) || (!config.smtpUser && config.smtpPassword)) throw new Error('KUKGIT_SMTP_USER and KUKGIT_SMTP_PASSWORD must be configured together');
+  if (config.isProduction && !config.smtpSecure && !config.smtpStartTls) throw new Error('Production SMTP must use direct TLS or STARTTLS');
+  if (config.smtpSecure && config.smtpStartTls) return `${config.smtpHost}:${config.smtpPort} direct TLS (STARTTLS setting ignored)`;
+  return `${config.smtpHost}:${config.smtpPort} ${config.smtpSecure ? 'direct TLS' : config.smtpStartTls ? 'STARTTLS' : 'plaintext development'}`;
+});
+check('Notification worker', () => {
+  if (!Number.isInteger(config.emailWorkerIntervalMs) || config.emailWorkerIntervalMs < 5000 || config.emailWorkerIntervalMs > 3600000) throw new Error('KUKGIT_EMAIL_WORKER_INTERVAL_MS must be between 5000 and 3600000');
+  if (!Number.isInteger(config.emailMaxAttempts) || config.emailMaxAttempts < 1 || config.emailMaxAttempts > 20) throw new Error('KUKGIT_EMAIL_MAX_ATTEMPTS must be between 1 and 20');
+  if (!Number.isInteger(config.emailBatchSize) || config.emailBatchSize < 1 || config.emailBatchSize > 100) throw new Error('KUKGIT_EMAIL_BATCH_SIZE must be between 1 and 100');
+  return `${config.emailWorkerIntervalMs} ms / ${config.emailMaxAttempts} attempts / ${config.emailBatchSize} messages`;
 });
 check('SSH endpoint', () => {
   if (!/^[A-Za-z0-9.-]+$/.test(config.sshHost) || config.sshHost.startsWith('.') || config.sshHost.endsWith('.')) throw new Error('KUKGIT_SSH_HOST is invalid');
