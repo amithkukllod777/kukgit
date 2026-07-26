@@ -67,6 +67,7 @@ function migrate(db) {
       deleted_at TEXT,
       deleted_by TEXT REFERENCES users(id) ON DELETE SET NULL,
       deleted_from_org_id TEXT REFERENCES organizations(id) ON DELETE SET NULL,
+      deleted_original_slug TEXT,
       purge_after TEXT,
       created_by TEXT NOT NULL REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
