@@ -9,11 +9,22 @@ import {
   installExistingBranchProtectionHooks,
   migrateBranchGovernance,
 } from './src/branch-governance.mjs';
+import {
+  createCollaborationNotificationCapture,
+  createInvitationResendApiHandler,
+} from './src/collaboration-notifications.mjs';
 import { createCollaborationApiHandler, migrateCollaboration } from './src/collaboration.mjs';
 import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
+import { smtpConfigured } from './src/email-transport.mjs';
 import { ensureGitAvailable } from './src/git.mjs';
 import { createGitLfsHandler, migrateGitLfs } from './src/git-lfs-safe.mjs';
+import { createNotificationEventCapture } from './src/notification-events.mjs';
+import {
+  createNotificationsApiHandler,
+  migrateNotifications,
+  startNotificationWorker,
+} from './src/notifications.mjs';
 import {
   createPullRequestDiffsApiHandler,
   migratePullRequestDiffs,
@@ -66,13 +77,16 @@ migrateRepositoryLifecycle(db);
 migrateSshKeys(db);
 migrateGitLfs(db);
 const seeded = seedCore(db, config);
+migrateNotifications(db);
 installExistingBranchProtectionHooks(config, db);
 const app = createApp({ config, db });
 const statusGuardedApp = createStatusCheckMergeGuard({ config, db, app });
 const reviewThreadGuardedApp = createReviewThreadMergeGuard({ config, db, app: statusGuardedApp });
 const governedApp = createBranchGovernanceGuard({ config, db, app: reviewThreadGuardedApp });
 const tokenApi = createTokenApiHandler({ config, db });
+const notificationsApi = createNotificationsApiHandler({ config, db });
 const collaborationApi = createCollaborationApiHandler({ config, db });
+const invitationResendApi = createInvitationResendApiHandler({ config, db });
 const backupsApi = createLfsAwareBackupsApiHandler({ config, db });
 const gitLfsApi = createGitLfsHandler({ config, db });
 const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
@@ -87,6 +101,8 @@ const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app: gov
 
 async function dispatch(req, res) {
   if (await tokenApi(req, res)) return;
+  if (await notificationsApi(req, res)) return;
+  if (await invitationResendApi(req, res)) return;
   if (await collaborationApi(req, res)) return;
   if (await backupsApi(req, res)) return;
   if (await gitLfsApi(req, res)) return;
@@ -105,8 +121,11 @@ async function dispatch(req, res) {
 const sshArchiveDispatch = createSshKeysArchiveGuard({ config, db, next: dispatch });
 const lifecycleDispatch = createRepositoryLifecycleGuard({ config, db, next: sshArchiveDispatch });
 const maintenanceDispatch = createMaintenanceGuard({ config, next: lifecycleDispatch });
-const capturedDispatch = createWebhookEventCapture({ config, db, next: maintenanceDispatch });
+const collaborationNotificationDispatch = createCollaborationNotificationCapture({ config, db, next: maintenanceDispatch });
+const notificationEventDispatch = createNotificationEventCapture({ config, db, next: collaborationNotificationDispatch });
+const capturedDispatch = createWebhookEventCapture({ config, db, next: notificationEventDispatch });
 const stopWebhookWorker = startWebhookWorker(db, config);
+const stopNotificationWorker = startNotificationWorker(db, config);
 const server = http.createServer(capturedDispatch);
 
 server.listen(config.port, config.host, () => {
@@ -114,6 +133,7 @@ server.listen(config.port, config.host, () => {
   console.log(`${gitVersion}; data: ${config.dataDir}`);
   console.log(`Backups: ${config.backupsDir}; retention: ${config.backupRetentionCount} snapshots / ${config.backupRetentionDays} days`);
   console.log(`Git LFS: ${config.lfsDir}; repository quota: ${config.lfsRepositoryQuotaBytes} bytes`);
+  console.log(`Email delivery: ${smtpConfigured(config) ? `${config.smtpHost}:${config.smtpPort}` : 'disabled until SMTP is configured'}`);
   console.log(`SSH clone endpoint: ${config.sshUser}@${config.sshHost}:${config.sshPort}`);
   if (seeded.seeded && !config.isProduction) {
     console.log(`Development admin: ${config.adminEmail}`);
@@ -128,11 +148,15 @@ server.listen(config.port, config.host, () => {
   if (config.isProduction && !config.lfsAuthKey) {
     console.warn('WARNING: KUKGIT_LFS_AUTH_KEY is required for Git LFS over SSH.');
   }
+  if (config.isProduction && !smtpConfigured(config)) {
+    console.warn('WARNING: SMTP is not configured; transactional email delivery is disabled.');
+  }
 });
 
 function shutdown(signal) {
   console.log(`\n${signal} received. Shutting down KukGit...`);
   stopWebhookWorker();
+  stopNotificationWorker();
   server.close(() => {
     try { db.close(); } catch {}
     process.exit(0);
