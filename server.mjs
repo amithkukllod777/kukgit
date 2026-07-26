@@ -17,6 +17,7 @@ import { createCollaborationApiHandler, migrateCollaboration } from './src/colla
 import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
 import { smtpConfigured } from './src/email-transport.mjs';
+import { createExternalCollaboratorAccessPrivacyApiHandler } from './src/external-collaborator-access-privacy.mjs';
 import { createExternalCollaboratorDiscoveryApiHandler } from './src/external-collaborator-discovery.mjs';
 import { createExternalCollaboratorLifecycleGuard } from './src/external-collaborator-lifecycle-guard.mjs';
 import { ensureGitAvailable } from './src/git.mjs';
@@ -103,6 +104,7 @@ const repositoryInvitationsApi = createRepositoryInvitationsApiHandler({ config,
 const backupsApi = createLfsAwareBackupsApiHandler({ config, db });
 const gitLfsApi = createGitLfsHandler({ config, db });
 const externalLifecycleGuard = createExternalCollaboratorLifecycleGuard({ config, db });
+const externalAccessPrivacyApi = createExternalCollaboratorAccessPrivacyApiHandler({ config, db });
 const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
 const repositoryLifecycleApi = createRepositoryLifecycleApiHandler({ config, db });
 const sshKeysApi = createSshKeysApiHandler({ config, db });
@@ -125,6 +127,7 @@ async function dispatch(req, res) {
   if (await externalLifecycleGuard(req, res)) return;
   if (await repositoryLifecycleApi(req, res)) return;
   if (await sshKeysApi(req, res)) return;
+  if (await externalAccessPrivacyApi(req, res)) return;
   if (await repositoryAccessApi(req, res)) return;
   if (await branchGovernanceApi(req, res)) return;
   if (await pullRequestDiffsApi(req, res)) return;
