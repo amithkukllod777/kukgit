@@ -2,7 +2,7 @@
 
 **KukGit is an AI-first Git hosting and developer operating system from Kuklabs Inc.**
 
-This repository contains the first working KukGit foundation. It is not a visual mockup: it creates real bare Git repositories, supports Git smart HTTP clone/push, stores multi-tenant metadata, offers repository browsing, issues, pull requests, browser commits, audit logs and local repository-health analysis.
+This repository contains the working KukGit foundation. It is not a visual mockup: it creates real bare Git repositories, supports Git smart HTTP and SSH clone/push, stores multi-tenant metadata, offers repository browsing, issues, pull requests, governed reviews, verified backups, Git LFS and local repository-health analysis.
 
 > Product direction: Git hosting + collaboration + AI review + CI/CD + package/container registries + cloud development and deployment.
 
@@ -11,6 +11,8 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Real bare Git repository creation
 - Public and private repository metadata
 - Git smart HTTP clone and authenticated push
+- Git-over-SSH with user keys and repository deploy keys
+- Git LFS Batch API, verified uploads, range downloads, quotas and deduplication
 - Scoped personal access tokens with browser and CLI lifecycle management
 - Token expiry, revocation, last-used tracking and one-time secret display
 - Production Git authorization by token scope plus effective repository permission
@@ -19,46 +21,38 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Expiring organization invitations with email verification, one-time acceptance links and revocation
 - Organization member directory
 - Teams with maintainers, members and auditable lifecycle management
-- Direct repository collaborators
-- Repository team access grants
+- Direct repository collaborators and repository team access grants
 - Read, Triage, Write, Maintain and Admin permission hierarchy
 - Effective permission calculation across organization role, direct grant and team grants
-- Browser API and Git clone/push repository-permission enforcement
-- Repository access-management interface
+- Repository archive, organization transfer, recoverable Trash, restore and permanent purge
 - Exact-branch protection rules
 - Pull-request approval and change-request reviews
 - Required approval counts and stale-approval detection
 - Direct browser commit and Git push protection for guarded branches
 - Pull-request merge-policy enforcement
-- File and line anchored review threads
-- Threaded replies, resolution and reopening
-- Outdated-thread detection when the pull-request head changes
-- Optional unresolved-thread merge blocking per base branch
+- Git-native unified and side-by-side pull-request diffs
+- Actual patch-line and multi-line review anchors
+- Threaded replies, resolution, reopening and outdated-thread detection
 - Commit status records with Pending, Success, Failure and Error states
 - PAT-authenticated CI and integration status publishing
-- Exact-branch required status-check policies
-- Current-head status freshness and stale-result isolation
-- Missing, pending, failed and errored check merge blocking
-- Repository webhook subscriptions with event filters
-- AES-256-GCM encrypted webhook secrets
-- HMAC-SHA256 signed webhook deliveries
-- HTTPS/public-network target enforcement and SSRF protection
-- Delivery history, bounded retries, ping and manual redelivery
-- Automatic push, issue, pull-request, review and status event capture
+- Exact-branch required status-check policies and current-head freshness
+- Repository webhook subscriptions with encrypted secrets and HMAC-signed deliveries
+- HTTPS/public-network target enforcement, SSRF protection and bounded retries
 - Repository code browser: branches, commits, folders and files
 - Browser branch creation and file commits
 - Issues with status and priority
 - Pull requests with branch comparison and merge
+- Verified `.kgbak` snapshots, integrity checks, dry-run restore and disaster recovery
 - KukAI local repository health analysis
 - Security, test, CI, documentation and governance checks
 - Audit log
 - Responsive Kuklabs-branded web interface
 - No runtime npm dependencies
-- Automated tests for API, Git engine, collaboration, repository access, governance, reviews, status checks, webhooks, analysis and security helpers
+- Automated tests for API, Git, LFS, backup/restore, collaboration, access, governance, reviews, checks, webhooks and security helpers
 
 ## Important scope boundary
 
-This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, One Kuklabs Account/SSO/MFA, external collaborators, true unified diff rendering and code-line patch context, hosted CI runners, workflow execution, large-scale object storage, distributed job queues, package/container registries, LFS, email, billing, abuse controls and high-availability deployment.
+This is the **Private Alpha foundation**, not yet a GitHub/GitLab replacement. Production work still required includes One Kuklabs Account/SSO/MFA, external collaborators, hosted CI runners and workflow execution, PostgreSQL and distributed jobs, package/container registries, email/in-app notifications, billing and usage metering, abuse controls, scalable object storage, advanced administration and high-availability deployment.
 
 ## Local quick start
 
@@ -103,9 +97,9 @@ For local development, Git smart HTTP accepts `KUKGIT_DEV_GIT_TOKEN` as the HTTP
 git push http://developer:<KUKGIT_DEV_GIT_TOKEN>@localhost:8787/git/kuklabs/kukgit-demo.git main
 ```
 
-The shared development token is disabled automatically in production. Protected clone/fetch requires a read-capable personal access token plus effective repository Read permission. Push requires a `repo:write` personal access token plus effective repository Write permission.
+The shared development token is disabled automatically in production. Protected clone/fetch requires a read-capable personal access token plus effective Repository Read permission. Push requires a `repo:write` personal access token plus effective Repository Write permission.
 
-Create a token from **Settings → Personal access tokens** in the KukGit interface, or create a 90-day read/write token from the server CLI:
+Create a token from **Settings → Personal access tokens** or from the server CLI:
 
 ```bash
 npm run token -- create \
@@ -115,58 +109,50 @@ npm run token -- create \
   --days 90
 ```
 
-Then use the returned `kgp_...` value as the HTTP Basic password. Read [Personal Access Tokens](docs/PERSONAL_ACCESS_TOKENS.md) for browser management, listing, revocation and operational guidance.
+Use the returned `kgp_...` value as the HTTP Basic password. Read [Personal Access Tokens](docs/PERSONAL_ACCESS_TOKENS.md).
+
+## Git SSH access
+
+Users can register Ed25519, ECDSA or RSA public keys from **Settings → SSH keys**. Repository Admins can add read-only or read/write deploy keys from **Repository → Settings**.
+
+SSH authorization uses forced commands, repository permissions and the same branch-protection hooks as HTTP pushes. Read [SSH Keys and Git over SSH](docs/SSH_KEYS.md) for OpenSSH deployment, `AuthorizedKeysCommand`, static fallback generation and operational controls.
+
+## Git Large File Storage
+
+Enable Git LFS on a developer machine and track large-file patterns:
+
+```bash
+git lfs install
+git lfs track "*.zip"
+git add .gitattributes
+git commit -m "Track archives with Git LFS"
+```
+
+KukGit supports HTTPS and SSH remotes, repository-scoped authorization, SHA-256 verified streaming uploads, content-addressed deduplication, byte-range downloads, quotas, Admin integrity checks and LFS-aware verified backups.
+
+Open **Repository → Settings → Git Large File Storage** to review usage and object health. Read [Git Large File Storage](docs/GIT_LFS.md) for protocol, storage, quotas, security, GC and backup behavior.
 
 ## Organization collaboration
 
-Open **Organizations → Organization collaboration** to:
-
-- invite existing KukGit users with admin, maintainer, developer or viewer roles
-- issue secure 7, 14 or 30-day acceptance links
-- review pending, accepted, expired and revoked invitations
-- manage the organization member directory
-- create teams and assign team maintainers and members
-
-Invitation tokens are shown only once and acceptance requires the exact invited account email. Read [Organization Collaboration](docs/ORGANIZATION_COLLABORATION.md) for the complete security and workflow model.
+Open **Organizations → Organization collaboration** to invite users, review invitation status, manage members and create teams. Invitation tokens are shown only once and acceptance requires the exact invited account email. Read [Organization Collaboration](docs/ORGANIZATION_COLLABORATION.md).
 
 ## Repository access
 
-Open a repository and select **Settings** to manage:
-
-- direct collaborator permissions
-- team repository grants
-- effective permission sources
-- Read, Triage, Write, Maintain and Admin access
-
-KukGit combines organization role baseline, direct grants and every applicable team grant. The highest permission wins. Read [Repository Access](docs/REPOSITORY_ACCESS.md) for the complete authorization and Git enforcement model.
+Open a repository and select **Settings** to manage direct collaborator permissions, team grants and effective permission sources. KukGit combines organization role baseline, direct grants and team grants; the highest permission wins. Read [Repository Access](docs/REPOSITORY_ACCESS.md).
 
 ## Branch protection and reviews
 
-Repository Admins can protect exact branches from **Repository → Settings**. A rule can:
+Repository Admins can protect exact branches, require pull requests, require approvals, dismiss stale approvals and block direct browser/Git changes. Reviewers with Repository Write permission can approve, request changes or comment. Read [Branch Governance](docs/BRANCH_GOVERNANCE.md).
 
-- require changes through a pull request
-- require 0–10 active approvals
-- dismiss approvals when the pull-request head changes
-- block browser commits and direct Git pushes
+## Pull-request diffs and review conversations
 
-Reviewers with repository Write permission can approve, request changes or comment from the repository Pull requests page. KukGit records each review against the current head SHA and blocks merge until the active policy is satisfied. Read [Branch Governance](docs/BRANCH_GOVERNANCE.md) for API, hook and merge-policy details.
+The Pull requests page provides merge-base-correct unified and side-by-side patches, file navigation, whitespace controls, binary/rename metadata and comments anchored only to real patch lines. Shift-click creates same-side, same-hunk ranges.
 
-## Code review conversations
-
-The repository Pull requests page supports:
-
-- changed-file review threads
-- left-side, right-side and file-level anchors
-- line validation against the selected Git ref
-- threaded replies
-- resolve and reopen actions
-- outdated-thread visibility after new commits
-
-Repository Admins can optionally require all active threads to be resolved for a base branch before merge. Outdated threads remain visible for history but do not block merge. Read [Review Threads](docs/REVIEW_THREADS.md) for the data, permission and merge-policy model.
+Review threads support replies, resolve/reopen actions and outdated history after the head changes. Repository Admins may require all active threads resolved before merge. Read [Pull Request Diffs](docs/PULL_REQUEST_DIFFS.md) and [Review Threads](docs/REVIEW_THREADS.md).
 
 ## Required status checks
 
-Repository Admins can select required CI and integration contexts for an exact base branch from **Repository → Settings**. Every selected context must report Success for the pull request's current head SHA. Missing, Pending, Failure and Error states block merge.
+Repository Admins can require CI/integration contexts for an exact base branch. Every selected context must report Success for the current pull-request head SHA; missing, Pending, Failure and Error states block merge.
 
 Trusted runners publish with a scoped `repo:write` personal access token:
 
@@ -178,13 +164,11 @@ curl -X POST \
   -d '{"context":"test","state":"success","description":"All tests passed"}'
 ```
 
-A new pull-request head commit requires fresh results; prior commit statuses are never reused for merge. Read [Required Status Checks](docs/REQUIRED_STATUS_CHECKS.md) for publishing, branch policies, permissions and merge enforcement.
+Read [Required Status Checks](docs/REQUIRED_STATUS_CHECKS.md).
 
 ## Repository webhooks
 
 Repository Admins can create webhook subscriptions from **Repository → Settings**. KukGit sends signed JSON events for push, issue, pull-request, review and status activity.
-
-Each delivery includes:
 
 ```text
 X-KukGit-Event: push
@@ -192,15 +176,21 @@ X-KukGit-Delivery: whd_example
 X-KukGit-Signature-256: sha256=<HMAC digest>
 ```
 
-Webhook secrets are displayed once, encrypted at rest and used to sign the exact raw request body. Production URLs must use HTTPS and resolve to public networks. Failed deliveries retry with bounded exponential backoff and can be manually redelivered from the delivery history.
+Webhook secrets are displayed once, encrypted at rest and used to sign the exact raw request body. Production URLs must use HTTPS and resolve to public networks. Read [Repository Webhooks](docs/WEBHOOKS.md).
 
-Set a stable production encryption key before creating webhooks:
+## Verified backups and recovery
 
-```text
-KUKGIT_WEBHOOK_ENCRYPTION_KEY=<high-entropy-random-value>
+Create and verify portable snapshots:
+
+```bash
+npm run backup -- maintenance on --reason "Scheduled backup"
+npm run backup -- create
+npm run backup -- list
+npm run backup -- verify --archive <file.kgbak>
+npm run backup -- maintenance off
 ```
 
-Read [Repository Webhooks](docs/WEBHOOKS.md) for signature verification, target validation, retries, API endpoints and operational guidance.
+Snapshots include SQLite metadata, Git bundles and all recorded Git LFS objects. Restore supports dry-run validation and writes only to a missing or empty target directory. Read [Verified Backups and Disaster Recovery](docs/BACKUPS_AND_DISASTER_RECOVERY.md).
 
 ## Commands
 
@@ -210,6 +200,8 @@ npm start         # Start server
 npm run seed      # Seed founder, Kuklabs organization and demo repository
 npm run doctor    # Check runtime requirements and configuration
 npm run token --  # Create, list or revoke personal access tokens
+npm run backup -- # Create, verify, restore and prune verified snapshots
+npm run ssh:authorized-keys # Generate restricted static authorized_keys fallback
 npm run check     # Validate JavaScript source syntax
 npm test          # Run automated tests
 ```
@@ -219,11 +211,11 @@ npm test          # Run automated tests
 ```text
 kukgit/
 ├── public/                 # Dependency-free web application
-├── src/                    # API, auth, access, governance, reviews, checks, webhooks, database and Git services
-├── scripts/                # Seed, environment doctor and token administration
+├── src/                    # API, auth, access, Git, LFS, backups, reviews and workflow services
+├── scripts/                # Seed, doctor, token, SSH and backup administration
 ├── test/                   # Node test suite
-├── docs/                   # Product, architecture, business and security docs
-├── infra/                  # Container and reverse-proxy deployment files
+├── docs/                   # Product, architecture, operations and security docs
+├── infra/                  # Container, reverse-proxy and OpenSSH deployment files
 ├── data/                   # Local runtime data (not committed)
 ├── server.mjs              # HTTP application entry point
 └── CLAUDE.md               # Coding-agent operating instructions
@@ -242,7 +234,7 @@ See [Architecture](docs/ARCHITECTURE.md) and [Roadmap](docs/ROADMAP.md).
 
 ## Security
 
-Read [SECURITY.md](SECURITY.md) before deploying. The current development defaults are intentionally easy to run and intentionally not approved for internet exposure.
+Read [SECURITY.md](SECURITY.md) before deploying. Development defaults are intentionally easy to run and are not approved for internet exposure.
 
 ## Ownership
 
