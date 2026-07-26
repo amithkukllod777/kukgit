@@ -16,6 +16,9 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Production Git authorization by token scope plus organization role
 - Mirror import for public HTTPS/SSH repositories
 - Organizations and role-based access control
+- Expiring organization invitations with email verification, one-time acceptance links and revocation
+- Organization member directory
+- Teams with maintainers, members and auditable lifecycle management
 - Repository code browser: branches, commits, folders and files
 - Browser branch creation and file commits
 - Issues with status and priority
@@ -25,11 +28,11 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Audit log
 - Responsive Kuklabs-branded web interface
 - No runtime npm dependencies
-- Automated tests for API, Git engine, analysis and security helpers
+- Automated tests for API, Git engine, collaboration, analysis and security helpers
 
 ## Important scope boundary
 
-This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, SSO/MFA, organization invitations and teams, large-scale object storage, distributed job queues, CI runners, package/container registries, LFS, webhooks, email, billing, abuse controls and high-availability deployment.
+This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, One Kuklabs Account/SSO/MFA, repository collaborators and team access enforcement, large-scale object storage, distributed job queues, CI runners, package/container registries, LFS, webhooks, email, billing, abuse controls and high-availability deployment.
 
 ## Local quick start
 
@@ -88,6 +91,18 @@ npm run token -- create \
 
 Then use the returned `kgp_...` value as the HTTP Basic password. Read [Personal Access Tokens](docs/PERSONAL_ACCESS_TOKENS.md) for browser management, listing, revocation and operational guidance.
 
+## Organization collaboration
+
+Open **Organizations → Organization collaboration** to:
+
+- invite existing KukGit users with admin, maintainer, developer or viewer roles
+- issue secure 7, 14 or 30-day acceptance links
+- review pending, accepted, expired and revoked invitations
+- manage the organization member directory
+- create teams and assign team maintainers and members
+
+Invitation tokens are shown only once and acceptance requires the exact invited account email. Read [Organization Collaboration](docs/ORGANIZATION_COLLABORATION.md) for the complete security and workflow model.
+
 ## Commands
 
 ```bash
@@ -96,6 +111,7 @@ npm start         # Start server
 npm run seed      # Seed founder, Kuklabs organization and demo repository
 npm run doctor    # Check runtime requirements and configuration
 npm run token --  # Create, list or revoke personal access tokens
+npm run check     # Validate JavaScript source syntax
 npm test          # Run automated tests
 ```
 
@@ -104,7 +120,7 @@ npm test          # Run automated tests
 ```text
 kukgit/
 ├── public/                 # Dependency-free web application
-├── src/                    # API, auth, tokens, database, Git and analysis services
+├── src/                    # API, auth, tokens, collaboration, database, Git and analysis services
 ├── scripts/                # Seed, environment doctor and token administration
 ├── test/                   # Node test suite
 ├── docs/                   # Product, architecture, business and security docs
