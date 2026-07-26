@@ -1,6 +1,12 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import { createApp } from './src/app.mjs';
+import {
+  createBranchGovernanceApiHandler,
+  createBranchGovernanceGuard,
+  installExistingBranchProtectionHooks,
+  migrateBranchGovernance,
+} from './src/branch-governance.mjs';
 import { createCollaborationApiHandler, migrateCollaboration } from './src/collaboration.mjs';
 import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
@@ -19,18 +25,23 @@ const gitVersion = ensureGitAvailable();
 const db = openDatabase(config);
 migrateCollaboration(db);
 migrateRepositoryAccess(db);
+migrateBranchGovernance(db);
 const seeded = seedCore(db, config);
+installExistingBranchProtectionHooks(config, db);
 const app = createApp({ config, db });
+const governedApp = createBranchGovernanceGuard({ config, db, app });
 const tokenApi = createTokenApiHandler({ config, db });
 const collaborationApi = createCollaborationApiHandler({ config, db });
 const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
-const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app });
+const branchGovernanceApi = createBranchGovernanceApiHandler({ config, db });
+const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app: governedApp });
 const server = http.createServer(async (req, res) => {
   if (await tokenApi(req, res)) return;
   if (await collaborationApi(req, res)) return;
   if (await repositoryAccessApi(req, res)) return;
+  if (await branchGovernanceApi(req, res)) return;
   if (await repositoryAccessGuard(req, res)) return;
-  return app(req, res);
+  return governedApp(req, res);
 });
 
 server.listen(config.port, config.host, () => {
