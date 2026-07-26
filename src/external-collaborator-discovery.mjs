@@ -1,4 +1,4 @@
-import { requireUser } from './auth.mjs';
+import { currentUser } from './auth.mjs';
 import { getEffectiveRepositoryAccess } from './repository-access.mjs';
 
 function sendJson(res, status, payload) {
@@ -57,7 +57,8 @@ export function createExternalCollaboratorDiscoveryApiHandler({ config, db }) {
     if (req.method !== 'GET') return false;
     const url = new URL(req.url, config.baseUrl);
     if (!['/api/dashboard', '/api/repos', '/api/issues', '/api/pulls'].includes(url.pathname)) return false;
-    const user = requireUser(db, req);
+    const user = currentUser(db, req);
+    if (!user) return false;
     const rows = accessibleRepositoryRows(db, user.id);
     const repositories = rows.map((row) => repositoryDto(config, db, user.id, row));
     const repoIds = rows.map((row) => row.id);
