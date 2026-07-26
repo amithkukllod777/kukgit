@@ -25,6 +25,34 @@ check('Repository directory', () => {
   fs.accessSync(config.repositoriesDir, fs.constants.R_OK | fs.constants.W_OK);
   return config.repositoriesDir;
 });
+check('Git LFS directory', () => {
+  fs.mkdirSync(config.lfsDir, { recursive: true, mode: 0o700 });
+  fs.accessSync(config.lfsDir, fs.constants.R_OK | fs.constants.W_OK);
+  if (path.resolve(config.lfsDir) === path.resolve(config.repositoriesDir)) throw new Error('KUKGIT_LFS_DIR cannot equal the Git repository directory');
+  if (path.resolve(config.lfsDir) === path.resolve(config.backupsDir)) throw new Error('KUKGIT_LFS_DIR cannot equal the backup directory');
+  return config.lfsDir;
+});
+check('Git LFS limits', () => {
+  const values = [
+    ['KUKGIT_LFS_MAX_OBJECT_BYTES', config.lfsMaxObjectBytes],
+    ['KUKGIT_LFS_REPOSITORY_QUOTA_BYTES', config.lfsRepositoryQuotaBytes],
+    ['KUKGIT_LFS_INSTANCE_QUOTA_BYTES', config.lfsInstanceQuotaBytes],
+  ];
+  for (const [name, value] of values) {
+    if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} must be a positive safe integer`);
+  }
+  if (config.lfsMaxObjectBytes > config.lfsRepositoryQuotaBytes) throw new Error('Git LFS maximum object size cannot exceed the repository quota');
+  if (config.lfsRepositoryQuotaBytes > config.lfsInstanceQuotaBytes) throw new Error('Git LFS repository quota cannot exceed the instance quota');
+  if (!Number.isInteger(config.lfsUploadExpirySeconds) || config.lfsUploadExpirySeconds < 60 || config.lfsUploadExpirySeconds > 86400) {
+    throw new Error('KUKGIT_LFS_UPLOAD_EXPIRY_SECONDS must be between 60 and 86400');
+  }
+  return `${config.lfsMaxObjectBytes} object / ${config.lfsRepositoryQuotaBytes} repository / ${config.lfsInstanceQuotaBytes} instance`;
+});
+check('Git LFS signing key', () => {
+  if (!config.lfsAuthKey) throw new Error('KUKGIT_LFS_AUTH_KEY must be configured');
+  if (config.isProduction && config.lfsAuthKey.length < 32) throw new Error('KUKGIT_LFS_AUTH_KEY must be at least 32 characters in production');
+  return config.isProduction ? 'configured' : 'development key — change before sharing';
+});
 check('Backup directory', () => {
   fs.mkdirSync(config.backupsDir, { recursive: true, mode: 0o700 });
   fs.accessSync(config.backupsDir, fs.constants.R_OK | fs.constants.W_OK);
