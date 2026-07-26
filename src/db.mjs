@@ -124,7 +124,6 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_pat_user_created ON personal_access_tokens(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_repositories_org ON repositories(organization_id);
-    CREATE INDEX IF NOT EXISTS idx_repositories_lifecycle ON repositories(deleted_at, archived_at, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_issues_repo_status ON issues(repository_id, status);
     CREATE INDEX IF NOT EXISTS idx_pr_repo_status ON pull_requests(repository_id, status);
     CREATE INDEX IF NOT EXISTS idx_audit_org_created ON audit_logs(organization_id, created_at DESC);
