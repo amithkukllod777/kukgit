@@ -204,7 +204,12 @@ export function mergeBranches(config, orgSlug, repoSlug, { baseBranch, headBranc
   if (baseBranch === headBranch) throw httpError(400, 'Base and head branches must be different.');
   return withWorkingClone(config, orgSlug, repoSlug, (cwd) => {
     execGit(['checkout', baseBranch], { cwd });
-    const result = execGit(['merge', '--no-ff', headBranch, '-m', title || `Merge ${headBranch} into ${baseBranch}`], {
+    const remoteHead = `origin/${headBranch}`;
+    const remoteHeadExists = execGit(['show-ref', '--verify', `refs/remotes/${remoteHead}`], { cwd, allowFailure: true });
+    if (remoteHeadExists.status !== 0) {
+      throw httpError(404, `Pull request head branch '${headBranch}' was not found in the repository clone.`, 'HEAD_BRANCH_NOT_FOUND');
+    }
+    const result = execGit(['merge', '--no-ff', remoteHead, '-m', title || `Merge ${headBranch} into ${baseBranch}`], {
       cwd,
       allowFailure: true,
       env: {
