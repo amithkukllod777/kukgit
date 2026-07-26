@@ -1,5 +1,6 @@
 import { audit, orgAccess } from './db.mjs';
 import { spawnGitHttpBackend } from './git.mjs';
+import { getEffectiveRepositoryAccess, permissionAtLeast } from './repository-access.mjs';
 import { safeEqual } from './security.mjs';
 import { verifyPersonalAccessToken } from './tokens.mjs';
 
@@ -23,20 +24,35 @@ export function isGitHttpPath(pathname) {
   return pathname.startsWith('/git/') && pathname.includes('.git');
 }
 
-export function authorizeGitCredential(db, config, { credential, orgSlug, isPush }) {
+export function authorizeGitCredential(db, config, { credential, orgSlug, repoSlug = null, isPush }) {
   const presented = String(credential ?? '');
   if (!presented) return null;
 
   if (!config.isProduction && config.gitToken && safeEqual(presented, config.gitToken)) {
-    return { authType: 'development-token', userId: null, username: 'kukgit-development-token', organization: null };
+    return { authType: 'development-token', userId: null, username: 'kukgit-development-token', organization: null, repositoryPermission: 'admin' };
   }
 
   const requiredScope = isPush ? 'repo:write' : 'repo:read';
   const token = verifyPersonalAccessToken(db, presented, requiredScope);
   if (!token) return null;
+
+  if (repoSlug) {
+    const access = getEffectiveRepositoryAccess(db, { userId: token.userId, orgSlug, repoSlug });
+    const requiredPermission = isPush ? 'write' : 'read';
+    if (!access || !permissionAtLeast(access.permission, requiredPermission)) return null;
+    return {
+      authType: 'personal-access-token',
+      userId: token.userId,
+      username: token.email,
+      tokenId: token.id,
+      organization: { id: access.repository.organizationId, slug: access.repository.orgSlug, name: access.repository.orgName },
+      repositoryPermission: access.permission,
+    };
+  }
+
   const organization = orgAccess(db, token.userId, orgSlug, isPush ? 'developer' : 'viewer');
   if (!organization) return null;
-  return { authType: 'personal-access-token', userId: token.userId, username: token.email, tokenId: token.id, organization };
+  return { authType: 'personal-access-token', userId: token.userId, username: token.email, tokenId: token.id, organization, repositoryPermission: null };
 }
 
 export function handleGitHttp(req, res, { config, db, pathname, queryString }) {
@@ -62,7 +78,7 @@ export function handleGitHttp(req, res, { config, db, pathname, queryString }) {
   if (requiresAuth) {
     const credentials = parseBasicAuth(req.headers.authorization);
     const credential = credentials?.password || (credentials?.username?.startsWith('kgp_') ? credentials.username : '');
-    authenticated = authorizeGitCredential(db, config, { credential, orgSlug, isPush });
+    authenticated = authorizeGitCredential(db, config, { credential, orgSlug, repoSlug, isPush });
     if (!authenticated) return rejectAuth(res);
     audit(db, {
       organizationId: repo.organizationId,
@@ -70,7 +86,7 @@ export function handleGitHttp(req, res, { config, db, pathname, queryString }) {
       action: isPush ? 'git.push' : 'git.fetch',
       targetType: 'repository',
       targetId: repo.id,
-      metadata: { repository: repoSlug, authType: authenticated.authType },
+      metadata: { repository: repoSlug, authType: authenticated.authType, repositoryPermission: authenticated.repositoryPermission },
     });
   }
 

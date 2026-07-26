@@ -13,12 +13,18 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Git smart HTTP clone and authenticated push
 - Scoped personal access tokens with browser and CLI lifecycle management
 - Token expiry, revocation, last-used tracking and one-time secret display
-- Production Git authorization by token scope plus organization role
+- Production Git authorization by token scope plus effective repository permission
 - Mirror import for public HTTPS/SSH repositories
 - Organizations and role-based access control
 - Expiring organization invitations with email verification, one-time acceptance links and revocation
 - Organization member directory
 - Teams with maintainers, members and auditable lifecycle management
+- Direct repository collaborators
+- Repository team access grants
+- Read, Triage, Write, Maintain and Admin permission hierarchy
+- Effective permission calculation across organization role, direct grant and team grants
+- Browser API and Git clone/push repository-permission enforcement
+- Repository access-management interface
 - Repository code browser: branches, commits, folders and files
 - Browser branch creation and file commits
 - Issues with status and priority
@@ -28,11 +34,11 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Audit log
 - Responsive Kuklabs-branded web interface
 - No runtime npm dependencies
-- Automated tests for API, Git engine, collaboration, analysis and security helpers
+- Automated tests for API, Git engine, collaboration, repository access, analysis and security helpers
 
 ## Important scope boundary
 
-This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, One Kuklabs Account/SSO/MFA, repository collaborators and team access enforcement, large-scale object storage, distributed job queues, CI runners, package/container registries, LFS, webhooks, email, billing, abuse controls and high-availability deployment.
+This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, One Kuklabs Account/SSO/MFA, external collaborators, branch protection, review approvals, large-scale object storage, distributed job queues, CI runners, package/container registries, LFS, webhooks, email, billing, abuse controls and high-availability deployment.
 
 ## Local quick start
 
@@ -77,7 +83,7 @@ For local development, Git smart HTTP accepts `KUKGIT_DEV_GIT_TOKEN` as the HTTP
 git push http://developer:<KUKGIT_DEV_GIT_TOKEN>@localhost:8787/git/kuklabs/kukgit-demo.git main
 ```
 
-The shared development token is disabled automatically in production. Production clone/push for protected repositories requires a scoped KukGit personal access token.
+The shared development token is disabled automatically in production. Protected clone/fetch requires a read-capable personal access token plus effective repository Read permission. Push requires a `repo:write` personal access token plus effective repository Write permission.
 
 Create a token from **Settings → Personal access tokens** in the KukGit interface, or create a 90-day read/write token from the server CLI:
 
@@ -103,6 +109,17 @@ Open **Organizations → Organization collaboration** to:
 
 Invitation tokens are shown only once and acceptance requires the exact invited account email. Read [Organization Collaboration](docs/ORGANIZATION_COLLABORATION.md) for the complete security and workflow model.
 
+## Repository access
+
+Open a repository and select **Settings** to manage:
+
+- direct collaborator permissions
+- team repository grants
+- effective permission sources
+- Read, Triage, Write, Maintain and Admin access
+
+KukGit combines organization role baseline, direct grants and every applicable team grant. The highest permission wins. Read [Repository Access](docs/REPOSITORY_ACCESS.md) for the complete authorization and Git enforcement model.
+
 ## Commands
 
 ```bash
@@ -120,7 +137,7 @@ npm test          # Run automated tests
 ```text
 kukgit/
 ├── public/                 # Dependency-free web application
-├── src/                    # API, auth, tokens, collaboration, database, Git and analysis services
+├── src/                    # API, auth, access, collaboration, database, Git and analysis services
 ├── scripts/                # Seed, environment doctor and token administration
 ├── test/                   # Node test suite
 ├── docs/                   # Product, architecture, business and security docs
