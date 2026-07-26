@@ -44,6 +44,10 @@ import {
   startOperationalNotificationWorker,
 } from './src/operations-notifications.mjs';
 import {
+  createOrganizationOnboardingApiHandler,
+  migrateOrganizationOnboarding,
+} from './src/organization-onboarding.mjs';
+import {
   createPullRequestDiffsApiHandler,
   migratePullRequestDiffs,
 } from './src/pull-request-diffs-safe.mjs';
@@ -90,6 +94,7 @@ const gitVersion = ensureGitAvailable();
 const db = openDatabase(config);
 migrateAuthKitIdentity(db);
 migrateCollaboration(db);
+migrateOrganizationOnboarding(db);
 migrateRepositoryAccess(db);
 migrateRepositoryInvitations(db);
 migrateBranchGovernance(db);
@@ -114,6 +119,7 @@ const tokenApi = createTokenApiHandler({ config, db });
 const notificationsApi = createNotificationsApiHandler({ config, db });
 const externalDiscoveryApi = createExternalCollaboratorDiscoveryApiHandler({ config, db });
 const collaborationApi = createCollaborationApiHandler({ config, db });
+const onboardingApi = createOrganizationOnboardingApiHandler({ config, db });
 const invitationResendApi = createInvitationResendApiHandler({ config, db });
 const repositoryInvitationsApi = createRepositoryInvitationsApiHandler({ config, db });
 const backupsApi = createLfsAwareBackupsApiHandler({ config, db });
@@ -138,6 +144,7 @@ async function dispatch(req, res) {
   if (await externalDiscoveryApi(req, res)) return;
   if (await invitationResendApi(req, res)) return;
   if (await collaborationApi(req, res)) return;
+  if (await onboardingApi(req, res)) return;
   if (await repositoryInvitationsApi(req, res)) return;
   if (await backupsApi(req, res)) return;
   if (await gitLfsApi(req, res)) return;
@@ -174,6 +181,7 @@ server.listen(config.port, config.host, () => {
   console.log(`\nKukGit v0.1.0 is running at ${config.baseUrl}`);
   console.log(`${gitVersion}; data: ${config.dataDir}`);
   console.log(`Authentication: ${config.authMode === 'authkit' ? `One Kuklabs Account via ${config.authkitBaseUrl}` : 'local development mode'}`);
+  console.log(`Organization ownership limit: ${config.organizationOwnerLimit}`);
   console.log(`Backups: ${config.backupsDir}; retention: ${config.backupRetentionCount} snapshots / ${config.backupRetentionDays} days`);
   console.log(`Git LFS: ${config.lfsDir}; repository quota: ${config.lfsRepositoryQuotaBytes} bytes`);
   console.log(`Email delivery: ${smtpConfigured(config) ? `${config.smtpHost}:${config.smtpPort}` : 'disabled until SMTP is configured'}`);

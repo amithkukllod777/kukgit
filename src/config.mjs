@@ -48,6 +48,7 @@ export function loadConfig(overrides = {}) {
   const authkitEncryptionKey = overrides.authkitEncryptionKey ?? process.env.KUKGIT_AUTHKIT_ENCRYPTION_KEY ?? (isProduction ? '' : 'kukgit-development-authkit-encryption-key-change-me');
   const authkitTimeoutMs = positiveNumber(overrides.authkitTimeoutMs ?? process.env.KUKGIT_AUTHKIT_TIMEOUT_MS ?? 8000, 'KUKGIT_AUTHKIT_TIMEOUT_MS');
   const authkitRefreshTtlDays = positiveNumber(overrides.authkitRefreshTtlDays ?? process.env.KUKGIT_AUTHKIT_REFRESH_TTL_DAYS ?? 60, 'KUKGIT_AUTHKIT_REFRESH_TTL_DAYS');
+  const organizationOwnerLimit = positiveNumber(overrides.organizationOwnerLimit ?? process.env.KUKGIT_ORGANIZATION_OWNER_LIMIT ?? 5, 'KUKGIT_ORGANIZATION_OWNER_LIMIT');
 
   if (!['local', 'authkit'].includes(authMode)) {
     throw new Error('KUKGIT_AUTH_MODE must be local or authkit.');
@@ -101,6 +102,7 @@ export function loadConfig(overrides = {}) {
     authkitEncryptionKey,
     authkitTimeoutMs,
     authkitRefreshTtlDays,
+    organizationOwnerLimit,
     adminEmail: overrides.adminEmail ?? process.env.KUKGIT_ADMIN_EMAIL ?? 'admin@kuklabs.local',
     adminPassword: overrides.adminPassword ?? process.env.KUKGIT_ADMIN_PASSWORD ?? 'KukGit@2026',
     adminName: overrides.adminName ?? process.env.KUKGIT_ADMIN_NAME ?? 'Amit Kumar Kuklod',
