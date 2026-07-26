@@ -5,11 +5,13 @@ import { loadConfig } from '../src/config.mjs';
 import { openDatabase } from '../src/db.mjs';
 import {
   buildPostgresDdl,
-  exportPostgresMigrationBundle,
   inspectSqliteSchema,
   validateSchemaForPostgres,
-  verifyPostgresMigrationBundle,
 } from '../src/database-portability.mjs';
+import {
+  exportSafePostgresMigrationBundle,
+  verifySafePostgresMigrationBundle,
+} from '../src/database-portability-safe.mjs';
 import {
   currentSchemaVersion,
   migrateApplicationSchema,
@@ -41,14 +43,21 @@ Important:
 }
 
 function option(args, name) {
-  const index = args.indexOf(name);
-  if (index < 0) return null;
-  const value = args[index + 1];
+  const indexes = args.map((value, index) => value === name ? index : -1).filter((index) => index >= 0);
+  if (!indexes.length) return null;
+  if (indexes.length > 1) throw new Error(`${name} may be supplied only once.`);
+  const value = args[indexes[0] + 1];
   if (!value || value.startsWith('--')) throw new Error(`${name} requires a value.`);
   return value;
 }
 
-function safeTimestamp(value = new Date().toISOString()) {
+function normalizedCreatedAt(value) {
+  const date = value ? new Date(value) : new Date();
+  if (!Number.isFinite(date.getTime())) throw new Error('--created-at must be a valid ISO timestamp.');
+  return date.toISOString();
+}
+
+function safeTimestamp(value) {
   return value.replace(/[:.]/g, '-');
 }
 
@@ -112,7 +121,7 @@ async function preflight() {
 
 async function exportBundle(args) {
   const { config, db } = openMigratedDatabase();
-  const createdAt = option(args, '--created-at') || new Date().toISOString();
+  const createdAt = normalizedCreatedAt(option(args, '--created-at'));
   const requested = option(args, '--out');
   const outputDir = path.resolve(requested || path.join(
     config.dataDir,
@@ -120,11 +129,11 @@ async function exportBundle(args) {
     `kukgit-${safeTimestamp(createdAt)}`,
   ));
   try {
-    const result = await exportPostgresMigrationBundle(db, outputDir, {
+    const result = await exportSafePostgresMigrationBundle(db, outputDir, {
       createdAt,
       sourceDatabase: config.databasePath,
     });
-    const verification = await verifyPostgresMigrationBundle(result.outputDir);
+    const verification = await verifySafePostgresMigrationBundle(result.outputDir);
     console.log(JSON.stringify({
       created: true,
       outputDir: result.outputDir,
@@ -143,7 +152,7 @@ async function exportBundle(args) {
 async function verifyBundle(args) {
   const bundle = option(args, '--bundle') || option(args, '--out');
   if (!bundle) throw new Error('verify requires --bundle <directory>.');
-  const result = await verifyPostgresMigrationBundle(path.resolve(bundle));
+  const result = await verifySafePostgresMigrationBundle(path.resolve(bundle));
   console.log(JSON.stringify(result, null, 2));
 }
 
