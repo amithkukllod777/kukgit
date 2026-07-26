@@ -4,10 +4,36 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 
+function booleanValue(value, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  return String(value).toLowerCase() === 'true';
+}
+
 export function loadConfig(overrides = {}) {
   const dataDir = path.resolve(overrides.dataDir ?? process.env.KUKGIT_DATA_DIR ?? path.join(root, 'data'));
   const isProduction = (overrides.nodeEnv ?? process.env.NODE_ENV) === 'production';
   const baseUrl = overrides.baseUrl ?? process.env.KUKGIT_BASE_URL ?? `http://localhost:${overrides.port ?? process.env.PORT ?? 8787}`;
+  const authMode = String(overrides.authMode ?? process.env.KUKGIT_AUTH_MODE ?? (isProduction ? 'authkit' : 'local')).toLowerCase();
+  const allowLocalAuthInProduction = booleanValue(
+    overrides.allowLocalAuthInProduction ?? process.env.KUKGIT_ALLOW_LOCAL_AUTH_IN_PRODUCTION,
+    false,
+  );
+  const authkitBaseUrl = String(overrides.authkitBaseUrl ?? process.env.KUKGIT_AUTHKIT_BASE_URL ?? '').replace(/\/$/, '');
+  const authkitEncryptionKey = overrides.authkitEncryptionKey ?? process.env.KUKGIT_AUTHKIT_ENCRYPTION_KEY ?? (isProduction ? '' : 'kukgit-development-authkit-encryption-key-change-me');
+
+  if (!['local', 'authkit'].includes(authMode)) {
+    throw new Error('KUKGIT_AUTH_MODE must be local or authkit.');
+  }
+  if (isProduction && authMode === 'local' && !allowLocalAuthInProduction) {
+    throw new Error('Local KukGit password authentication is disabled in production. Use KUKGIT_AUTH_MODE=authkit.');
+  }
+  if (authMode === 'authkit' && !authkitBaseUrl) {
+    throw new Error('KUKGIT_AUTHKIT_BASE_URL is required when AuthKit authentication is enabled.');
+  }
+  if (authMode === 'authkit' && String(authkitEncryptionKey).length < 32) {
+    throw new Error('KUKGIT_AUTHKIT_ENCRYPTION_KEY must contain at least 32 characters.');
+  }
+
   return {
     root,
     host: overrides.host ?? process.env.HOST ?? '0.0.0.0',
@@ -30,7 +56,14 @@ export function loadConfig(overrides = {}) {
     backupLockPath: path.resolve(overrides.backupLockPath ?? process.env.KUKGIT_BACKUP_LOCK_PATH ?? path.join(dataDir, 'backup.lock')),
     publicDir: path.join(root, 'public'),
     isProduction,
-    cookieSecure: String(overrides.cookieSecure ?? process.env.KUKGIT_COOKIE_SECURE ?? 'false') === 'true',
+    cookieSecure: booleanValue(overrides.cookieSecure ?? process.env.KUKGIT_COOKIE_SECURE, false),
+    authMode,
+    allowLocalAuthInProduction,
+    authkitBaseUrl,
+    authkitProductId: String(overrides.authkitProductId ?? process.env.KUKGIT_AUTHKIT_PRODUCT_ID ?? 'kukgit').toLowerCase(),
+    authkitEncryptionKey,
+    authkitTimeoutMs: Number(overrides.authkitTimeoutMs ?? process.env.KUKGIT_AUTHKIT_TIMEOUT_MS ?? 8000),
+    authkitRefreshTtlDays: Number(overrides.authkitRefreshTtlDays ?? process.env.KUKGIT_AUTHKIT_REFRESH_TTL_DAYS ?? 60),
     adminEmail: overrides.adminEmail ?? process.env.KUKGIT_ADMIN_EMAIL ?? 'admin@kuklabs.local',
     adminPassword: overrides.adminPassword ?? process.env.KUKGIT_ADMIN_PASSWORD ?? 'KukGit@2026',
     adminName: overrides.adminName ?? process.env.KUKGIT_ADMIN_NAME ?? 'Amit Kumar Kuklod',
@@ -38,9 +71,9 @@ export function loadConfig(overrides = {}) {
     webhookEncryptionKey: overrides.webhookEncryptionKey ?? process.env.KUKGIT_WEBHOOK_ENCRYPTION_KEY ?? (isProduction ? '' : 'kukgit-development-webhook-key-change-me'),
     smtpHost: overrides.smtpHost ?? process.env.KUKGIT_SMTP_HOST ?? '',
     smtpPort: Number(overrides.smtpPort ?? process.env.KUKGIT_SMTP_PORT ?? 587),
-    smtpSecure: String(overrides.smtpSecure ?? process.env.KUKGIT_SMTP_SECURE ?? 'false') === 'true',
-    smtpStartTls: String(overrides.smtpStartTls ?? process.env.KUKGIT_SMTP_STARTTLS ?? 'true') === 'true',
-    smtpRejectUnauthorized: String(overrides.smtpRejectUnauthorized ?? process.env.KUKGIT_SMTP_REJECT_UNAUTHORIZED ?? 'true') === 'true',
+    smtpSecure: booleanValue(overrides.smtpSecure ?? process.env.KUKGIT_SMTP_SECURE, false),
+    smtpStartTls: booleanValue(overrides.smtpStartTls ?? process.env.KUKGIT_SMTP_STARTTLS, true),
+    smtpRejectUnauthorized: booleanValue(overrides.smtpRejectUnauthorized ?? process.env.KUKGIT_SMTP_REJECT_UNAUTHORIZED, true),
     smtpUser: overrides.smtpUser ?? process.env.KUKGIT_SMTP_USER ?? '',
     smtpPassword: overrides.smtpPassword ?? process.env.KUKGIT_SMTP_PASSWORD ?? '',
     emailFrom: overrides.emailFrom ?? process.env.KUKGIT_EMAIL_FROM ?? 'noreply@kuklabs.local',
@@ -53,7 +86,7 @@ export function loadConfig(overrides = {}) {
     sshPort: Number(overrides.sshPort ?? process.env.KUKGIT_SSH_PORT ?? 22),
     sshUser: overrides.sshUser ?? process.env.KUKGIT_SSH_USER ?? 'git',
     nodeBinary: overrides.nodeBinary ?? process.env.KUKGIT_NODE_BINARY ?? process.execPath,
-    sshCommandScript: overrides.sshCommandScript ?? process.env.KUKGIT_SSH_COMMAND_SCRIPT ?? path.join(root, 'scripts', 'ssh-command.mjs'),
+    sshCommandScript: overrides.sshCommandScript ?? process.env.KUKGIT_SSH_COMMAND_SCRIPT ?? path.join(root, 'scripts/ssh-command.mjs'),
     authorizedKeysPath: overrides.authorizedKeysPath ?? process.env.KUKGIT_AUTHORIZED_KEYS_PATH ?? path.join(dataDir, 'ssh', 'authorized_keys'),
     aiEndpoint: overrides.aiEndpoint ?? process.env.KUKGIT_AI_ENDPOINT ?? '',
     aiApiKey: overrides.aiApiKey ?? process.env.KUKGIT_AI_API_KEY ?? '',
