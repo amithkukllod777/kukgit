@@ -9,11 +9,27 @@ import { loadConfig } from '../src/config.mjs';
 import { openDatabase, seedCore } from '../src/db.mjs';
 import { createTokenApiHandler } from '../src/token-api.mjs';
 
-test('creates, lists and revokes a personal access token through the browser API', async (t) => {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-token-api-test-'));
-  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+function startTestServer(config, db) {
+  const app = createApp({ config, db });
+  const tokenApi = createTokenApiHandler({ config, db });
+  return http.createServer(async (req, res) => {
+    if (await tokenApi(req, res)) return;
+    return app(req, res);
+  });
+}
 
-  const config = loadConfig({
+async function login(origin) {
+  const response = await fetch(`${origin}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'founder@example.com', password: 'secure-test-password' }),
+  });
+  assert.equal(response.status, 200);
+  return response.headers.get('set-cookie').split(';')[0];
+}
+
+function testConfig(dataDir) {
+  return loadConfig({
     dataDir,
     databasePath: path.join(dataDir, 'test.db'),
     repositoriesDir: path.join(dataDir, 'repos'),
@@ -23,16 +39,18 @@ test('creates, lists and revokes a personal access token through the browser API
     adminPassword: 'secure-test-password',
     adminName: 'Founder',
   });
+}
+
+test('creates, lists and revokes a personal access token through the browser API', async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-token-api-test-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+
+  const config = testConfig(dataDir);
   const db = openDatabase(config);
   t.after(() => db.close());
   seedCore(db, config);
 
-  const app = createApp({ config, db });
-  const tokenApi = createTokenApiHandler({ config, db });
-  const server = http.createServer(async (req, res) => {
-    if (await tokenApi(req, res)) return;
-    return app(req, res);
-  });
+  const server = startTestServer(config, db);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -40,14 +58,7 @@ test('creates, lists and revokes a personal access token through the browser API
   const unauthenticated = await fetch(`${origin}/api/settings/tokens`);
   assert.equal(unauthenticated.status, 401);
 
-  const login = await fetch(`${origin}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'founder@example.com', password: 'secure-test-password' }),
-  });
-  assert.equal(login.status, 200);
-  const cookie = login.headers.get('set-cookie').split(';')[0];
-
+  const cookie = await login(origin);
   const initial = await fetch(`${origin}/api/settings/tokens`, { headers: { Cookie: cookie } });
   assert.equal(initial.status, 200);
   assert.deepEqual((await initial.json()).tokens, []);
@@ -83,41 +94,23 @@ test('creates, lists and revokes a personal access token through the browser API
   const finalList = await afterRevoke.json();
   assert.ok(finalList.tokens[0].revokedAt);
 
-  const auditRows = db.prepare("SELECT action FROM audit_logs WHERE action LIKE 'personal_access_token.%' ORDER BY created_at").all();
+  const auditRows = db.prepare("SELECT action FROM audit_logs WHERE action LIKE 'personal_access_token.%' ORDER BY rowid").all();
   assert.deepEqual(auditRows.map((row) => row.action), ['personal_access_token.created', 'personal_access_token.revoked']);
 });
 
-test('rejects unsupported token expiry and empty scopes', async (t) => {
+test('rejects unsupported token expiry, empty scopes and cross-origin writes', async (t) => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-token-validation-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
-  const config = loadConfig({
-    dataDir,
-    databasePath: path.join(dataDir, 'test.db'),
-    repositoriesDir: path.join(dataDir, 'repos'),
-    tempDir: path.join(dataDir, 'tmp'),
-    nodeEnv: 'test',
-    adminEmail: 'founder@example.com',
-    adminPassword: 'secure-test-password',
-    adminName: 'Founder',
-  });
+  const config = testConfig(dataDir);
   const db = openDatabase(config);
   t.after(() => db.close());
   seedCore(db, config);
-  const app = createApp({ config, db });
-  const tokenApi = createTokenApiHandler({ config, db });
-  const server = http.createServer(async (req, res) => {
-    if (await tokenApi(req, res)) return;
-    return app(req, res);
-  });
+
+  const server = startTestServer(config, db);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const login = await fetch(`${origin}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'founder@example.com', password: 'secure-test-password' }),
-  });
-  const cookie = login.headers.get('set-cookie').split(';')[0];
+  const cookie = await login(origin);
 
   const badExpiry = await fetch(`${origin}/api/settings/tokens`, {
     method: 'POST',
@@ -132,4 +125,11 @@ test('rejects unsupported token expiry and empty scopes', async (t) => {
     body: JSON.stringify({ name: 'No scopes', scopes: [], expiresInDays: 30 }),
   });
   assert.equal(noScopes.status, 400);
+
+  const crossOrigin = await fetch(`${origin}/api/settings/tokens`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://attacker.example' },
+    body: JSON.stringify({ name: 'Blocked', scopes: ['repo:read'], expiresInDays: 30 }),
+  });
+  assert.equal(crossOrigin.status, 403);
 });
