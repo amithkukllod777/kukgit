@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import crypto from 'node:crypto';
+import { currentRepositoryAccess } from './access-context.mjs';
 import { hashPassword } from './auth.mjs';
 
 export function openDatabase(config) {
@@ -146,7 +147,7 @@ export function seedCore(db, config) {
 
 export function audit(db, { organizationId = null, userId = null, action, targetType, targetId = null, metadata = {} }) {
   db.prepare(`INSERT INTO audit_logs (id, organization_id, user_id, action, target_type, target_id, metadata_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`) 
     .run(uid('aud'), organizationId, userId, action, targetType, targetId, JSON.stringify(metadata));
 }
 
@@ -157,7 +158,14 @@ export function orgAccess(db, userId, orgSlug, minimumRole = 'viewer') {
     FROM organizations o JOIN org_members om ON om.organization_id = o.id
     WHERE o.slug = ? AND om.user_id = ?
   `).get(orgSlug, userId);
-  if (!row || roleRank[row.role] < roleRank[minimumRole]) return null;
+  if (!row) return null;
+
+  const repositoryContext = currentRepositoryAccess();
+  if (repositoryContext?.allowed && repositoryContext.userId === userId && repositoryContext.orgSlug === orgSlug) {
+    return { ...row, repositoryPermission: repositoryContext.permission };
+  }
+
+  if (roleRank[row.role] < roleRank[minimumRole]) return null;
   return row;
 }
 
