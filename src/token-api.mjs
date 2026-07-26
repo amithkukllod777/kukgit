@@ -20,6 +20,7 @@ function sendJson(res, status, payload, headers = {}) {
     ...headers,
   });
   res.end(body);
+  return true;
 }
 
 async function readJson(req) {
@@ -41,7 +42,12 @@ async function readJson(req) {
 function tokenIdFromPath(pathname) {
   const prefix = '/api/settings/tokens/';
   if (!pathname.startsWith(prefix)) return null;
-  const value = decodeURIComponent(pathname.slice(prefix.length));
+  let value;
+  try {
+    value = decodeURIComponent(pathname.slice(prefix.length));
+  } catch {
+    throw httpError(400, 'Invalid personal access token identifier.', 'TOKEN_ID_INVALID');
+  }
   if (!/^pat_[a-f0-9]{32}$/i.test(value)) throw httpError(400, 'Invalid personal access token identifier.', 'TOKEN_ID_INVALID');
   return value;
 }
