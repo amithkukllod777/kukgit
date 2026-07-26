@@ -17,7 +17,7 @@ import {
   lfsObjectPath,
   migrateGitLfs,
   verifyLfsAuthToken,
-} from '../src/git-lfs.mjs';
+} from '../src/git-lfs-safe.mjs';
 import { migrateRepositoryAccess } from '../src/repository-access.mjs';
 import { migrateRepositoryLifecycle } from '../src/repository-lifecycle.mjs';
 import { authorizeLfsSshAuthentication, parseLfsSshOriginalCommand } from '../src/ssh-lfs.mjs';
