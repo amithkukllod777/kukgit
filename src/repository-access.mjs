@@ -57,14 +57,14 @@ function findRepository(db, { repositoryId, orgSlug, repoSlug }) {
       SELECT r.id, r.slug, r.name, r.visibility, r.organization_id AS organizationId,
         o.slug AS orgSlug, o.name AS orgName
       FROM repositories r JOIN organizations o ON o.id = r.organization_id
-      WHERE r.id = ?
+      WHERE r.id = ? AND r.deleted_at IS NULL
     `).get(repositoryId);
   }
   return db.prepare(`
     SELECT r.id, r.slug, r.name, r.visibility, r.organization_id AS organizationId,
       o.slug AS orgSlug, o.name AS orgName
     FROM repositories r JOIN organizations o ON o.id = r.organization_id
-    WHERE o.slug = ? AND r.slug = ?
+    WHERE o.slug = ? AND r.slug = ? AND r.deleted_at IS NULL
   `).get(orgSlug, repoSlug);
 }
 
@@ -75,15 +75,29 @@ export function getEffectiveRepositoryAccess(db, { userId, repositoryId, orgSlug
   const membership = db.prepare(`
     SELECT role FROM org_members WHERE organization_id = ? AND user_id = ?
   `).get(repository.organizationId, userId);
-  if (!membership) {
-    return { repository, organizationRole: null, permission: 'none', sources: [] };
+  const sources = [];
+  if (membership) {
+    sources.push({
+      type: 'organization',
+      id: repository.organizationId,
+      name: repository.orgName,
+      permission: ORGANIZATION_BASELINE[membership.role] ?? 'none',
+      role: membership.role,
+    });
   }
 
-  const sources = [{ type: 'organization', id: repository.organizationId, name: repository.orgName, permission: ORGANIZATION_BASELINE[membership.role] ?? 'none', role: membership.role }];
   const direct = db.prepare(`
     SELECT permission FROM repository_collaborators WHERE repository_id = ? AND user_id = ?
   `).get(repository.id, userId);
-  if (direct) sources.push({ type: 'direct', id: userId, name: 'Direct collaborator', permission: direct.permission });
+  if (direct) {
+    sources.push({
+      type: 'direct',
+      id: userId,
+      name: membership ? 'Direct collaborator' : 'External collaborator',
+      permission: direct.permission,
+      external: !membership,
+    });
+  }
 
   const teamSources = db.prepare(`
     SELECT t.id, t.slug, t.name, g.permission, tm.role AS teamRole
@@ -99,9 +113,10 @@ export function getEffectiveRepositoryAccess(db, { userId, repositoryId, orgSlug
 
   return {
     repository,
-    organizationRole: membership.role,
+    organizationRole: membership?.role ?? null,
     permission: maxPermission(sources.map((source) => source.permission)),
     sources,
+    isExternalCollaborator: !membership && Boolean(direct),
   };
 }
 
@@ -171,14 +186,15 @@ function listRepositoryAccess(db, access) {
   const collaborators = db.prepare(`
     SELECT u.id AS userId, u.email, u.display_name AS displayName,
       om.role AS organizationRole, c.permission, c.created_at AS createdAt,
-      c.updated_at AS updatedAt, added.display_name AS addedByName
+      c.updated_at AS updatedAt, added.display_name AS addedByName,
+      CASE WHEN om.user_id IS NULL THEN 1 ELSE 0 END AS isExternal
     FROM repository_collaborators c
     JOIN users u ON u.id = c.user_id
-    JOIN org_members om ON om.organization_id = ? AND om.user_id = u.id
+    LEFT JOIN org_members om ON om.organization_id = ? AND om.user_id = u.id
     JOIN users added ON added.id = c.added_by
     WHERE c.repository_id = ?
-    ORDER BY u.display_name
-  `).all(repository.organizationId, repository.id);
+    ORDER BY isExternal DESC, u.display_name
+  `).all(repository.organizationId, repository.id).map((row) => ({ ...row, isExternal: Boolean(row.isExternal) }));
 
   const teams = db.prepare(`
     SELECT t.id, t.slug, t.name, t.description,
@@ -208,6 +224,8 @@ function listRepositoryAccess(db, access) {
     repository,
     effectivePermission: access.permission,
     permissionSources: access.sources,
+    isOrganizationMember: Boolean(access.organizationRole),
+    isExternalCollaborator: Boolean(access.isExternalCollaborator),
     canManage: permissionAtLeast(access.permission, 'admin'),
     availablePermissions: REPOSITORY_PERMISSIONS,
     members,
@@ -266,7 +284,7 @@ export function createRepositoryAccessApiHandler({ config, db }) {
           targetId: access.repository.id,
           metadata: { repository: access.repository.slug, collaboratorId: member.id, email: member.email, permission },
         });
-        return sendJson(res, 200, { collaborator: { ...member, permission } });
+        return sendJson(res, 200, { collaborator: { ...member, permission, isExternal: false } });
       }
 
       params = routeMatch(pathname, '/api/repository-access/:org/:repo/collaborators/:userId');
@@ -385,6 +403,8 @@ export function createRepositoryAccessGuard({ config, db, app }) {
         repositoryId: access.repository.id,
         permission: access.permission,
         requiredPermission,
+        organizationRole: access.organizationRole,
+        external: access.isExternalCollaborator,
         allowed: true,
       }, async () => {
         await app(req, res);
