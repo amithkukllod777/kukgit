@@ -93,7 +93,8 @@ test('central migration runner records a complete schema and foreign-key-safe or
     'users', 'sessions', 'organizations', 'org_members', 'teams', 'team_members',
     'repositories', 'issues', 'pull_requests', 'repository_collaborators',
     'repository_invitations', 'notifications', 'email_outbox', 'webhook_deliveries',
-    'git_lfs_objects', 'kukgit_schema_metadata',
+    'lfs_objects', 'repository_lfs_objects', 'lfs_pending_uploads',
+    'kukgit_schema_metadata',
   ]) table(schema, name);
 
   const position = (name) => schema.importOrder.indexOf(name);
@@ -103,6 +104,7 @@ test('central migration runner records a complete schema and foreign-key-safe or
   assert.ok(position('repositories') < position('issues'));
   assert.ok(position('repositories') < position('pull_requests'));
   assert.ok(position('teams') < position('team_members'));
+  assert.ok(position('lfs_objects') < position('repository_lfs_objects'));
 
   assert.equal(table(schema, 'users').sensitiveColumns.includes('password_hash'), true);
   assert.equal(table(schema, 'sessions').sensitiveColumns.includes('authkit_refresh_ciphertext'), true);
