@@ -63,6 +63,12 @@ function migrate(db) {
       description TEXT NOT NULL DEFAULT '',
       visibility TEXT NOT NULL DEFAULT 'private' CHECK(visibility IN ('public','private','internal')),
       default_branch TEXT NOT NULL DEFAULT 'main',
+      archived_at TEXT,
+      deleted_at TEXT,
+      deleted_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      deleted_from_org_id TEXT REFERENCES organizations(id) ON DELETE SET NULL,
+      deleted_original_slug TEXT,
+      purge_after TEXT,
       created_by TEXT NOT NULL REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -173,6 +179,6 @@ export function findRepo(db, orgSlug, repoSlug) {
   return db.prepare(`
     SELECT r.*, o.slug AS org_slug, o.name AS org_name
     FROM repositories r JOIN organizations o ON o.id = r.organization_id
-    WHERE o.slug = ? AND r.slug = ?
+    WHERE o.slug = ? AND r.slug = ? AND r.deleted_at IS NULL
   `).get(orgSlug, repoSlug);
 }

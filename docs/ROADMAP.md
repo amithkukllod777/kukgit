@@ -70,6 +70,15 @@ Progress delivered:
 - automatic push, issue, pull-request, review and status event capture
 - webhook Settings and delivery-history browser interface
 - webhook lifecycle and redelivery audit events
+- archive and unarchive repository workflow
+- read-only enforcement across browser APIs and Git pushes
+- rollback-protected organization transfer and bare-storage move
+- team-grant and incompatible collaborator cleanup during transfer
+- 30-day recoverable repository Trash
+- Admin restore with slug-collision protection
+- Owner-only permanent purge with storage quarantine rollback
+- repository lifecycle Settings and Trash interfaces
+- lifecycle audit and repository webhook events
 
 Remaining:
 
@@ -79,7 +88,6 @@ Remaining:
 - token rotation reminders and expiring-token notifications
 - SSH keys and deploy keys
 - PostgreSQL migration
-- repository transfer, archive and delete
 - unified diff rendering and diff-hunk anchors
 - email and in-app notifications
 - Git LFS
