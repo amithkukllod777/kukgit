@@ -10,6 +10,7 @@ import { hashPassword } from '../src/auth.mjs';
 import { migrateCollaboration } from '../src/collaboration.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { openDatabase, seedCore, uid } from '../src/db.mjs';
+import { createBareRepository, createDemoCommit } from '../src/git.mjs';
 import { migrateRepositoryAccess } from '../src/repository-access.mjs';
 import {
   createRepositoryWebhook,
@@ -42,13 +43,23 @@ function setup(t) {
   migrateRepositoryAccess(db);
   migrateWebhooks(db);
   const { userId: ownerId, orgId } = seedCore(db, config);
-  const repository = db.prepare(`
-    SELECT r.id, r.slug, r.name, r.organization_id AS organizationId,
-      o.slug AS orgSlug, o.name AS orgName
-    FROM repositories r JOIN organizations o ON o.id = r.organization_id
-    WHERE o.id = ? ORDER BY r.created_at LIMIT 1
-  `).get(orgId);
-  assert.ok(repository);
+
+  const repositoryId = uid('repo');
+  createBareRepository(config, 'kuklabs', 'webhook-demo');
+  db.prepare(`
+    INSERT INTO repositories
+      (id, organization_id, slug, name, description, visibility, default_branch, created_by)
+    VALUES (?, ?, 'webhook-demo', 'Webhook Demo', '', 'private', 'main', ?)
+  `).run(repositoryId, orgId, ownerId);
+  createDemoCommit(config, 'kuklabs', 'webhook-demo');
+  const repository = {
+    id: repositoryId,
+    slug: 'webhook-demo',
+    name: 'Webhook Demo',
+    organizationId: orgId,
+    orgSlug: 'kuklabs',
+    orgName: 'Kuklabs Inc.',
+  };
 
   const viewerId = uid('usr');
   db.prepare('INSERT INTO users (id, email, password_hash, display_name) VALUES (?, ?, ?, ?)')
