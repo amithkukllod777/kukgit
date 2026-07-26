@@ -8,7 +8,6 @@ import {
 import {
   createAuthKitApiHandler,
   createAuthKitIdentityMiddleware,
-  migrateAuthKitIdentity,
 } from './src/authkit-identity.mjs';
 import { createSecureAuthKitLoginApiHandler } from './src/authkit-secure-login.mjs';
 import { createAuthKitCentralSessionGuard } from './src/authkit-session-guard.mjs';
@@ -18,13 +17,12 @@ import {
   createBranchGovernanceApiHandler,
   createBranchGovernanceGuard,
   installExistingBranchProtectionHooks,
-  migrateBranchGovernance,
 } from './src/branch-governance.mjs';
 import {
   createCollaborationNotificationCapture,
   createInvitationResendApiHandler,
 } from './src/collaboration-notifications-safe.mjs';
-import { createCollaborationApiHandler, migrateCollaboration } from './src/collaboration.mjs';
+import { createCollaborationApiHandler } from './src/collaboration.mjs';
 import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
 import { smtpConfigured } from './src/email-transport.mjs';
@@ -32,56 +30,45 @@ import { createExternalCollaboratorAccessPrivacyApiHandler } from './src/externa
 import { createExternalCollaboratorDiscoveryApiHandler } from './src/external-collaborator-discovery.mjs';
 import { createExternalCollaboratorLifecycleGuard } from './src/external-collaborator-lifecycle-guard.mjs';
 import { ensureGitAvailable } from './src/git.mjs';
-import { createGitLfsHandler, migrateGitLfs } from './src/git-lfs-safe.mjs';
+import { createGitLfsHandler } from './src/git-lfs-safe.mjs';
+import {
+  migrateApplicationSchema,
+  migratePostSeedSchema,
+} from './src/migrations.mjs';
 import { createNotificationEventCapture } from './src/notification-events-safe.mjs';
 import {
   createNotificationsApiHandler,
-  migrateNotifications,
   startNotificationWorker,
 } from './src/notifications.mjs';
 import {
   createOperationsNotificationCapture,
   startOperationalNotificationWorker,
 } from './src/operations-notifications.mjs';
-import {
-  createOrganizationOnboardingApiHandler,
-  migrateOrganizationOnboarding,
-} from './src/organization-onboarding.mjs';
-import {
-  createPullRequestDiffsApiHandler,
-  migratePullRequestDiffs,
-} from './src/pull-request-diffs-safe.mjs';
+import { createOrganizationOnboardingApiHandler } from './src/organization-onboarding.mjs';
+import { createPullRequestDiffsApiHandler } from './src/pull-request-diffs-safe.mjs';
 import {
   createRepositoryAccessApiHandler,
   createRepositoryAccessGuard,
-  migrateRepositoryAccess,
 } from './src/repository-access.mjs';
-import {
-  createRepositoryInvitationsApiHandler,
-  migrateRepositoryInvitations,
-} from './src/repository-invitations.mjs';
+import { createRepositoryInvitationsApiHandler } from './src/repository-invitations.mjs';
 import {
   createRepositoryLifecycleApiHandler,
   createRepositoryLifecycleGuard,
-  migrateRepositoryLifecycle,
 } from './src/repository-lifecycle.mjs';
 import {
   createReviewThreadMergeGuard,
   createReviewThreadsApiHandler,
-  migrateReviewThreads,
 } from './src/review-threads.mjs';
 import { createSshKeysArchiveGuard } from './src/ssh-keys-archive-guard.mjs';
-import { createSshKeysApiHandler, migrateSshKeys } from './src/ssh-keys.mjs';
+import { createSshKeysApiHandler } from './src/ssh-keys.mjs';
 import {
   createStatusCheckMergeGuard,
   createStatusChecksApiHandler,
-  migrateStatusChecks,
 } from './src/status-checks.mjs';
 import { createTokenApiHandler } from './src/token-api.mjs';
 import {
   createWebhookEventCapture,
   createWebhooksApiHandler,
-  migrateWebhooks,
   startWebhookWorker,
 } from './src/webhooks.mjs';
 
@@ -92,22 +79,10 @@ fs.mkdirSync(config.backupsDir, { recursive: true });
 fs.mkdirSync(config.lfsDir, { recursive: true, mode: 0o700 });
 const gitVersion = ensureGitAvailable();
 const db = openDatabase(config);
-migrateAuthKitIdentity(db);
-migrateCollaboration(db);
-migrateOrganizationOnboarding(db);
-migrateRepositoryAccess(db);
-migrateRepositoryInvitations(db);
-migrateBranchGovernance(db);
-migrateReviewThreads(db);
-migratePullRequestDiffs(db);
-migrateStatusChecks(db);
-migrateWebhooks(db);
-migrateRepositoryLifecycle(db);
-migrateSshKeys(db);
-migrateGitLfs(db);
+migrateApplicationSchema(db);
 const seeded = config.authMode === 'local' ? seedCore(db, config) : { seeded: false };
 if (config.authMode === 'authkit') ensureAuthKitCoreOrganization(db);
-migrateNotifications(db);
+migratePostSeedSchema(db);
 installExistingBranchProtectionHooks(config, db);
 const app = createApp({ config, db });
 const statusGuardedApp = createStatusCheckMergeGuard({ config, db, app });
