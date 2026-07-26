@@ -17,6 +17,11 @@ import {
   migrateRepositoryAccess,
 } from './src/repository-access.mjs';
 import {
+  createRepositoryLifecycleApiHandler,
+  createRepositoryLifecycleGuard,
+  migrateRepositoryLifecycle,
+} from './src/repository-lifecycle.mjs';
+import {
   createReviewThreadMergeGuard,
   createReviewThreadsApiHandler,
   migrateReviewThreads,
@@ -45,6 +50,7 @@ migrateBranchGovernance(db);
 migrateReviewThreads(db);
 migrateStatusChecks(db);
 migrateWebhooks(db);
+migrateRepositoryLifecycle(db);
 const seeded = seedCore(db, config);
 installExistingBranchProtectionHooks(config, db);
 const app = createApp({ config, db });
@@ -54,6 +60,7 @@ const governedApp = createBranchGovernanceGuard({ config, db, app: reviewThreadG
 const tokenApi = createTokenApiHandler({ config, db });
 const collaborationApi = createCollaborationApiHandler({ config, db });
 const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
+const repositoryLifecycleApi = createRepositoryLifecycleApiHandler({ config, db });
 const branchGovernanceApi = createBranchGovernanceApiHandler({ config, db });
 const reviewThreadsApi = createReviewThreadsApiHandler({ config, db });
 const statusChecksApi = createStatusChecksApiHandler({ config, db });
@@ -63,6 +70,7 @@ const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app: gov
 async function dispatch(req, res) {
   if (await tokenApi(req, res)) return;
   if (await collaborationApi(req, res)) return;
+  if (await repositoryLifecycleApi(req, res)) return;
   if (await repositoryAccessApi(req, res)) return;
   if (await branchGovernanceApi(req, res)) return;
   if (await reviewThreadsApi(req, res)) return;
@@ -72,7 +80,8 @@ async function dispatch(req, res) {
   return governedApp(req, res);
 }
 
-const capturedDispatch = createWebhookEventCapture({ config, db, next: dispatch });
+const lifecycleDispatch = createRepositoryLifecycleGuard({ config, db, next: dispatch });
+const capturedDispatch = createWebhookEventCapture({ config, db, next: lifecycleDispatch });
 const stopWebhookWorker = startWebhookWorker(db, config);
 const server = http.createServer(capturedDispatch);
 
