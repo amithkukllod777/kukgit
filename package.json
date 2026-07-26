@@ -13,6 +13,7 @@
     "seed": "node scripts/seed.mjs",
     "doctor": "node scripts/doctor.mjs",
     "token": "node scripts/token.mjs",
+    "check": "node --check server.mjs && node --check src/token-api.mjs && node --check public/app.js && node --check public/tokens-ui.js",
     "test": "NODE_ENV=test node --test --test-reporter=spec"
   },
   "license": "UNLICENSED"

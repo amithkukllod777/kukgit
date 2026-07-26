@@ -18,4 +18,5 @@ jobs:
           node-version: 22
       - run: git --version
       - run: npm run doctor
+      - run: npm run check
       - run: npm test
