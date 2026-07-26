@@ -14,7 +14,7 @@ import { ensureGitAvailable } from './src/git.mjs';
 import {
   createPullRequestDiffsApiHandler,
   migratePullRequestDiffs,
-} from './src/pull-request-diffs.mjs';
+} from './src/pull-request-diffs-safe.mjs';
 import {
   createRepositoryAccessApiHandler,
   createRepositoryAccessGuard,
