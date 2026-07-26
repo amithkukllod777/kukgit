@@ -8,11 +8,13 @@ import { openDatabase, seedCore, uid } from '../src/db.mjs';
 import {
   buildPostgresDdl,
   canonicalJson,
-  exportPostgresMigrationBundle,
   inspectSqliteSchema,
   validateSchemaForPostgres,
-  verifyPostgresMigrationBundle,
 } from '../src/database-portability.mjs';
+import {
+  exportSafePostgresMigrationBundle,
+  verifySafePostgresMigrationBundle,
+} from '../src/database-portability-safe.mjs';
 import {
   currentSchemaVersion,
   KUKGIT_SCHEMA_VERSION,
@@ -80,7 +82,7 @@ function recursiveFiles(root) {
   return files;
 }
 
-test('central migration runner records a complete schema and foreign-key-safe order', (t) => {
+test('central migration runner records a complete stable schema and foreign-key-safe order', (t) => {
   const context = setup(t);
   const schema = inspectSqliteSchema(context.db);
 
@@ -110,6 +112,18 @@ test('central migration runner records a complete schema and foreign-key-safe or
   assert.equal(table(schema, 'sessions').sensitiveColumns.includes('authkit_refresh_ciphertext'), true);
   assert.equal(table(schema, 'personal_access_tokens').rowCount, 1);
   assert.equal(table(schema, 'issues').rowCount, 1);
+
+  context.db.prepare(`
+    UPDATE kukgit_schema_metadata SET updated_at = '2000-01-01T00:00:00.000Z'
+    WHERE key = 'schema_version'
+  `).run();
+  migratePostSeedSchema(context.db);
+  const metadata = context.db.prepare(`
+    SELECT value, updated_at AS updatedAt FROM kukgit_schema_metadata
+    WHERE key = 'schema_version'
+  `).get();
+  assert.equal(metadata.value, KUKGIT_SCHEMA_VERSION);
+  assert.equal(metadata.updatedAt, '2000-01-01T00:00:00.000Z');
 });
 
 test('generates PostgreSQL DDL for every current table without SQLite runtime syntax', (t) => {
@@ -141,11 +155,11 @@ test('exports deterministic checksummed bundles and verifies row counts', async 
   const second = path.join(context.dataDir, 'bundle-b');
   const createdAt = '2026-07-27T00:00:00.000Z';
 
-  const exportA = await exportPostgresMigrationBundle(context.db, first, {
+  const exportA = await exportSafePostgresMigrationBundle(context.db, first, {
     createdAt,
     sourceDatabase: context.config.databasePath,
   });
-  const exportB = await exportPostgresMigrationBundle(context.db, second, {
+  const exportB = await exportSafePostgresMigrationBundle(context.db, second, {
     createdAt,
     sourceDatabase: context.config.databasePath,
   });
@@ -156,7 +170,7 @@ test('exports deterministic checksummed bundles and verifies row counts', async 
     assert.deepEqual(fs.readFileSync(path.join(first, relative)), fs.readFileSync(path.join(second, relative)), relative);
   }
 
-  const verification = await verifyPostgresMigrationBundle(first);
+  const verification = await verifySafePostgresMigrationBundle(first);
   assert.equal(verification.valid, true);
   assert.equal(verification.schemaVersion, KUKGIT_SCHEMA_VERSION);
   assert.equal(verification.tables, exportA.manifest.totals.tables);
@@ -181,25 +195,25 @@ test('exports deterministic checksummed bundles and verifies row counts', async 
 test('verification rejects table tampering, manifest tampering and existing destinations', async (t) => {
   const context = setup(t);
   const bundle = path.join(context.dataDir, 'bundle');
-  const result = await exportPostgresMigrationBundle(context.db, bundle, {
+  const result = await exportSafePostgresMigrationBundle(context.db, bundle, {
     createdAt: '2026-07-27T00:00:00.000Z',
     sourceDatabase: context.config.databasePath,
   });
 
   await assert.rejects(
-    exportPostgresMigrationBundle(context.db, bundle),
+    exportSafePostgresMigrationBundle(context.db, bundle),
     (error) => error.code === 'DB_BUNDLE_DESTINATION_EXISTS',
   );
 
   const usersRecord = result.manifest.files.tables.find((record) => record.name === 'users');
   fs.appendFileSync(path.join(bundle, usersRecord.path), '{"tampered":true}\n');
   await assert.rejects(
-    verifyPostgresMigrationBundle(bundle),
+    verifySafePostgresMigrationBundle(bundle),
     (error) => error.code === 'DB_BUNDLE_CHECKSUM_MISMATCH',
   );
 
   const cleanBundle = path.join(context.dataDir, 'clean-bundle');
-  await exportPostgresMigrationBundle(context.db, cleanBundle, {
+  await exportSafePostgresMigrationBundle(context.db, cleanBundle, {
     createdAt: '2026-07-27T00:00:00.000Z',
     sourceDatabase: context.config.databasePath,
   });
@@ -208,7 +222,28 @@ test('verification rejects table tampering, manifest tampering and existing dest
   manifest.totals.rows += 1;
   fs.writeFileSync(manifestPath, canonicalJson(manifest));
   await assert.rejects(
-    verifyPostgresMigrationBundle(cleanBundle),
+    verifySafePostgresMigrationBundle(cleanBundle),
     (error) => error.code === 'DB_BUNDLE_MANIFEST_CORRUPT',
+  );
+});
+
+test('safe verification rejects symbolic-link substitution even when file bytes match', async (t) => {
+  if (process.platform === 'win32') return t.skip('Symbolic-link permissions differ on Windows test runners.');
+  const context = setup(t);
+  const bundle = path.join(context.dataDir, 'symlink-bundle');
+  const result = await exportSafePostgresMigrationBundle(context.db, bundle, {
+    createdAt: '2026-07-27T00:00:00.000Z',
+    sourceDatabase: context.config.databasePath,
+  });
+  const usersRecord = result.manifest.files.tables.find((record) => record.name === 'users');
+  const tablePath = path.join(bundle, usersRecord.path);
+  const externalCopy = path.join(context.dataDir, 'external-users.ndjson');
+  fs.copyFileSync(tablePath, externalCopy);
+  fs.rmSync(tablePath);
+  fs.symlinkSync(externalCopy, tablePath);
+
+  await assert.rejects(
+    verifySafePostgresMigrationBundle(bundle),
+    (error) => error.code === 'DB_BUNDLE_SYMLINK_UNSUPPORTED',
   );
 });
