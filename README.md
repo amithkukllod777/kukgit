@@ -34,6 +34,11 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Threaded replies, resolution and reopening
 - Outdated-thread detection when the pull-request head changes
 - Optional unresolved-thread merge blocking per base branch
+- Commit status records with Pending, Success, Failure and Error states
+- PAT-authenticated CI and integration status publishing
+- Exact-branch required status-check policies
+- Current-head status freshness and stale-result isolation
+- Missing, pending, failed and errored check merge blocking
 - Repository code browser: branches, commits, folders and files
 - Browser branch creation and file commits
 - Issues with status and priority
@@ -43,11 +48,11 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Audit log
 - Responsive Kuklabs-branded web interface
 - No runtime npm dependencies
-- Automated tests for API, Git engine, collaboration, repository access, branch governance, review threads, analysis and security helpers
+- Automated tests for API, Git engine, collaboration, repository access, branch governance, review threads, status checks, analysis and security helpers
 
 ## Important scope boundary
 
-This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, One Kuklabs Account/SSO/MFA, external collaborators, true unified diff rendering and code-line patch context, required CI checks, large-scale object storage, distributed job queues, CI runners, package/container registries, LFS, webhooks, email, billing, abuse controls and high-availability deployment.
+This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, One Kuklabs Account/SSO/MFA, external collaborators, true unified diff rendering and code-line patch context, hosted CI runners, workflow execution, large-scale object storage, distributed job queues, package/container registries, LFS, webhooks, email, billing, abuse controls and high-availability deployment.
 
 ## Local quick start
 
@@ -153,6 +158,22 @@ The repository Pull requests page supports:
 
 Repository Admins can optionally require all active threads to be resolved for a base branch before merge. Outdated threads remain visible for history but do not block merge. Read [Review Threads](docs/REVIEW_THREADS.md) for the data, permission and merge-policy model.
 
+## Required status checks
+
+Repository Admins can select required CI and integration contexts for an exact base branch from **Repository → Settings**. Every selected context must report Success for the pull request's current head SHA. Missing, Pending, Failure and Error states block merge.
+
+Trusted runners publish with a scoped `repo:write` personal access token:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <kgp_token>" \
+  -H "Content-Type: application/json" \
+  http://localhost:8787/api/status-checks/kuklabs/kukgit-demo/commits/<40-character-sha>/statuses \
+  -d '{"context":"test","state":"success","description":"All tests passed"}'
+```
+
+A new pull-request head commit requires fresh results; prior commit statuses are never reused for merge. Read [Required Status Checks](docs/REQUIRED_STATUS_CHECKS.md) for publishing, branch policies, permissions and merge enforcement.
+
 ## Commands
 
 ```bash
@@ -170,7 +191,7 @@ npm test          # Run automated tests
 ```text
 kukgit/
 ├── public/                 # Dependency-free web application
-├── src/                    # API, auth, access, governance, reviews, database, Git and analysis services
+├── src/                    # API, auth, access, governance, reviews, checks, database, Git and analysis services
 ├── scripts/                # Seed, environment doctor and token administration
 ├── test/                   # Node test suite
 ├── docs/                   # Product, architecture, business and security docs
