@@ -281,7 +281,8 @@ test('PAT publishers are authorized by scope and repository permission while mer
     method: 'POST',
     headers: { Cookie: ownerCookie },
   });
-  assert.equal(merge.status, 200);
+  const mergePayload = await merge.json();
+  assert.equal(merge.status, 200, JSON.stringify(mergePayload));
 
   const audits = context.db.prepare(`
     SELECT action, metadata_json AS metadataJson FROM audit_logs
