@@ -14,8 +14,8 @@ Do not create a public issue for a suspected vulnerability. Report it privately 
 
 ## Production blockers in v0.1.0
 
-- Development Git push token is shared server-wide.
 - Local username/password authentication is not yet Kuklabs Account SSO.
+- Personal access tokens are managed by server CLI; browser self-service, MFA confirmation and rotation UX are not yet available.
 - SQLite is used for the single-node MVP metadata store.
 - Repository objects are stored on local disk.
 - No malware scanning, abuse detection or upload quarantine exists.
@@ -26,7 +26,7 @@ Do not create a public issue for a suspected vulnerability. Report it privately 
 ## Required controls before public beta
 
 1. One Kuklabs Account with SSO, MFA and secure account recovery.
-2. Personal access tokens with scopes, expiry, rotation and revocation.
+2. Browser token lifecycle, rotation policy and optional organization restrictions on top of the delivered scoped PAT core.
 3. SSH keys, deploy keys and signed host keys.
 4. PostgreSQL, encrypted object storage and encrypted backups.
 5. Per-tenant authorization on every data and Git operation.
@@ -47,3 +47,7 @@ Do not create a public issue for a suspected vulnerability. Report it privately 
 - Browser security headers include CSP, frame denial and MIME sniffing protection.
 - Passwords use scrypt with random salts.
 - Session tokens are random and stored as SHA-256 hashes.
+- Personal access tokens use a `kgp_` prefix, are revealed only at creation and are stored only as SHA-256 hashes.
+- Git read/write authorization checks token scope, expiry, revocation, organization membership and minimum role.
+- The shared development Git token is rejected when KukGit runs in production.
+- Authenticated Git fetch and push attempts produce audit events without logging token plaintext.
