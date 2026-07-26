@@ -1,6 +1,15 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import { createApp } from './src/app.mjs';
+import {
+  createAuthKitBootstrapGuard,
+  ensureAuthKitCoreOrganization,
+} from './src/authkit-bootstrap.mjs';
+import {
+  createAuthKitApiHandler,
+  createAuthKitIdentityMiddleware,
+  migrateAuthKitIdentity,
+} from './src/authkit-identity.mjs';
 import { createMaintenanceGuard } from './src/backups.mjs';
 import { createLfsAwareBackupsApiHandler } from './src/backups-lfs.mjs';
 import {
@@ -77,6 +86,7 @@ fs.mkdirSync(config.backupsDir, { recursive: true });
 fs.mkdirSync(config.lfsDir, { recursive: true, mode: 0o700 });
 const gitVersion = ensureGitAvailable();
 const db = openDatabase(config);
+migrateAuthKitIdentity(db);
 migrateCollaboration(db);
 migrateRepositoryAccess(db);
 migrateRepositoryInvitations(db);
@@ -88,13 +98,15 @@ migrateWebhooks(db);
 migrateRepositoryLifecycle(db);
 migrateSshKeys(db);
 migrateGitLfs(db);
-const seeded = seedCore(db, config);
+const seeded = config.authMode === 'local' ? seedCore(db, config) : { seeded: false };
+if (config.authMode === 'authkit') ensureAuthKitCoreOrganization(db);
 migrateNotifications(db);
 installExistingBranchProtectionHooks(config, db);
 const app = createApp({ config, db });
 const statusGuardedApp = createStatusCheckMergeGuard({ config, db, app });
 const reviewThreadGuardedApp = createReviewThreadMergeGuard({ config, db, app: statusGuardedApp });
 const governedApp = createBranchGovernanceGuard({ config, db, app: reviewThreadGuardedApp });
+const authKitApi = createAuthKitApiHandler({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
 const notificationsApi = createNotificationsApiHandler({ config, db });
 const externalDiscoveryApi = createExternalCollaboratorDiscoveryApiHandler({ config, db });
@@ -116,6 +128,7 @@ const webhooksApi = createWebhooksApiHandler({ config, db });
 const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app: governedApp });
 
 async function dispatch(req, res) {
+  if (await authKitApi(req, res)) return;
   if (await tokenApi(req, res)) return;
   if (await notificationsApi(req, res)) return;
   if (await externalDiscoveryApi(req, res)) return;
@@ -145,14 +158,17 @@ const collaborationNotificationDispatch = createCollaborationNotificationCapture
 const notificationEventDispatch = createNotificationEventCapture({ config, db, next: collaborationNotificationDispatch });
 const operationsNotificationDispatch = createOperationsNotificationCapture({ config, db, next: notificationEventDispatch });
 const capturedDispatch = createWebhookEventCapture({ config, db, next: operationsNotificationDispatch });
+const authKitBootstrapDispatch = createAuthKitBootstrapGuard({ config, db, next: capturedDispatch });
+const identityDispatch = createAuthKitIdentityMiddleware({ config, db, next: authKitBootstrapDispatch });
 const stopWebhookWorker = startWebhookWorker(db, config);
 const stopNotificationWorker = startNotificationWorker(db, config);
 const stopOperationalNotificationWorker = startOperationalNotificationWorker(db, config);
-const server = http.createServer(capturedDispatch);
+const server = http.createServer(identityDispatch);
 
 server.listen(config.port, config.host, () => {
   console.log(`\nKukGit v0.1.0 is running at ${config.baseUrl}`);
   console.log(`${gitVersion}; data: ${config.dataDir}`);
+  console.log(`Authentication: ${config.authMode === 'authkit' ? `One Kuklabs Account via ${config.authkitBaseUrl}` : 'local development mode'}`);
   console.log(`Backups: ${config.backupsDir}; retention: ${config.backupRetentionCount} snapshots / ${config.backupRetentionDays} days`);
   console.log(`Git LFS: ${config.lfsDir}; repository quota: ${config.lfsRepositoryQuotaBytes} bytes`);
   console.log(`Email delivery: ${smtpConfigured(config) ? `${config.smtpHost}:${config.smtpPort}` : 'disabled until SMTP is configured'}`);
