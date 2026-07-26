@@ -13,7 +13,7 @@ import { createCollaborationApiHandler, migrateCollaboration } from './src/colla
 import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
 import { ensureGitAvailable } from './src/git.mjs';
-import { createGitLfsHandler, migrateGitLfs } from './src/git-lfs.mjs';
+import { createGitLfsHandler, migrateGitLfs } from './src/git-lfs-safe.mjs';
 import {
   createPullRequestDiffsApiHandler,
   migratePullRequestDiffs,
