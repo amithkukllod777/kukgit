@@ -63,6 +63,11 @@ function migrate(db) {
       description TEXT NOT NULL DEFAULT '',
       visibility TEXT NOT NULL DEFAULT 'private' CHECK(visibility IN ('public','private','internal')),
       default_branch TEXT NOT NULL DEFAULT 'main',
+      archived_at TEXT,
+      deleted_at TEXT,
+      deleted_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      deleted_from_org_id TEXT REFERENCES organizations(id) ON DELETE SET NULL,
+      purge_after TEXT,
       created_by TEXT NOT NULL REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -118,6 +123,7 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_pat_user_created ON personal_access_tokens(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_repositories_org ON repositories(organization_id);
+    CREATE INDEX IF NOT EXISTS idx_repositories_lifecycle ON repositories(deleted_at, archived_at, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_issues_repo_status ON issues(repository_id, status);
     CREATE INDEX IF NOT EXISTS idx_pr_repo_status ON pull_requests(repository_id, status);
     CREATE INDEX IF NOT EXISTS idx_audit_org_created ON audit_logs(organization_id, created_at DESC);
@@ -173,6 +179,6 @@ export function findRepo(db, orgSlug, repoSlug) {
   return db.prepare(`
     SELECT r.*, o.slug AS org_slug, o.name AS org_name
     FROM repositories r JOIN organizations o ON o.id = r.organization_id
-    WHERE o.slug = ? AND r.slug = ?
+    WHERE o.slug = ? AND r.slug = ? AND r.deleted_at IS NULL
   `).get(orgSlug, repoSlug);
 }
