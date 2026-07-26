@@ -29,11 +29,16 @@ Progress delivered:
 - same-origin protected token API and token lifecycle audit events
 - production Git HTTP enforcement by token scope and organization role
 - authenticated Git fetch/push audit events
+- organization invitations with role, expiry, secure one-time links and revocation
+- email-verified invitation acceptance with replay protection
+- organization member directory
+- teams with maintainers, members and auditable lifecycle management
 
 Remaining:
 
 - One Kuklabs Account/AuthKit
-- invitations, teams and repository collaborators
+- repository collaborators and repository team access enforcement
+- organization signup and invitation email delivery
 - token rotation reminders and expiring-token notifications
 - SSH keys and deploy keys
 - PostgreSQL migration

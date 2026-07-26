@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import { createApp } from './src/app.mjs';
+import { createCollaborationApiHandler, migrateCollaboration } from './src/collaboration.mjs';
 import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
 import { ensureGitAvailable } from './src/git.mjs';
@@ -11,11 +12,14 @@ fs.mkdirSync(config.repositoriesDir, { recursive: true });
 fs.mkdirSync(config.tempDir, { recursive: true });
 const gitVersion = ensureGitAvailable();
 const db = openDatabase(config);
+migrateCollaboration(db);
 const seeded = seedCore(db, config);
 const app = createApp({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
+const collaborationApi = createCollaborationApiHandler({ config, db });
 const server = http.createServer(async (req, res) => {
   if (await tokenApi(req, res)) return;
+  if (await collaborationApi(req, res)) return;
   return app(req, res);
 });
 
