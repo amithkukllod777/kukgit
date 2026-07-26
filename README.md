@@ -30,6 +30,10 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Required approval counts and stale-approval detection
 - Direct browser commit and Git push protection for guarded branches
 - Pull-request merge-policy enforcement
+- File and line anchored review threads
+- Threaded replies, resolution and reopening
+- Outdated-thread detection when the pull-request head changes
+- Optional unresolved-thread merge blocking per base branch
 - Repository code browser: branches, commits, folders and files
 - Browser branch creation and file commits
 - Issues with status and priority
@@ -39,11 +43,11 @@ This repository contains the first working KukGit foundation. It is not a visual
 - Audit log
 - Responsive Kuklabs-branded web interface
 - No runtime npm dependencies
-- Automated tests for API, Git engine, collaboration, repository access, branch governance, analysis and security helpers
+- Automated tests for API, Git engine, collaboration, repository access, branch governance, review threads, analysis and security helpers
 
 ## Important scope boundary
 
-This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, One Kuklabs Account/SSO/MFA, external collaborators, review threads and code-line comments, large-scale object storage, distributed job queues, CI runners, package/container registries, LFS, webhooks, email, billing, abuse controls and high-availability deployment.
+This is the **Foundation MVP**, not yet a GitHub/GitLab replacement. Production work still required includes SSH transport, One Kuklabs Account/SSO/MFA, external collaborators, true unified diff rendering and code-line patch context, required CI checks, large-scale object storage, distributed job queues, CI runners, package/container registries, LFS, webhooks, email, billing, abuse controls and high-availability deployment.
 
 ## Local quick start
 
@@ -136,6 +140,19 @@ Repository Admins can protect exact branches from **Repository → Settings**. A
 
 Reviewers with repository Write permission can approve, request changes or comment from the repository Pull requests page. KukGit records each review against the current head SHA and blocks merge until the active policy is satisfied. Read [Branch Governance](docs/BRANCH_GOVERNANCE.md) for API, hook and merge-policy details.
 
+## Code review conversations
+
+The repository Pull requests page supports:
+
+- changed-file review threads
+- left-side, right-side and file-level anchors
+- line validation against the selected Git ref
+- threaded replies
+- resolve and reopen actions
+- outdated-thread visibility after new commits
+
+Repository Admins can optionally require all active threads to be resolved for a base branch before merge. Outdated threads remain visible for history but do not block merge. Read [Review Threads](docs/REVIEW_THREADS.md) for the data, permission and merge-policy model.
+
 ## Commands
 
 ```bash
@@ -153,7 +170,7 @@ npm test          # Run automated tests
 ```text
 kukgit/
 ├── public/                 # Dependency-free web application
-├── src/                    # API, auth, access, governance, collaboration, database, Git and analysis services
+├── src/                    # API, auth, access, governance, reviews, database, Git and analysis services
 ├── scripts/                # Seed, environment doctor and token administration
 ├── test/                   # Node test suite
 ├── docs/                   # Product, architecture, business and security docs

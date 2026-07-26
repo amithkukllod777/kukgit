@@ -47,6 +47,11 @@ Progress delivered:
 - protected-branch browser commit blocking
 - Git pre-receive protection for direct pushes
 - branch-governance browser interface and audit events
+- changed-file and line anchored review threads
+- threaded replies, resolve and reopen lifecycle
+- outdated-thread detection by pull-request head SHA
+- optional active-thread resolution requirement before merge
+- review-thread API, browser interface and audit events
 
 Remaining:
 
@@ -57,7 +62,7 @@ Remaining:
 - SSH keys and deploy keys
 - PostgreSQL migration
 - repository transfer, archive and delete
-- code-line review threads and review resolution
+- unified diff rendering and diff-hunk anchors
 - required CI status checks
 - webhooks
 - email and in-app notifications
