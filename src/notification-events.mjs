@@ -1,12 +1,11 @@
 import { currentUser } from './auth.mjs';
 import { resolveRef } from './git.mjs';
+import { createNotification, migrateNotifications } from './notifications.mjs';
 import {
-  createNotification,
-  migrateNotifications,
   notifyPullRequestCreated,
   notifyPullRequestMerged,
   notifyPullRequestReview,
-} from './notifications.mjs';
+} from './pull-request-notifications.mjs';
 
 function captureJsonResponse(res) {
   const chunks = [];
