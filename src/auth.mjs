@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { currentRequestIdentity } from './identity-context.mjs';
 import { hashToken, normalizeEmail, parseCookies, randomToken, safeEqual, serializeCookie, httpError } from './security.mjs';
 
 const SESSION_SECONDS = 60 * 60 * 24 * 14;
@@ -43,13 +44,16 @@ export function clearSessionCookie(secure) {
 }
 
 export function currentUser(db, req) {
+  const requestIdentity = currentRequestIdentity();
+  if (requestIdentity?.resolved) return requestIdentity.user;
+
   const cookies = parseCookies(req.headers.cookie);
   const token = cookies.kukgit_session;
   if (!token) return null;
   const row = db.prepare(`
     SELECT u.id, u.email, u.display_name AS displayName, s.expires_at AS expiresAt
     FROM sessions s JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = ?
+    WHERE s.token_hash = ? AND COALESCE(s.auth_mode, 'local') = 'local'
   `).get(hashToken(token));
   if (!row) return null;
   if (new Date(row.expiresAt).getTime() <= Date.now()) {
@@ -67,7 +71,13 @@ export function requireUser(db, req) {
 
 export function authenticate(db, email, password) {
   const normalized = normalizeEmail(email);
-  const user = db.prepare('SELECT id, email, display_name AS displayName, password_hash AS passwordHash FROM users WHERE email = ?').get(normalized);
-  if (!user || !verifyPassword(password, user.passwordHash)) throw httpError(401, 'Incorrect email or password.', 'INVALID_CREDENTIALS');
+  const user = db.prepare(`
+    SELECT id, email, display_name AS displayName, password_hash AS passwordHash,
+      COALESCE(auth_source, 'local') AS authSource
+    FROM users WHERE email = ?
+  `).get(normalized);
+  if (!user || user.authSource !== 'local' || !verifyPassword(password, user.passwordHash)) {
+    throw httpError(401, 'Incorrect email or password.', 'INVALID_CREDENTIALS');
+  }
   return user;
 }
