@@ -117,6 +117,23 @@ Progress delivered:
 - backup create, list, verify, restore, prune and maintenance CLI
 - instance-admin backup API and Settings status interface
 - backup operation audit events and disaster-recovery runbook
+- Git LFS Batch API with the basic transfer adapter
+- SHA-256 content-addressed streamed uploads
+- declared-size, content-hash and verify-action enforcement
+- public downloads and PAT-protected private LFS access
+- single byte-range downloads, ETags and safe content headers
+- user SSH-key and deploy-key `git-lfs-authenticate` support
+- short-lived repository-scoped signed SSH LFS credentials
+- strict LFS SSH command and repository-path validation
+- maximum object, repository and instance LFS quotas
+- pending-upload projected quota accounting and expiry cleanup
+- cross-repository physical-object deduplication
+- repository-to-object associations and usage accounting
+- archived upload blocking and repository lifecycle integration
+- repository LFS usage, object inventory and integrity Settings interface
+- instance-admin orphan LFS garbage collection
+- LFS objects included in verified backup manifests
+- LFS SHA-256 verification during backup creation, verification and restore
 
 Remaining:
 
@@ -126,7 +143,6 @@ Remaining:
 - token rotation reminders and expiring-token notifications
 - PostgreSQL migration
 - email and in-app notifications
-- Git LFS
 - admin console and tenant support tools
 
 ## Phase 2 — Public beta

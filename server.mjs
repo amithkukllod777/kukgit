@@ -1,10 +1,8 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import { createApp } from './src/app.mjs';
-import {
-  createBackupsApiHandler,
-  createMaintenanceGuard,
-} from './src/backups.mjs';
+import { createMaintenanceGuard } from './src/backups.mjs';
+import { createLfsAwareBackupsApiHandler } from './src/backups-lfs.mjs';
 import {
   createBranchGovernanceApiHandler,
   createBranchGovernanceGuard,
@@ -15,6 +13,7 @@ import { createCollaborationApiHandler, migrateCollaboration } from './src/colla
 import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
 import { ensureGitAvailable } from './src/git.mjs';
+import { createGitLfsHandler, migrateGitLfs } from './src/git-lfs-safe.mjs';
 import {
   createPullRequestDiffsApiHandler,
   migratePullRequestDiffs,
@@ -53,6 +52,7 @@ const config = loadConfig();
 fs.mkdirSync(config.repositoriesDir, { recursive: true });
 fs.mkdirSync(config.tempDir, { recursive: true });
 fs.mkdirSync(config.backupsDir, { recursive: true });
+fs.mkdirSync(config.lfsDir, { recursive: true, mode: 0o700 });
 const gitVersion = ensureGitAvailable();
 const db = openDatabase(config);
 migrateCollaboration(db);
@@ -64,6 +64,7 @@ migrateStatusChecks(db);
 migrateWebhooks(db);
 migrateRepositoryLifecycle(db);
 migrateSshKeys(db);
+migrateGitLfs(db);
 const seeded = seedCore(db, config);
 installExistingBranchProtectionHooks(config, db);
 const app = createApp({ config, db });
@@ -72,7 +73,8 @@ const reviewThreadGuardedApp = createReviewThreadMergeGuard({ config, db, app: s
 const governedApp = createBranchGovernanceGuard({ config, db, app: reviewThreadGuardedApp });
 const tokenApi = createTokenApiHandler({ config, db });
 const collaborationApi = createCollaborationApiHandler({ config, db });
-const backupsApi = createBackupsApiHandler({ config, db });
+const backupsApi = createLfsAwareBackupsApiHandler({ config, db });
+const gitLfsApi = createGitLfsHandler({ config, db });
 const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
 const repositoryLifecycleApi = createRepositoryLifecycleApiHandler({ config, db });
 const sshKeysApi = createSshKeysApiHandler({ config, db });
@@ -87,6 +89,7 @@ async function dispatch(req, res) {
   if (await tokenApi(req, res)) return;
   if (await collaborationApi(req, res)) return;
   if (await backupsApi(req, res)) return;
+  if (await gitLfsApi(req, res)) return;
   if (await repositoryLifecycleApi(req, res)) return;
   if (await sshKeysApi(req, res)) return;
   if (await repositoryAccessApi(req, res)) return;
@@ -110,6 +113,7 @@ server.listen(config.port, config.host, () => {
   console.log(`\nKukGit v0.1.0 is running at ${config.baseUrl}`);
   console.log(`${gitVersion}; data: ${config.dataDir}`);
   console.log(`Backups: ${config.backupsDir}; retention: ${config.backupRetentionCount} snapshots / ${config.backupRetentionDays} days`);
+  console.log(`Git LFS: ${config.lfsDir}; repository quota: ${config.lfsRepositoryQuotaBytes} bytes`);
   console.log(`SSH clone endpoint: ${config.sshUser}@${config.sshHost}:${config.sshPort}`);
   if (seeded.seeded && !config.isProduction) {
     console.log(`Development admin: ${config.adminEmail}`);
@@ -120,6 +124,9 @@ server.listen(config.port, config.host, () => {
   }
   if (config.isProduction && !config.webhookEncryptionKey) {
     console.warn('WARNING: KUKGIT_WEBHOOK_ENCRYPTION_KEY is required before creating production webhooks.');
+  }
+  if (config.isProduction && !config.lfsAuthKey) {
+    console.warn('WARNING: KUKGIT_LFS_AUTH_KEY is required for Git LFS over SSH.');
   }
 });
 
