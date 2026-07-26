@@ -13,7 +13,7 @@
     "seed": "node scripts/seed.mjs",
     "doctor": "node scripts/doctor.mjs",
     "token": "node scripts/token.mjs",
-    "check": "node --check server.mjs && node --check src/token-api.mjs && node --check src/collaboration.mjs && node --check src/access-context.mjs && node --check src/repository-access.mjs && node --check src/branch-governance.mjs && node --check src/review-threads.mjs && node --check src/git-http.mjs && node --check public/app.js && node --check public/tokens-ui.js && node --check public/collaboration-ui.js && node --check public/collaboration-events.js && node --check public/repository-access-ui.js && node --check public/branch-governance-ui.js && node --check public/review-threads-ui.js",
+    "check": "node --check server.mjs && node --check src/token-api.mjs && node --check src/collaboration.mjs && node --check src/access-context.mjs && node --check src/repository-access.mjs && node --check src/branch-governance.mjs && node --check src/review-threads.mjs && node --check src/status-checks.mjs && node --check src/git-http.mjs && node --check public/app.js && node --check public/tokens-ui.js && node --check public/collaboration-ui.js && node --check public/collaboration-events.js && node --check public/repository-access-ui.js && node --check public/branch-governance-ui.js && node --check public/review-threads-ui.js && node --check public/status-checks-ui.js",
     "test": "NODE_ENV=test node --test --test-reporter=spec"
   },
   "license": "UNLICENSED"
