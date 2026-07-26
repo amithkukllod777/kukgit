@@ -292,12 +292,12 @@ test('external invitation grants only one repository across browser, Git, SSH an
   });
   assert.equal(fetchAuth.userId, context.externalId);
   assert.equal(fetchAuth.repositoryPermission, 'write');
-  assert.throws(() => authorizeGitCredential(context.db, { isProduction: true, gitToken: 'disabled' }, {
+  assert.equal(authorizeGitCredential(context.db, { isProduction: true, gitToken: 'disabled' }, {
     credential: token.token,
     orgSlug: 'otherco',
     repoSlug: 'private-repository',
     isPush: false,
-  }), (error) => error.code === 'REPOSITORY_ACCESS_DENIED');
+  }), null);
 
   const sshKey = createUserSshKey(context.db, context.externalId, {
     title: 'External laptop',
@@ -324,12 +324,12 @@ test('external invitation grants only one repository across browser, Git, SSH an
     body: JSON.stringify({ title: 'Read access cannot triage' }),
   });
   assert.equal(blockedIssue.status, 403);
-  assert.throws(() => authorizeGitCredential(context.db, { isProduction: true, gitToken: 'disabled' }, {
+  assert.equal(authorizeGitCredential(context.db, { isProduction: true, gitToken: 'disabled' }, {
     credential: token.token,
     orgSlug: 'kuklabs',
     repoSlug: 'shared-repository',
     isPush: true,
-  }), (error) => error.code === 'REPOSITORY_ACCESS_DENIED');
+  }), null);
   assert.throws(() => authorizeSshCommand(context.db, context.config, {
     keyKind: 'user',
     keyId: sshKey.id,
