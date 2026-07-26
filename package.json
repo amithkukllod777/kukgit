@@ -12,6 +12,7 @@
     "start": "node server.mjs",
     "seed": "node scripts/seed.mjs",
     "doctor": "node scripts/doctor.mjs",
+    "token": "node scripts/token.mjs",
     "test": "NODE_ENV=test node --test --test-reporter=spec"
   },
   "license": "UNLICENSED"
