@@ -134,16 +134,38 @@ Progress delivered:
 - instance-admin orphan LFS garbage collection
 - LFS objects included in verified backup manifests
 - LFS SHA-256 verification during backup creation, verification and restore
+- durable per-user notification inbox and unread counts
+- notification read, unread and bulk mark-read lifecycle
+- organization, security, pull-request, status and operations categories
+- per-category in-app and email preferences
+- durable transactional email outbox and delivery-attempt history
+- dependency-free SMTP transport with direct TLS and STARTTLS
+- SMTP authentication, MIME alternatives and Unicode subjects
+- email-header injection, body-size and secret-redaction protections
+- bounded retries, exponential backoff and interrupted-attempt recovery
+- instance-admin email queue status, processing and retry interface
+- organization invitation email delivery for existing and external users
+- secure invitation resend with old-link revocation
+- invitation acceptance and membership notifications
+- personal-access-token expiry reminders without token-secret exposure
+- effective-permission pull-request recipient targeting
+- pull-request opened, reviewed and merged notifications
+- current-head failed and errored status-check notifications
+- terminal webhook failure alerts
+- backup and Git LFS operational alerts for the instance administrator
+- topbar notification bell, unread badge and notification drawer
+- Settings notification preferences and email administration
+- notification, email and SMTP production runbook
 
 Remaining:
 
 - One Kuklabs Account/AuthKit
 - external repository collaborators
-- organization signup and invitation email delivery
-- token rotation reminders and expiring-token notifications
+- organization self-service signup
 - PostgreSQL migration
-- email and in-app notifications
-- admin console and tenant support tools
+- broader admin console and tenant support tools
+- real-time WebSocket notification delivery
+- provider bounce and complaint processing
 
 ## Phase 2 — Public beta
 
