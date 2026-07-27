@@ -48,10 +48,6 @@ export function loadConfig(overrides = {}) {
   const baseUrl = overrides.baseUrl ?? process.env.KUKGIT_BASE_URL ?? `http://localhost:${overrides.port ?? process.env.PORT ?? 8787}`;
   const cookieSecure = booleanValue(overrides.cookieSecure ?? process.env.KUKGIT_COOKIE_SECURE, isProduction);
   const authMode = String(overrides.authMode ?? process.env.KUKGIT_AUTH_MODE ?? (isProduction ? 'authkit' : 'local')).toLowerCase();
-  const allowLocalAuthInProduction = booleanValue(
-    overrides.allowLocalAuthInProduction ?? process.env.KUKGIT_ALLOW_LOCAL_AUTH_IN_PRODUCTION,
-    false,
-  );
   const authkitBaseUrlRaw = String(overrides.authkitBaseUrl ?? process.env.KUKGIT_AUTHKIT_BASE_URL ?? '').trim();
   const authkitProductId = String(overrides.authkitProductId ?? process.env.KUKGIT_AUTHKIT_PRODUCT_ID ?? 'kukgit').trim().toLowerCase();
   const authkitEncryptionKey = overrides.authkitEncryptionKey ?? process.env.KUKGIT_AUTHKIT_ENCRYPTION_KEY ?? (isProduction ? '' : 'kukgit-development-authkit-encryption-key-change-me');
@@ -62,8 +58,8 @@ export function loadConfig(overrides = {}) {
   if (!['local', 'authkit'].includes(authMode)) {
     throw new Error('KUKGIT_AUTH_MODE must be local or authkit.');
   }
-  if (isProduction && authMode === 'local' && !allowLocalAuthInProduction) {
-    throw new Error('Local KukGit password authentication is disabled in production. Use KUKGIT_AUTH_MODE=authkit.');
+  if (isProduction && authMode === 'local') {
+    throw new Error('Production KukGit must use One Kuklabs Account/AuthKit.');
   }
   if (!/^[a-z0-9_-]{2,32}$/.test(authkitProductId)) {
     throw new Error('KUKGIT_AUTHKIT_PRODUCT_ID must contain 2-32 lowercase letters, numbers, underscores or hyphens.');
@@ -108,7 +104,6 @@ export function loadConfig(overrides = {}) {
     isProduction,
     cookieSecure,
     authMode,
-    allowLocalAuthInProduction,
     authkitBaseUrl,
     authkitProductId,
     authkitEncryptionKey,
