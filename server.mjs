@@ -28,6 +28,17 @@ import { createCollaborationApiHandler, migrateCollaboration } from './src/colla
 import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
 import { smtpConfigured } from './src/email-transport.mjs';
+import {
+  createExternalAccessExpiryGuard,
+  createExternalAccessHistoryApiHandler,
+  migrateExternalAccessExpiryGuard,
+} from './src/external-access-expiry-guard.mjs';
+import { createExternalAccessInvitationDurationApiHandler } from './src/external-access-invitation-duration.mjs';
+import {
+  createExternalAccessReviewsApiHandler,
+  migrateExternalAccessReviews,
+  startExternalAccessReviewWorker,
+} from './src/external-access-reviews.mjs';
 import { createExternalCollaboratorAccessPrivacyApiHandler } from './src/external-collaborator-access-privacy.mjs';
 import { createExternalCollaboratorDiscoveryApiHandler } from './src/external-collaborator-discovery.mjs';
 import { createExternalCollaboratorLifecycleGuard } from './src/external-collaborator-lifecycle-guard.mjs';
@@ -97,6 +108,8 @@ migrateCollaboration(db);
 migrateOrganizationOnboarding(db);
 migrateRepositoryAccess(db);
 migrateRepositoryInvitations(db);
+migrateExternalAccessReviews(db);
+migrateExternalAccessExpiryGuard(db);
 migrateBranchGovernance(db);
 migrateReviewThreads(db);
 migratePullRequestDiffs(db);
@@ -121,6 +134,9 @@ const externalDiscoveryApi = createExternalCollaboratorDiscoveryApiHandler({ con
 const collaborationApi = createCollaborationApiHandler({ config, db });
 const onboardingApi = createOrganizationOnboardingApiHandler({ config, db });
 const invitationResendApi = createInvitationResendApiHandler({ config, db });
+const externalAccessInvitationDurationApi = createExternalAccessInvitationDurationApiHandler({ config, db });
+const externalAccessHistoryApi = createExternalAccessHistoryApiHandler({ config, db });
+const externalAccessReviewsApi = createExternalAccessReviewsApiHandler({ config, db });
 const repositoryInvitationsApi = createRepositoryInvitationsApiHandler({ config, db });
 const backupsApi = createLfsAwareBackupsApiHandler({ config, db });
 const gitLfsApi = createGitLfsHandler({ config, db });
@@ -145,6 +161,9 @@ async function dispatch(req, res) {
   if (await invitationResendApi(req, res)) return;
   if (await collaborationApi(req, res)) return;
   if (await onboardingApi(req, res)) return;
+  if (await externalAccessInvitationDurationApi(req, res)) return;
+  if (await externalAccessHistoryApi(req, res)) return;
+  if (await externalAccessReviewsApi(req, res)) return;
   if (await repositoryInvitationsApi(req, res)) return;
   if (await backupsApi(req, res)) return;
   if (await gitLfsApi(req, res)) return;
@@ -169,12 +188,14 @@ const collaborationNotificationDispatch = createCollaborationNotificationCapture
 const notificationEventDispatch = createNotificationEventCapture({ config, db, next: collaborationNotificationDispatch });
 const operationsNotificationDispatch = createOperationsNotificationCapture({ config, db, next: notificationEventDispatch });
 const capturedDispatch = createWebhookEventCapture({ config, db, next: operationsNotificationDispatch });
-const authKitBootstrapDispatch = createAuthKitBootstrapGuard({ config, db, next: capturedDispatch });
+const externalAccessExpiryDispatch = createExternalAccessExpiryGuard({ config, db, next: capturedDispatch });
+const authKitBootstrapDispatch = createAuthKitBootstrapGuard({ config, db, next: externalAccessExpiryDispatch });
 const centralSessionDispatch = createAuthKitCentralSessionGuard({ config, db, next: authKitBootstrapDispatch });
 const identityDispatch = createAuthKitIdentityMiddleware({ config, db, next: centralSessionDispatch });
 const stopWebhookWorker = startWebhookWorker(db, config);
 const stopNotificationWorker = startNotificationWorker(db, config);
 const stopOperationalNotificationWorker = startOperationalNotificationWorker(db, config);
+const stopExternalAccessReviewWorker = startExternalAccessReviewWorker(db, config);
 const server = http.createServer(identityDispatch);
 
 server.listen(config.port, config.host, () => {
@@ -209,6 +230,7 @@ function shutdown(signal) {
   stopWebhookWorker();
   stopNotificationWorker();
   stopOperationalNotificationWorker();
+  stopExternalAccessReviewWorker();
   server.close(() => {
     try { db.close(); } catch {}
     process.exit(0);

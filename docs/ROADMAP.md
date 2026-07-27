@@ -205,6 +205,25 @@ Progress delivered:
 - self-service organization audit events without sensitive identity data
 - organization onboarding rollout, support and operations runbook
 - automated atomicity, limit, reserved-slug, identity and CSRF tests
+- separate invitation-link expiry and accepted external-access duration
+- 7, 30, 90, 180 and 365-day external access durations
+- secure 90-day default for accepted repository invitations
+- expiry, origin, invitation and review metadata on external direct grants
+- request-time expiry enforcement before browser and Git HTTP authorization
+- explicit expiry enforcement before Git-over-SSH and SSH Git LFS authorization
+- transactional expired-grant archival before active permission removal
+- immutable expired/revoked access history and audited renewal
+- renewal without recreating the KukGit or One Kuklabs Account identity
+- external collaborator self-extension prevention
+- organization Admin/Owner certification for external Repository Admin access
+- active, permanent, expiring and expired access lifecycle interface
+- organization-wide external access review campaigns
+- 7, 14 and 30-day campaign due dates and overdue status
+- keep, renew, reduce and revoke campaign decisions
+- automatic campaign completion after all grants are reviewed
+- deduplicated expiring-soon, expired, renewed and reviewed notifications
+- transport-wide expiry, renewal, campaign, CSRF and authorization tests
+- external access expiry and access-review operations runbook
 
 Remaining:
 
@@ -212,7 +231,6 @@ Remaining:
 - broader admin console and tenant support tools
 - real-time WebSocket notification delivery
 - provider bounce and complaint processing
-- external access expiry after acceptance and review campaigns
 
 ## Phase 2 — Public beta
 
