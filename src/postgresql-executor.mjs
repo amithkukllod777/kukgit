@@ -73,6 +73,10 @@ function manifestTables(manifest) {
     if (!name || map.has(name) || !Array.isArray(table.columns)) {
       throw errorWithCode('Source manifest table metadata is invalid.', 'POSTGRESQL_SOURCE_MANIFEST_INVALID');
     }
+    const columnNames = table.columns.map((column) => String(column?.name || ''));
+    if (columnNames.some((column) => !column) || new Set(columnNames).size !== columnNames.length) {
+      throw errorWithCode('Source manifest column metadata is invalid.', 'POSTGRESQL_SOURCE_MANIFEST_INVALID');
+    }
     map.set(name, table);
   }
   return map;
@@ -88,6 +92,10 @@ function validatePlan(importPlan, sourceManifest) {
   if (!importPlan.schemaPlan || !Array.isArray(importPlan.schemaPlan.tables) || !Array.isArray(importPlan.operations)) {
     throw errorWithCode('PostgreSQL import plan is incomplete.', 'POSTGRESQL_IMPORT_PLAN_INVALID');
   }
+  if (Number(importPlan.tableCount) !== importPlan.schemaPlan.tables.length
+      || Number(importPlan.operationCount) !== importPlan.operations.length) {
+    throw errorWithCode('PostgreSQL import plan counts are inconsistent.', 'POSTGRESQL_IMPORT_PLAN_INVALID');
+  }
   const expectedRows = sourceManifest.tables.reduce((sum, table) => sum + Number(table.rowCount || 0), 0);
   const plannedRows = importPlan.operations.reduce((sum, operation) => sum + Number(operation.rowCount || 0), 0);
   if (Number(importPlan.totalRows) !== expectedRows || plannedRows !== expectedRows) {
@@ -96,17 +104,47 @@ function validatePlan(importPlan, sourceManifest) {
   return importPlan;
 }
 
+function singleStatement(sql, code) {
+  const trimmed = String(sql || '').trim();
+  if (!trimmed || /--|\/\*/.test(trimmed)) {
+    throw errorWithCode('PostgreSQL migration SQL comments are not allowed.', code);
+  }
+  const body = trimmed.endsWith(';') ? trimmed.slice(0, -1).trim() : trimmed;
+  if (!body || body.includes(';')) {
+    throw errorWithCode('PostgreSQL migration operations must contain exactly one SQL statement.', code);
+  }
+  return body;
+}
+
+function parsedIdentifier(match) {
+  return match?.[1] ? match[1].replaceAll('""', '"') : match?.[2] || null;
+}
+
+function validateTableDdl(table) {
+  if (!table?.name || typeof table.ddl !== 'string') {
+    throw errorWithCode('PostgreSQL schema plan contains invalid table DDL.', 'POSTGRESQL_SCHEMA_PLAN_INVALID');
+  }
+  const body = singleStatement(table.ddl, 'POSTGRESQL_SCHEMA_PLAN_INVALID');
+  const match = body.match(/^CREATE\s+TABLE\s+(?:"((?:[^"]|"")+)"|([A-Za-z_][A-Za-z0-9_]*))\s*\(/i);
+  if (!match || parsedIdentifier(match) !== table.name) {
+    throw errorWithCode('PostgreSQL schema DDL table name does not match the import plan.', 'POSTGRESQL_SCHEMA_PLAN_INVALID');
+  }
+  return table;
+}
+
 function validateOperation(operation, maxParameters) {
-  if (!operation || typeof operation.sql !== 'string' || !Array.isArray(operation.values)) {
+  if (!operation || typeof operation.sql !== 'string' || !Array.isArray(operation.values) || !operation.table) {
     throw errorWithCode('PostgreSQL import operation is invalid.', 'POSTGRESQL_IMPORT_OPERATION_INVALID');
   }
-  if (!/^INSERT\s+INTO\s+/i.test(operation.sql.trim())) {
-    throw errorWithCode('Only generated INSERT operations are allowed during metadata import.', 'POSTGRESQL_IMPORT_SQL_REJECTED');
+  const body = singleStatement(operation.sql, 'POSTGRESQL_IMPORT_SQL_REJECTED');
+  const tableMatch = body.match(/^INSERT\s+INTO\s+(?:"((?:[^"]|"")+)"|([A-Za-z_][A-Za-z0-9_]*))\s*\(/i);
+  if (!tableMatch || parsedIdentifier(tableMatch) !== operation.table) {
+    throw errorWithCode('PostgreSQL INSERT table does not match the import operation.', 'POSTGRESQL_IMPORT_SQL_REJECTED');
   }
   if (operation.values.length > maxParameters) {
     throw errorWithCode(`PostgreSQL import operation exceeds the ${maxParameters}-parameter safety limit.`, 'POSTGRESQL_IMPORT_PARAMETER_LIMIT');
   }
-  const parameters = [...operation.sql.matchAll(/\$(\d+)/g)].map((match) => Number(match[1]));
+  const parameters = [...body.matchAll(/\$(\d+)/g)].map((match) => Number(match[1]));
   const expected = Array.from({ length: operation.values.length }, (_, index) => index + 1);
   if (parameters.length !== expected.length || parameters.some((value, index) => value !== expected[index])) {
     throw errorWithCode('PostgreSQL import operation parameter numbering is invalid.', 'POSTGRESQL_IMPORT_PARAMETERS_INVALID');
@@ -119,10 +157,16 @@ function validateOperation(operation, maxParameters) {
 
 async function emit(onProgress, event) {
   if (!onProgress) return;
-  await onProgress({
-    ...event,
-    timestamp: new Date().toISOString(),
-  });
+  await onProgress({ ...event, timestamp: new Date().toISOString() });
+}
+
+async function emitBestEffort(onProgress, event) {
+  try {
+    await emit(onProgress, event);
+    return null;
+  } catch (error) {
+    return { code: error?.code || 'POSTGRESQL_PROGRESS_NOTIFICATION_FAILED' };
+  }
 }
 
 function normalizeUserTables(value) {
@@ -134,16 +178,43 @@ function normalizeUserTables(value) {
   return names.sort();
 }
 
+function normalizeTargetScalar(value, column) {
+  if (value === null || value === undefined) return value;
+  const type = String(column?.type || '').toUpperCase();
+  if (/INT/.test(type)) {
+    if (typeof value === 'bigint') {
+      const numeric = Number(value);
+      return Number.isSafeInteger(numeric) ? numeric : value;
+    }
+    if (typeof value === 'string' && /^-?\d+$/.test(value)) {
+      const numeric = Number(value);
+      return Number.isSafeInteger(numeric) ? numeric : BigInt(value);
+    }
+  }
+  if (/(REAL|FLOA|DOUB|NUMERIC|DECIMAL)/.test(type) && typeof value === 'string' && value.trim() !== '') {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  if (/BLOB/.test(type) && value instanceof ArrayBuffer) return Buffer.from(value);
+  if (value instanceof Date) return value.toISOString();
+  return value;
+}
+
 function validateRow(row, columns, tableName) {
   if (!row || typeof row !== 'object' || Array.isArray(row)) {
     throw errorWithCode(`PostgreSQL adapter returned an invalid row for ${tableName}.`, 'POSTGRESQL_ADAPTER_ROW_INVALID');
   }
+  const names = columns.map((column) => column.name);
   const keys = Object.keys(row).sort();
-  const expected = [...columns].sort();
+  const expected = [...names].sort();
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
     throw errorWithCode(`PostgreSQL target row columns do not match the source manifest: ${tableName}.`, 'POSTGRESQL_TARGET_COLUMNS_MISMATCH');
   }
-  return stableValue(row);
+  const normalized = Object.fromEntries(columns.map((column) => [
+    column.name,
+    normalizeTargetScalar(row[column.name], column),
+  ]));
+  return stableValue(normalized);
 }
 
 export async function collectPostgresqlTargetSnapshot({
@@ -161,11 +232,12 @@ export async function collectPostgresqlTargetSnapshot({
   }
   assertNotAborted(signal);
   const actualTables = normalizeUserTables(await adapter.listUserTables());
+  const actualSet = new Set(actualTables);
   const expectedTables = [...sourceMap.keys()].sort();
   const tableDifferences = [];
   for (const name of [...new Set([...actualTables, ...expectedTables])].sort()) {
     if (!sourceMap.has(name)) tableDifferences.push({ table: name, type: 'unexpected_table' });
-    else if (!actualTables.includes(name)) tableDifferences.push({ table: name, type: 'missing_table' });
+    else if (!actualSet.has(name)) tableDifferences.push({ table: name, type: 'missing_table' });
   }
   if (tableDifferences.length) {
     const error = errorWithCode('PostgreSQL target table set does not match the source manifest.', 'POSTGRESQL_TARGET_TABLES_MISMATCH');
@@ -177,9 +249,10 @@ export async function collectPostgresqlTargetSnapshot({
   for (const name of expectedTables) {
     assertNotAborted(signal);
     const sourceTable = sourceMap.get(name);
-    const columns = sourceTable.columns.map((column) => column.name);
+    const columns = sourceTable.columns;
+    const columnNames = columns.map((column) => column.name);
     const rows = [];
-    const iterable = adapter.scanTable(name, columns, { batchSize, signal });
+    const iterable = adapter.scanTable(name, columnNames, { batchSize, signal });
     if (!iterable || typeof iterable[Symbol.asyncIterator] !== 'function') {
       throw errorWithCode('PostgreSQL adapter scanTable() must return an async iterable.', 'POSTGRESQL_ADAPTER_RESULT_INVALID');
     }
@@ -250,9 +323,7 @@ export async function executePostgresqlImport({
 
     for (const table of importPlan.schemaPlan.tables) {
       assertNotAborted(signal);
-      if (!table?.name || typeof table.ddl !== 'string' || !/^CREATE\s+TABLE\s+/i.test(table.ddl.trim())) {
-        throw errorWithCode('PostgreSQL schema plan contains invalid table DDL.', 'POSTGRESQL_SCHEMA_PLAN_INVALID');
-      }
+      validateTableDdl(table);
       await adapter.query(table.ddl, []);
       await emit(onProgress, { phase: 'table_created', table: table.name });
     }
@@ -295,7 +366,7 @@ export async function executePostgresqlImport({
     assertNotAborted(signal);
     await adapter.commit();
     committed = true;
-    await emit(onProgress, { phase: 'committed', completedOperations });
+    const progressWarning = await emitBestEffort(onProgress, { phase: 'committed', completedOperations });
 
     const report = {
       format: EXECUTION_REPORT_FORMAT,
@@ -308,17 +379,20 @@ export async function executePostgresqlImport({
       tableCount: verification.tableCount,
       totalRows: verification.totalRows,
       operationCount: completedOperations,
+      ...(progressWarning ? { progressWarning } : {}),
     };
     return { ...report, reportChecksum: sha256(stableJson(report)), targetSnapshot };
   } catch (error) {
     if (transactionStarted && !committed) {
+      let rollbackSucceeded = false;
       try {
         await adapter.rollback();
-        await emit(onProgress, { phase: 'rolled_back', completedOperations });
+        rollbackSucceeded = true;
       } catch (rollbackError) {
         error.rollbackFailed = true;
         error.rollbackCode = rollbackError?.code || 'POSTGRESQL_ROLLBACK_FAILED';
       }
+      if (rollbackSucceeded) await emitBestEffort(onProgress, { phase: 'rolled_back', completedOperations });
     }
     throw error;
   }
