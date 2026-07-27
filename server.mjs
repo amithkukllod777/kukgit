@@ -33,6 +33,7 @@ import {
   createExternalAccessHistoryApiHandler,
   migrateExternalAccessExpiryGuard,
 } from './src/external-access-expiry-guard.mjs';
+import { createExternalAccessInvitationDurationApiHandler } from './src/external-access-invitation-duration.mjs';
 import {
   createExternalAccessReviewsApiHandler,
   migrateExternalAccessReviews,
@@ -133,6 +134,7 @@ const externalDiscoveryApi = createExternalCollaboratorDiscoveryApiHandler({ con
 const collaborationApi = createCollaborationApiHandler({ config, db });
 const onboardingApi = createOrganizationOnboardingApiHandler({ config, db });
 const invitationResendApi = createInvitationResendApiHandler({ config, db });
+const externalAccessInvitationDurationApi = createExternalAccessInvitationDurationApiHandler({ config, db });
 const externalAccessHistoryApi = createExternalAccessHistoryApiHandler({ config, db });
 const externalAccessReviewsApi = createExternalAccessReviewsApiHandler({ config, db });
 const repositoryInvitationsApi = createRepositoryInvitationsApiHandler({ config, db });
@@ -159,6 +161,7 @@ async function dispatch(req, res) {
   if (await invitationResendApi(req, res)) return;
   if (await collaborationApi(req, res)) return;
   if (await onboardingApi(req, res)) return;
+  if (await externalAccessInvitationDurationApi(req, res)) return;
   if (await externalAccessHistoryApi(req, res)) return;
   if (await externalAccessReviewsApi(req, res)) return;
   if (await repositoryInvitationsApi(req, res)) return;
