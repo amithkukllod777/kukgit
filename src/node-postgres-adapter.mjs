@@ -4,6 +4,7 @@ import { parsePostgresqlUrl, redactPostgresqlUrl } from './database-selection.mj
 
 const SSL_MODES = new Set(['verify-full', 'require', 'disable']);
 const CONNECTION_SSL_OPTIONS = new Set(['sslmode', 'sslcert', 'sslkey', 'sslrootcert']);
+const NORMALIZED_CONFIG = Symbol('kukgit-node-postgres-normalized-config');
 
 function booleanValue(value, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -29,6 +30,14 @@ function validateIdentifier(value, name = 'PostgreSQL identifier') {
 function quoteIdentifier(value) {
   const identifier = validateIdentifier(value);
   return `"${identifier.replaceAll('"', '""')}"`;
+}
+
+function validateApplicationName(value) {
+  const name = String(value || '').trim();
+  if (!name || Buffer.byteLength(name, 'utf8') > 63 || /[\u0000-\u001f\u007f]/.test(name)) {
+    throw new Error('KUKGIT_POSTGRESQL_APPLICATION_NAME must contain 1 to 63 safe UTF-8 bytes.');
+  }
+  return name;
 }
 
 function optionalFile(filePath, name) {
@@ -109,7 +118,7 @@ export function loadNodePostgresAdapterConfig(overrides = {}) {
     throw new Error('PostgreSQL client certificate and key must be configured together.');
   }
 
-  return {
+  const normalized = {
     databaseUrl,
     redactedDatabaseUrl: redactPostgresqlUrl(databaseUrl),
     schema,
@@ -117,17 +126,19 @@ export function loadNodePostgresAdapterConfig(overrides = {}) {
     sslCa,
     sslCert,
     sslKey,
-    applicationName: String(overrides.applicationName ?? process.env.KUKGIT_POSTGRESQL_APPLICATION_NAME ?? 'kukgit-migration').slice(0, 63),
+    applicationName: validateApplicationName(overrides.applicationName ?? process.env.KUKGIT_POSTGRESQL_APPLICATION_NAME ?? 'kukgit-migration'),
     connectionTimeoutMillis: boundedInteger(overrides.connectionTimeoutMillis ?? process.env.KUKGIT_POSTGRESQL_CONNECTION_TIMEOUT_MS, 10000, 1000, 120000, 'KUKGIT_POSTGRESQL_CONNECTION_TIMEOUT_MS'),
     statementTimeoutMillis: boundedInteger(overrides.statementTimeoutMillis ?? process.env.KUKGIT_POSTGRESQL_STATEMENT_TIMEOUT_MS, 120000, 1000, 3600000, 'KUKGIT_POSTGRESQL_STATEMENT_TIMEOUT_MS'),
     queryTimeoutMillis: boundedInteger(overrides.queryTimeoutMillis ?? process.env.KUKGIT_POSTGRESQL_QUERY_TIMEOUT_MS, 130000, 1000, 3600000, 'KUKGIT_POSTGRESQL_QUERY_TIMEOUT_MS'),
     lockTimeoutMillis: boundedInteger(overrides.lockTimeoutMillis ?? process.env.KUKGIT_POSTGRESQL_LOCK_TIMEOUT_MS, 5000, 100, 300000, 'KUKGIT_POSTGRESQL_LOCK_TIMEOUT_MS'),
     idleTransactionTimeoutMillis: boundedInteger(overrides.idleTransactionTimeoutMillis ?? process.env.KUKGIT_POSTGRESQL_IDLE_TRANSACTION_TIMEOUT_MS, 60000, 1000, 3600000, 'KUKGIT_POSTGRESQL_IDLE_TRANSACTION_TIMEOUT_MS'),
   };
+  Object.defineProperty(normalized, NORMALIZED_CONFIG, { value: true });
+  return normalized;
 }
 
 export async function createNodePostgresAdapter(config, { pgModule = null } = {}) {
-  const resolved = config?.databaseUrl ? config : loadNodePostgresAdapterConfig(config || {});
+  const resolved = config?.[NORMALIZED_CONFIG] ? config : loadNodePostgresAdapterConfig(config || {});
   const module = pgModule || await import('pg');
   const Client = module.Client || module.default?.Client;
   if (typeof Client !== 'function') throw new Error('The pg package does not expose a Client constructor.');
