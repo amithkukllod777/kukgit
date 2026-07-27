@@ -72,7 +72,6 @@ async function withTimeout(promise, timeoutMs, signal) {
       error.code = 'POSTGRESQL_SHADOW_READ_TIMEOUT';
       reject(error);
     }, timeoutMs);
-    timer.unref?.();
   });
   const aborted = signal ? new Promise((_, reject) => {
     abortListener = () => reject(cancellationError());
