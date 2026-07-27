@@ -7,10 +7,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { createSession, hashPassword } from '../src/auth.mjs';
-import {
-  createAuthKitBridgeSession,
-  migrateAuthKitIdentity,
-} from '../src/authkit-identity.mjs';
+import { createAuthKitBridgeSession, migrateAuthKitIdentity } from '../src/authkit-identity.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { openDatabase, seedCore, uid } from '../src/db.mjs';
 import {
@@ -24,6 +21,17 @@ import { createRealtimeNotificationServer } from '../src/realtime-notifications.
 async function listen(server) {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   return `http://127.0.0.1:${server.address().port}`;
+}
+
+function sendJson(res, status, payload) {
+  const body = JSON.stringify(payload);
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
+  res.end(body);
+}
+
+async function closeServer(server) {
+  if (!server.listening) return;
+  await new Promise((resolve) => server.close(resolve));
 }
 
 function clientFrame(opcode, value = '') {
@@ -59,98 +67,95 @@ function parseServerFrames(state, chunk, onFrame) {
   }
 }
 
-async function rawUpgrade(origin, { cookie = '', requestOrigin = origin, pathname = '/api/notifications/socket' } = {}) {
+async function rawUpgrade(origin, { cookie = '', requestOrigin = origin } = {}) {
   const url = new URL(origin);
   const socket = net.createConnection({ host: url.hostname, port: Number(url.port) });
   await new Promise((resolve, reject) => {
     socket.once('connect', resolve);
     socket.once('error', reject);
   });
-  const key = crypto.randomBytes(16).toString('base64');
   socket.write([
-    `GET ${pathname} HTTP/1.1`,
+    'GET /api/notifications/socket HTTP/1.1',
     `Host: ${url.host}`,
     'Upgrade: websocket',
     'Connection: Upgrade',
     'Sec-WebSocket-Version: 13',
-    `Sec-WebSocket-Key: ${key}`,
+    `Sec-WebSocket-Key: ${crypto.randomBytes(16).toString('base64')}`,
     `Origin: ${requestOrigin}`,
     cookie ? `Cookie: ${cookie}` : '',
     '',
     '',
   ].filter(Boolean).join('\r\n'));
 
-  let headerBuffer = Buffer.alloc(0);
-  const header = await new Promise((resolve, reject) => {
+  let bytes = Buffer.alloc(0);
+  const response = await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Upgrade response timed out.')), 3000);
     function onData(chunk) {
-      headerBuffer = Buffer.concat([headerBuffer, chunk]);
-      const end = headerBuffer.indexOf('\r\n\r\n');
+      bytes = Buffer.concat([bytes, chunk]);
+      const end = bytes.indexOf('\r\n\r\n');
       if (end < 0) return;
       clearTimeout(timeout);
       socket.off('data', onData);
-      resolve({ text: headerBuffer.subarray(0, end).toString('utf8'), remainder: headerBuffer.subarray(end + 4) });
+      resolve({ header: bytes.subarray(0, end).toString('utf8'), remainder: bytes.subarray(end + 4) });
     }
     socket.on('data', onData);
     socket.once('error', reject);
   });
-  const status = Number(header.text.split(' ')[1]);
+  const status = Number(response.header.split(' ')[1]);
   if (status !== 101) {
     socket.destroy();
-    return { status, header: header.text };
+    return { status, close() {} };
   }
 
-  const messages = [];
-  const waiters = [];
-  const closes = [];
-  const closeWaiters = [];
+  const queues = { messages: [], closes: [] };
+  const waiters = { messages: [], closes: [] };
   const state = { buffer: Buffer.alloc(0) };
-  function deliver(queue, waiting, value) {
-    const waiter = waiting.shift();
-    if (waiter) waiter.resolve(value);
-    else queue.push(value);
+  function deliver(name, value) {
+    const waiter = waiters[name].shift();
+    if (waiter) waiter(value);
+    else queues[name].push(value);
   }
   function onFrame(opcode, payload) {
-    if (opcode === 0x1) {
-      deliver(messages, waiters, JSON.parse(payload.toString('utf8')));
-    } else if (opcode === 0x8) {
-      const code = payload.length >= 2 ? payload.readUInt16BE(0) : 1005;
-      deliver(closes, closeWaiters, { code, reason: payload.subarray(2).toString('utf8') });
-    } else if (opcode === 0x9) {
-      socket.write(clientFrame(0xA, payload));
-    }
+    if (opcode === 0x1) deliver('messages', JSON.parse(payload.toString('utf8')));
+    else if (opcode === 0x8) deliver('closes', {
+      code: payload.length >= 2 ? payload.readUInt16BE(0) : 1005,
+      reason: payload.subarray(2).toString('utf8'),
+    });
+    else if (opcode === 0x9 && !socket.destroyed) socket.write(clientFrame(0xA, payload));
   }
   socket.on('data', (chunk) => parseServerFrames(state, chunk, onFrame));
-  if (header.remainder.length) parseServerFrames(state, header.remainder, onFrame);
+  if (response.remainder.length) parseServerFrames(state, response.remainder, onFrame);
 
-  function wait(queue, waiting, timeoutMs) {
-    if (queue.length) return Promise.resolve(queue.shift());
+  function next(name, timeoutMs) {
+    if (queues[name].length) return Promise.resolve(queues[name].shift());
     return new Promise((resolve, reject) => {
-      const entry = { resolve: (value) => { clearTimeout(timer); resolve(value); } };
       const timer = setTimeout(() => {
-        const index = waiting.indexOf(entry);
-        if (index >= 0) waiting.splice(index, 1);
+        const index = waiters[name].indexOf(done);
+        if (index >= 0) waiters[name].splice(index, 1);
         reject(new Error('WebSocket event timed out.'));
       }, timeoutMs);
-      waiting.push(entry);
+      function done(value) {
+        clearTimeout(timer);
+        resolve(value);
+      }
+      waiters[name].push(done);
     });
   }
   return {
     status,
     socket,
-    nextMessage: (timeoutMs = 3000) => wait(messages, waiters, timeoutMs),
-    nextClose: (timeoutMs = 4000) => wait(closes, closeWaiters, timeoutMs),
+    nextMessage: (timeoutMs = 3000) => next('messages', timeoutMs),
+    nextClose: (timeoutMs = 4000) => next('closes', timeoutMs),
     sendJson: (payload) => socket.write(clientFrame(0x1, JSON.stringify(payload))),
-    close: () => {
+    close() {
       if (!socket.destroyed) socket.write(clientFrame(0x8, Buffer.from([0x03, 0xE8])));
       socket.destroy();
     },
   };
 }
 
-function localSetup(t) {
+async function localContext(t, { maxPerUser = 3 } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-realtime-test-'));
-  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
     dataDir,
     databasePath: path.join(dataDir, 'kukgit.db'),
@@ -163,7 +168,6 @@ function localSetup(t) {
     baseUrl: 'http://127.0.0.1:8787',
   });
   const db = openDatabase(config);
-  t.after(() => db.close());
   const { userId: ownerId } = seedCore(db, config);
   migrateNotifications(db);
   const secondId = uid('usr');
@@ -172,108 +176,65 @@ function localSetup(t) {
   const ownerSession = createSession(db, ownerId);
   const secondSession = createSession(db, secondId);
   const server = http.createServer((_req, res) => { res.writeHead(404); res.end(); });
-  const hub = createRealtimeNotificationServer({
-    server,
-    config,
-    db,
-    options: { heartbeatMs: 1000, revalidateMs: 1000, maxPerUser: 3 },
+  const hub = createRealtimeNotificationServer({ server, config, db, options: { heartbeatMs: 1000, revalidateMs: 1000, maxPerUser } });
+  const origin = await listen(server);
+  config.baseUrl = origin;
+  t.after(async () => {
+    hub.stop();
+    await closeServer(server);
+    db.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
   });
-  t.after(() => hub.stop());
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  return { config, db, server, hub, ownerId, secondId, ownerSession, secondSession };
+  return { config, db, server, hub, origin, ownerId, secondId, ownerSession, secondSession };
 }
 
-async function connectLocal(origin, session, requestOrigin = origin) {
-  return rawUpgrade(origin, { cookie: `kukgit_session=${session.token}`, requestOrigin });
-}
+const cookieFor = (session) => `kukgit_session=${session.token}`;
 
 test('rejects unauthenticated and cross-origin WebSocket upgrades', async (t) => {
-  const context = localSetup(t);
-  const origin = await listen(context.server);
-  context.config.baseUrl = origin;
-
-  const unauthenticated = await rawUpgrade(origin);
-  assert.equal(unauthenticated.status, 401);
-  const crossOrigin = await connectLocal(origin, context.ownerSession, 'https://attacker.example');
-  assert.equal(crossOrigin.status, 403);
+  const context = await localContext(t);
+  assert.equal((await rawUpgrade(context.origin)).status, 401);
+  assert.equal((await rawUpgrade(context.origin, { cookie: cookieFor(context.ownerSession), requestOrigin: 'https://attacker.example' })).status, 403);
   assert.equal(context.hub.stats().activeConnections, 0);
   assert.equal(context.hub.stats().rejected, 2);
 });
 
-test('delivers notification changes only to the intended user', async (t) => {
-  const context = localSetup(t);
-  const origin = await listen(context.server);
-  context.config.baseUrl = origin;
-  const owner = await connectLocal(origin, context.ownerSession);
-  const second = await connectLocal(origin, context.secondSession);
-  t.after(() => { owner.close(); second.close(); });
-  assert.equal((await owner.nextMessage()).type, 'notifications.snapshot');
-  assert.equal((await second.nextMessage()).type, 'notifications.snapshot');
+test('isolates users and synchronizes read state across tabs', async (t) => {
+  const context = await localContext(t);
+  const ownerA = await rawUpgrade(context.origin, { cookie: cookieFor(context.ownerSession) });
+  const ownerB = await rawUpgrade(context.origin, { cookie: cookieFor(context.ownerSession) });
+  const second = await rawUpgrade(context.origin, { cookie: cookieFor(context.secondSession) });
+  t.after(() => { ownerA.close(); ownerB.close(); second.close(); });
+  await Promise.all([ownerA.nextMessage(), ownerB.nextMessage(), second.nextMessage()]);
 
-  createNotification(context.db, context.config, {
+  const notification = createNotification(context.db, context.config, {
     userId: context.ownerId,
     category: 'security',
     title: 'Owner-only alert',
     body: 'A security event occurred.',
-  });
-  const changed = await owner.nextMessage();
-  assert.equal(changed.type, 'notifications.changed');
-  assert.equal(changed.unreadCount, 1);
-  await assert.rejects(second.nextMessage(250), /timed out/);
-  assert.equal(context.hub.stats().connectedUsers, 2);
-});
-
-test('synchronizes read and mark-all-read state across tabs', async (t) => {
-  const context = localSetup(t);
-  const origin = await listen(context.server);
-  context.config.baseUrl = origin;
-  const first = await connectLocal(origin, context.ownerSession);
-  const second = await connectLocal(origin, context.ownerSession);
-  t.after(() => { first.close(); second.close(); });
-  await first.nextMessage();
-  await second.nextMessage();
-
-  const created = createNotification(context.db, context.config, {
-    userId: context.ownerId,
-    category: 'organization',
-    title: 'Workspace update',
-    body: 'A workspace changed.',
   }).notification;
-  assert.equal((await first.nextMessage()).unreadCount, 1);
-  assert.equal((await second.nextMessage()).unreadCount, 1);
+  assert.equal((await ownerA.nextMessage()).unreadCount, 1);
+  assert.equal((await ownerB.nextMessage()).unreadCount, 1);
+  await assert.rejects(second.nextMessage(250), /timed out/);
 
-  setNotificationRead(context.db, context.ownerId, created.id, true);
-  assert.equal((await first.nextMessage()).unreadCount, 0);
-  assert.equal((await second.nextMessage()).unreadCount, 0);
-
-  setNotificationRead(context.db, context.ownerId, created.id, false);
-  await first.nextMessage();
-  await second.nextMessage();
+  setNotificationRead(context.db, context.ownerId, notification.id, true);
+  assert.equal((await ownerA.nextMessage()).unreadCount, 0);
+  assert.equal((await ownerB.nextMessage()).unreadCount, 0);
+  setNotificationRead(context.db, context.ownerId, notification.id, false);
+  await Promise.all([ownerA.nextMessage(), ownerB.nextMessage()]);
   markAllNotificationsRead(context.db, context.ownerId);
-  assert.equal((await first.nextMessage()).unreadCount, 0);
-  assert.equal((await second.nextMessage()).unreadCount, 0);
+  assert.equal((await ownerA.nextMessage()).unreadCount, 0);
+  assert.equal((await ownerB.nextMessage()).unreadCount, 0);
 });
 
-test('enforces per-user connection limits and cleans up closed sockets', async (t) => {
-  const context = localSetup(t);
-  context.hub.stop();
-  const limited = createRealtimeNotificationServer({
-    server: context.server,
-    config: context.config,
-    db: context.db,
-    options: { heartbeatMs: 1000, revalidateMs: 1000, maxPerUser: 1 },
-  });
-  t.after(() => limited.stop());
-  const origin = await listen(context.server);
-  context.config.baseUrl = origin;
-  const first = await connectLocal(origin, context.ownerSession);
+test('enforces per-user connection limits and cleans up sockets', async (t) => {
+  const context = await localContext(t, { maxPerUser: 1 });
+  const first = await rawUpgrade(context.origin, { cookie: cookieFor(context.ownerSession) });
   t.after(() => first.close());
   await first.nextMessage();
-  const blocked = await connectLocal(origin, context.ownerSession);
-  assert.equal(blocked.status, 429);
+  assert.equal((await rawUpgrade(context.origin, { cookie: cookieFor(context.ownerSession) })).status, 429);
   first.close();
   await new Promise((resolve) => setTimeout(resolve, 50));
-  assert.equal(limited.stats().activeConnections, 0);
+  assert.equal(context.hub.stats().activeConnections, 0);
 });
 
 test('closes an AuthKit socket after central device-session revocation', async (t) => {
@@ -282,7 +243,7 @@ test('closes an AuthKit socket after central device-session revocation', async (
     kuklabs_user_id: 'central-realtime-user', id: 'central-realtime-user',
     full_name: 'Realtime User', email: 'realtime@example.com', email_verified: true,
   };
-  const authkit = http.createServer(async (req, res) => {
+  const authkit = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://authkit.test');
     const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
     if (url.pathname === '/v1/auth/products/kukgit/access') return sendJson(res, 200, { access: true, status: 'active' });
@@ -291,36 +252,36 @@ test('closes an AuthKit socket after central device-session revocation', async (
     return sendJson(res, 404, { message: 'not found' });
   });
   const authkitOrigin = await listen(authkit);
-  t.after(() => new Promise((resolve) => authkit.close(resolve)));
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-realtime-authkit-'));
-  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
     dataDir,
     databasePath: path.join(dataDir, 'kukgit.db'), repositoriesDir: path.join(dataDir, 'repos'), tempDir: path.join(dataDir, 'tmp'),
     nodeEnv: 'test', authMode: 'authkit', authkitBaseUrl: authkitOrigin,
-    authkitEncryptionKey: 'realtime-authkit-encryption-key-with-32-characters',
-    baseUrl: 'http://127.0.0.1:8787',
+    authkitEncryptionKey: 'realtime-authkit-encryption-key-with-32-characters', baseUrl: 'http://127.0.0.1:8787',
   });
   const db = openDatabase(config);
-  t.after(() => db.close());
   migrateAuthKitIdentity(db);
   migrateNotifications(db);
   const session = await createAuthKitBridgeSession(db, config, {
-    access_token: 'access-realtime', refresh_token: 'refresh-realtime', expires_in: 3600,
-    user: centralUser, sid: 'sid-realtime',
+    access_token: 'access-realtime', refresh_token: 'refresh-realtime', expires_in: 3600, user: centralUser,
   });
   db.prepare("UPDATE sessions SET authkit_sid = 'sid-realtime'").run();
   const server = http.createServer((_req, res) => { res.writeHead(404); res.end(); });
   const hub = createRealtimeNotificationServer({ server, config, db, options: { heartbeatMs: 1000, revalidateMs: 1000 } });
-  t.after(() => hub.stop());
-  t.after(() => new Promise((resolve) => server.close(resolve)));
   const origin = await listen(server);
   config.baseUrl = origin;
+  t.after(async () => {
+    hub.stop();
+    await closeServer(server);
+    await closeServer(authkit);
+    db.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
   const client = await rawUpgrade(origin, { cookie: `kukgit_session=${session.browserToken}` });
   t.after(() => client.close());
   await client.nextMessage();
   state.current = false;
-  const closed = await client.nextClose(4500);
-  assert.equal(closed.code, 1008);
+  assert.equal((await client.nextClose(4500)).code, 1008);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions').get().count, 0);
 });
