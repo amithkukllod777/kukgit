@@ -74,7 +74,7 @@ async function rawUpgrade(origin, { cookie = '', requestOrigin = origin } = {}) 
     socket.once('connect', resolve);
     socket.once('error', reject);
   });
-  socket.write([
+  const headers = [
     'GET /api/notifications/socket HTTP/1.1',
     `Host: ${url.host}`,
     'Upgrade: websocket',
@@ -82,14 +82,16 @@ async function rawUpgrade(origin, { cookie = '', requestOrigin = origin } = {}) 
     'Sec-WebSocket-Version: 13',
     `Sec-WebSocket-Key: ${crypto.randomBytes(16).toString('base64')}`,
     `Origin: ${requestOrigin}`,
-    cookie ? `Cookie: ${cookie}` : '',
-    '',
-    '',
-  ].filter(Boolean).join('\r\n'));
+  ];
+  if (cookie) headers.push(`Cookie: ${cookie}`);
+  socket.write(`${headers.join('\r\n')}\r\n\r\n`);
 
   let bytes = Buffer.alloc(0);
   const response = await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Upgrade response timed out.')), 3000);
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      reject(new Error('Upgrade response timed out.'));
+    }, 3000);
     function onData(chunk) {
       bytes = Buffer.concat([bytes, chunk]);
       const end = bytes.indexOf('\r\n\r\n');
@@ -99,7 +101,10 @@ async function rawUpgrade(origin, { cookie = '', requestOrigin = origin } = {}) 
       resolve({ header: bytes.subarray(0, end).toString('utf8'), remainder: bytes.subarray(end + 4) });
     }
     socket.on('data', onData);
-    socket.once('error', reject);
+    socket.once('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
   });
   const status = Number(response.header.split(' ')[1]);
   if (status !== 101) {
