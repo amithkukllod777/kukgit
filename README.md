@@ -70,6 +70,9 @@ This repository contains the working KukGit foundation. It is not a visual mocku
 - Security, test, CI, documentation and governance checks
 - Audit log
 - Responsive Kuklabs-branded web interface
+- Secure Kuklabs instance-admin console with independent operator allowlist
+- Tenant-scoped user, organization, repository, delivery, storage and audit diagnostics
+- Redacted support notes plus confirmed failed-email and webhook retry controls
 - No runtime npm dependencies
 - Automated tests for identity, onboarding, API, Git, LFS, backup/restore, collaboration, external access, governance, reviews, checks, webhooks, notifications, SMTP and security helpers
 
@@ -270,6 +273,12 @@ npm run backup -- maintenance off
 ```
 
 Snapshots include SQLite metadata, Git bundles and all recorded Git LFS objects. Restore supports dry-run validation and writes only to a missing or empty target directory. Read [Verified Backups and Disaster Recovery](docs/BACKUPS_AND_DISASTER_RECOVERY.md).
+
+## Instance administration
+
+Configure `KUKGIT_INSTANCE_ADMIN_EMAILS` with a minimal comma-separated allowlist of verified One Kuklabs Account operators. Authorized operators receive a separate **Instance Admin** navigation entry with adoption metrics, bounded cross-tenant search, tenant and user diagnostics, redacted audit lookup, support notes, and confirmed retry controls for terminal email and webhook failures.
+
+Instance authority is independent from organization roles. The console never exposes passwords, OTPs, AuthKit tokens, PAT material, webhook secrets or SSH private keys, and it does not support impersonation. Read [Instance Admin Console](docs/INSTANCE_ADMIN_CONSOLE.md) before enabling production support access.
 
 ## Commands
 

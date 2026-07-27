@@ -225,10 +225,24 @@ Progress delivered:
 - transport-wide expiry, renewal, campaign, CSRF and authorization tests
 - external access expiry and access-review operations runbook
 
+- independent instance-administrator email allowlist
+- read-only-by-default instance operations console
+- adoption, repository, external-access, delivery, LFS, backup and audit metrics
+- bounded cross-tenant user, organization and repository search
+- tenant-scoped member, repository, storage, external-access and delivery diagnostics
+- credential-free user identity, membership and security-count diagnostics
+- recursive server-side audit metadata redaction
+- request ID, action, target and organization audit lookup
+- confirmed tenant support notes with audit events
+- confirmed failed/cancelled email retry and terminal webhook retry
+- responsive Admin navigation, overview, search, tenant, user and audit interfaces
+- no-impersonation and no-credential-exposure support boundary
+- instance-admin privacy, isolation, CSRF, confirmation and retry tests
+- instance administration and tenant support operations runbook
+
 Remaining:
 
 - PostgreSQL migration
-- broader admin console and tenant support tools
 - real-time WebSocket notification delivery
 - provider bounce and complaint processing
 
