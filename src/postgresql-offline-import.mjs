@@ -93,7 +93,7 @@ export async function runPostgresqlOfflineImport({
   const reportPath = path.join(directory, 'postgresql-execution-report.json');
   const receiptPath = path.join(directory, 'postgresql-import-receipt.json');
   const importPlan = buildPostgresqlImportPlan(source, { batchSize });
-  const config = adapterConfig?.databaseUrl ? adapterConfig : loadNodePostgresAdapterConfig(adapterConfig || {});
+  const config = loadNodePostgresAdapterConfig(adapterConfig || {});
 
   let state = {
     format: STATE_FORMAT,
