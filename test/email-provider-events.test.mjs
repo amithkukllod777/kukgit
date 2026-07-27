@@ -10,13 +10,13 @@ import { loadConfig } from '../src/config.mjs';
 import { openDatabase, seedCore } from '../src/db.mjs';
 import {
   activeEmailSuppression,
-  createEmailProviderEventsApiHandler,
   ingestEmailProviderEvent,
   listEmailSuppressions,
   migrateEmailProviderEvents,
   unsuppressEmail,
   verifyEmailProviderSignature,
 } from '../src/email-provider-events.mjs';
+import { createEmailProviderEventsApiHandler } from '../src/email-provider-events-safe.mjs';
 import { migrateNotifications, processEmailOutbox, queueTransactionalEmail } from '../src/notifications.mjs';
 
 function setup(t, overrides = {}) {
@@ -189,7 +189,7 @@ test('instance administrator must explicitly confirm and document unsuppression'
   assert.equal(audit.metadataJson.includes(recipient), false);
 });
 
-test('signed provider API accepts events and admin API enforces identity and same origin', async (t) => {
+test('signed provider API accepts events, sanitizes provider IDs and enforces admin origin', async (t) => {
   const { config, db, owner } = setup(t);
   const handler = createEmailProviderEventsApiHandler({ config, db });
   const server = http.createServer(async (req, res) => {
@@ -199,7 +199,7 @@ test('signed provider API accepts events and admin API enforces identity and sam
   t.after(() => server.close());
   const origin = await listen(server);
   config.baseUrl = origin;
-  const payload = event('evt_api_1', 'hard_bounce', 'api@example.com');
+  const payload = event('evt_api_1', 'hard_bounce', 'api@example.com', { message_id: 'provider-message-not-an-outbox-id' });
   const raw = Buffer.from(JSON.stringify(payload));
   const webhook = await fetch(`${origin}/api/email-provider/events`, {
     method: 'POST',
@@ -207,6 +207,8 @@ test('signed provider API accepts events and admin API enforces identity and sam
     body: raw,
   });
   assert.equal(webhook.status, 202);
+  const stored = db.prepare('SELECT outbox_id AS outboxId FROM email_provider_events WHERE provider_event_id = ?').get('evt_api_1');
+  assert.equal(stored.outboxId, null);
   const replay = await fetch(`${origin}/api/email-provider/events`, {
     method: 'POST',
     headers: signedHeaders(config, raw),
