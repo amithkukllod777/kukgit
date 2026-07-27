@@ -95,6 +95,15 @@ check('Transactional email', () => {
   if (config.smtpSecure && config.smtpStartTls) return `${config.smtpHost}:${config.smtpPort} direct TLS (STARTTLS setting ignored)`;
   return `${config.smtpHost}:${config.smtpPort} ${config.smtpSecure ? 'direct TLS' : config.smtpStartTls ? 'STARTTLS' : 'plaintext development'}`;
 });
+check('Email provider events', () => {
+  if (!config.emailProviderEventsEnabled) return 'disabled until a signed provider webhook secret is configured';
+  if (String(config.emailProviderWebhookSecret || '').length < 32) throw new Error('KUKGIT_EMAIL_PROVIDER_WEBHOOK_SECRET must contain at least 32 characters');
+  if (!Number.isInteger(config.emailProviderWebhookToleranceSeconds) || config.emailProviderWebhookToleranceSeconds < 30 || config.emailProviderWebhookToleranceSeconds > 3600) throw new Error('KUKGIT_EMAIL_PROVIDER_WEBHOOK_TOLERANCE_SECONDS must be between 30 and 3600');
+  if (!Number.isInteger(config.emailSoftBounceThreshold) || config.emailSoftBounceThreshold < 2 || config.emailSoftBounceThreshold > 20) throw new Error('KUKGIT_EMAIL_SOFT_BOUNCE_THRESHOLD must be between 2 and 20');
+  if (!Number.isInteger(config.emailSoftBounceWindowDays) || config.emailSoftBounceWindowDays < 1 || config.emailSoftBounceWindowDays > 90) throw new Error('KUKGIT_EMAIL_SOFT_BOUNCE_WINDOW_DAYS must be between 1 and 90');
+  if (!Number.isInteger(config.emailSoftBounceSuppressionDays) || config.emailSoftBounceSuppressionDays < 1 || config.emailSoftBounceSuppressionDays > 365) throw new Error('KUKGIT_EMAIL_SOFT_BOUNCE_SUPPRESSION_DAYS must be between 1 and 365');
+  return `signed webhook; threshold ${config.emailSoftBounceThreshold} in ${config.emailSoftBounceWindowDays} days; suppress ${config.emailSoftBounceSuppressionDays} days`;
+});
 check('Notification worker', () => {
   if (!Number.isInteger(config.emailWorkerIntervalMs) || config.emailWorkerIntervalMs < 5000 || config.emailWorkerIntervalMs > 3600000) throw new Error('KUKGIT_EMAIL_WORKER_INTERVAL_MS must be between 5000 and 3600000');
   if (!Number.isInteger(config.emailMaxAttempts) || config.emailMaxAttempts < 1 || config.emailMaxAttempts > 20) throw new Error('KUKGIT_EMAIL_MAX_ATTEMPTS must be between 1 and 20');

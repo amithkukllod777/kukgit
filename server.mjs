@@ -28,6 +28,8 @@ import { createCollaborationApiHandler, migrateCollaboration } from './src/colla
 import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
 import { smtpConfigured } from './src/email-transport.mjs';
+import { migrateEmailProviderEvents } from './src/email-provider-events.mjs';
+import { createEmailProviderEventsApiHandler } from './src/email-provider-events-safe.mjs';
 import {
   createExternalAccessExpiryGuard,
   createExternalAccessHistoryApiHandler,
@@ -128,6 +130,7 @@ migrateInstanceAdminSafe(db);
 const seeded = config.authMode === 'local' ? seedCore(db, config) : { seeded: false };
 if (config.authMode === 'authkit') ensureAuthKitCoreOrganization(db);
 migrateNotifications(db);
+migrateEmailProviderEvents(db);
 installExistingBranchProtectionHooks(config, db);
 const app = createApp({ config, db });
 const statusGuardedApp = createStatusCheckMergeGuard({ config, db, app });
@@ -135,6 +138,7 @@ const reviewThreadGuardedApp = createReviewThreadMergeGuard({ config, db, app: s
 const governedApp = createBranchGovernanceGuard({ config, db, app: reviewThreadGuardedApp });
 const secureAuthKitLoginApi = createSecureAuthKitLoginApiHandler({ config, db });
 const authKitApi = createAuthKitApiHandler({ config, db });
+const emailProviderEventsApi = createEmailProviderEventsApiHandler({ config, db });
 const instanceAdminApi = createInstanceAdminApiHandlerSafe({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
 const notificationsApi = createNotificationsApiHandler({ config, db });
@@ -163,6 +167,7 @@ const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app: gov
 async function dispatch(req, res) {
   if (await secureAuthKitLoginApi(req, res)) return;
   if (await authKitApi(req, res)) return;
+  if (await emailProviderEventsApi(req, res)) return;
   if (await instanceAdminApi(req, res)) return;
   if (await tokenApi(req, res)) return;
   if (await notificationsApi(req, res)) return;
@@ -217,6 +222,7 @@ server.listen(config.port, config.host, () => {
   console.log(`Backups: ${config.backupsDir}; retention: ${config.backupRetentionCount} snapshots / ${config.backupRetentionDays} days`);
   console.log(`Git LFS: ${config.lfsDir}; repository quota: ${config.lfsRepositoryQuotaBytes} bytes`);
   console.log(`Email delivery: ${smtpConfigured(config) ? `${config.smtpHost}:${config.smtpPort}` : 'disabled until SMTP is configured'}`);
+  console.log(`Email provider events: /api/email-provider/events; soft-bounce threshold ${config.emailSoftBounceThreshold}/${config.emailSoftBounceWindowDays} days`);
   console.log(`Real-time notifications: WebSocket ${realtimeNotifications.path}`);
   console.log(`SSH clone endpoint: ${config.sshUser}@${config.sshHost}:${config.sshPort}`);
   if (seeded.seeded && !config.isProduction) {

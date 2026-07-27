@@ -5,6 +5,33 @@ import crypto from 'node:crypto';
 import { currentRepositoryAccess } from './access-context.mjs';
 import { hashPassword } from './auth.mjs';
 
+function installTransactionHelper(db) {
+  if (typeof db.transaction === 'function') return;
+  Object.defineProperty(db, 'transaction', {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value(work) {
+      if (typeof work !== 'function') throw new TypeError('Transaction work must be a function.');
+      return (...args) => {
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          const result = work(...args);
+          if (result && typeof result.then === 'function') {
+            db.exec('ROLLBACK');
+            throw new TypeError('SQLite transaction callbacks must be synchronous.');
+          }
+          db.exec('COMMIT');
+          return result;
+        } catch (error) {
+          try { db.exec('ROLLBACK'); } catch {}
+          throw error;
+        }
+      };
+    },
+  });
+}
+
 export function openDatabase(config) {
   const requestedDriver = String(process.env.KUKGIT_DATABASE_DRIVER || 'sqlite').trim().toLowerCase();
   if (requestedDriver !== 'sqlite') {
@@ -14,6 +41,7 @@ export function openDatabase(config) {
   }
   fs.mkdirSync(path.dirname(config.databasePath), { recursive: true });
   const db = new DatabaseSync(config.databasePath);
+  installTransactionHelper(db);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   migrate(db);
   return db;
