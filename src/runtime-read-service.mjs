@@ -33,7 +33,7 @@ export function createRuntimeReadService({ sqlite, observer = null } = {}) {
     if (observer) {
       const snapshot = cloneObservation(parameters, result);
       metrics.observerScheduled += 1;
-      queueMicrotask(() => {
+      setImmediate(() => {
         try {
           const accepted = observer.observe({
             id: spec.id,
