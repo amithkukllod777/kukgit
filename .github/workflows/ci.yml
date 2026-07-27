@@ -23,4 +23,15 @@ jobs:
         run: node -e "import('pg').then((module) => { if (typeof (module.Client || module.default?.Client) !== 'function') process.exit(1) })"
       - run: npm run doctor
       - run: npm run check
-      - run: npm test
+      - name: Run tests with diagnostics
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.log
+      - name: Upload temporary Stage 5 diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage5-test-output-${{ github.run_id }}
+          path: test-output.log
+          retention-days: 1
