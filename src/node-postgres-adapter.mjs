@@ -240,9 +240,10 @@ export async function createNodePostgresAdapter(config, { pgModule = null } = {}
     finally { connected = false; closed = true; }
   }
 
-  async function begin() {
+  async function configureTransaction({ readOnly = false, isolation = 'SERIALIZABLE' } = {}) {
     if (transaction) throw new Error('PostgreSQL migration transaction is already active.');
-    await rawQuery('BEGIN ISOLATION LEVEL SERIALIZABLE', [], 'transaction begin');
+    const isolationLevel = isolation === 'REPEATABLE READ' ? 'REPEATABLE READ' : 'SERIALIZABLE';
+    await rawQuery(`BEGIN ISOLATION LEVEL ${isolationLevel}${readOnly ? ' READ ONLY' : ''}`, [], 'transaction begin');
     transaction = true;
     try {
       await rawQuery(`SET LOCAL search_path TO ${quoteIdentifier(resolved.schema)}, pg_catalog`, [], 'search path');
@@ -256,6 +257,14 @@ export async function createNodePostgresAdapter(config, { pgModule = null } = {}
       transaction = false;
       throw error;
     }
+  }
+
+  async function begin() {
+    return configureTransaction({ readOnly: false, isolation: 'SERIALIZABLE' });
+  }
+
+  async function beginReadOnly() {
+    return configureTransaction({ readOnly: true, isolation: 'REPEATABLE READ' });
   }
 
   async function commit() {
@@ -334,6 +343,7 @@ export async function createNodePostgresAdapter(config, { pgModule = null } = {}
     connect,
     close,
     begin,
+    beginReadOnly,
     commit,
     rollback,
     query,
