@@ -96,6 +96,7 @@ check('Transactional email', () => {
   return `${config.smtpHost}:${config.smtpPort} ${config.smtpSecure ? 'direct TLS' : config.smtpStartTls ? 'STARTTLS' : 'plaintext development'}`;
 });
 check('Email provider events', () => {
+  if (!config.emailProviderEventsEnabled) return 'disabled until a signed provider webhook secret is configured';
   if (String(config.emailProviderWebhookSecret || '').length < 32) throw new Error('KUKGIT_EMAIL_PROVIDER_WEBHOOK_SECRET must contain at least 32 characters');
   if (!Number.isInteger(config.emailProviderWebhookToleranceSeconds) || config.emailProviderWebhookToleranceSeconds < 30 || config.emailProviderWebhookToleranceSeconds > 3600) throw new Error('KUKGIT_EMAIL_PROVIDER_WEBHOOK_TOLERANCE_SECONDS must be between 30 and 3600');
   if (!Number.isInteger(config.emailSoftBounceThreshold) || config.emailSoftBounceThreshold < 2 || config.emailSoftBounceThreshold > 20) throw new Error('KUKGIT_EMAIL_SOFT_BOUNCE_THRESHOLD must be between 2 and 20');
