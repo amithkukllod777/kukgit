@@ -99,8 +99,8 @@ export function inventoryDatabaseRuntimeSurface(roots) {
     CALL_PATTERN.lastIndex = 0;
     for (const match of source.matchAll(CALL_PATTERN)) {
       const argument = readStringArgument(source, match.index + match[0].length);
-      const dynamic = Boolean(argument.dynamic || argument.interpolated);
-      const sql = dynamic ? null : normalizeSql(argument.value);
+      const dynamic = match[2] === 'transaction' ? false : Boolean(argument.dynamic || argument.interpolated);
+      const sql = dynamic || match[2] === 'transaction' ? null : normalizeSql(argument.value);
       const relativeRoot = rootList.find((root) => file === root || file.startsWith(`${root}${path.sep}`)) || path.dirname(file);
       const record = {
         file: path.relative(relativeRoot, file).replaceAll(path.sep, '/'),
@@ -111,7 +111,7 @@ export function inventoryDatabaseRuntimeSurface(roots) {
         dynamic,
         operation: operation(sql, match[2]),
         sqlFingerprint: sql ? sha256(sql) : null,
-        portabilityFindings: sql ? portability(sql) : ['dynamic_sql'],
+        portabilityFindings: sql ? portability(sql) : match[2] === 'transaction' ? [] : ['dynamic_sql'],
         sqlPreview: sql ? sql.slice(0, 240) : null,
       };
       calls.push(record);
