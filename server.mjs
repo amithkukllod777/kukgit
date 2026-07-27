@@ -67,6 +67,7 @@ import {
   createPullRequestDiffsApiHandler,
   migratePullRequestDiffs,
 } from './src/pull-request-diffs-safe.mjs';
+import { createRealtimeNotificationServer } from './src/realtime-notifications.mjs';
 import {
   createRepositoryAccessApiHandler,
   createRepositoryAccessGuard,
@@ -205,6 +206,7 @@ const stopNotificationWorker = startNotificationWorker(db, config);
 const stopOperationalNotificationWorker = startOperationalNotificationWorker(db, config);
 const stopExternalAccessReviewWorker = startExternalAccessReviewWorker(db, config);
 const server = http.createServer(identityDispatch);
+const realtimeNotifications = createRealtimeNotificationServer({ server, config, db });
 
 server.listen(config.port, config.host, () => {
   console.log(`\nKukGit v0.1.0 is running at ${config.baseUrl}`);
@@ -215,6 +217,7 @@ server.listen(config.port, config.host, () => {
   console.log(`Backups: ${config.backupsDir}; retention: ${config.backupRetentionCount} snapshots / ${config.backupRetentionDays} days`);
   console.log(`Git LFS: ${config.lfsDir}; repository quota: ${config.lfsRepositoryQuotaBytes} bytes`);
   console.log(`Email delivery: ${smtpConfigured(config) ? `${config.smtpHost}:${config.smtpPort}` : 'disabled until SMTP is configured'}`);
+  console.log(`Real-time notifications: WebSocket ${realtimeNotifications.path}`);
   console.log(`SSH clone endpoint: ${config.sshUser}@${config.sshHost}:${config.sshPort}`);
   if (seeded.seeded && !config.isProduction) {
     console.log(`Development admin: ${config.adminEmail}`);
@@ -240,6 +243,7 @@ function shutdown(signal) {
   stopNotificationWorker();
   stopOperationalNotificationWorker();
   stopExternalAccessReviewWorker();
+  realtimeNotifications.stop();
   server.close(() => {
     try { db.close(); } catch {}
     process.exit(0);
