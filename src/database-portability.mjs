@@ -44,6 +44,24 @@ function stableJson(value) {
   return JSON.stringify(stableValue(value));
 }
 
+function compareStable(left, right) {
+  const leftJson = stableJson(left);
+  const rightJson = stableJson(right);
+  return leftJson < rightJson ? -1 : leftJson > rightJson ? 1 : 0;
+}
+
+function uniqueNameMap(items, label) {
+  if (!Array.isArray(items)) throw new Error(`${label} must be an array.`);
+  const map = new Map();
+  for (const item of items) {
+    const name = String(item?.name || '');
+    if (!name) throw new Error(`${label} contains an invalid table name.`);
+    if (map.has(name)) throw new Error(`${label} contains a duplicate table: ${name}`);
+    map.set(name, item);
+  }
+  return map;
+}
+
 function tableNames(db) {
   return db.prepare(`
     SELECT name FROM sqlite_master
@@ -67,23 +85,20 @@ function tableColumns(db, table) {
 }
 
 function tableRows(db, table) {
-  const rows = db.prepare(`SELECT * FROM ${quoteIdentifier(table)}`).all().map((row) => stableValue(row));
-  rows.sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
-  return rows;
+  return db.prepare(`SELECT * FROM ${quoteIdentifier(table)}`).all().map(stableValue).sort(compareStable);
 }
 
 function tableRecord(db, table, { includeRows = false } = {}) {
   const schema = tableSchema(db, table);
   const columns = tableColumns(db, table);
   const rows = tableRows(db, table);
-  const checksum = sha256(rows.map(stableJson).join('\n'));
   const record = {
     name: table,
     schema,
     schemaChecksum: sha256(schema),
     columns,
     rowCount: rows.length,
-    rowChecksum: checksum,
+    rowChecksum: sha256(rows.map(stableJson).join('\n')),
   };
   if (includeRows) record.rows = rows;
   return record;
@@ -98,15 +113,37 @@ function foreignKeyFailures(db) {
   }));
 }
 
-export function buildSqliteManifest(db) {
-  const tables = tableNames(db).map((table) => tableRecord(db, table));
-  const failures = foreignKeyFailures(db);
-  const fingerprint = sha256(stableJson(tables.map((table) => ({
+function manifestFingerprint(tables) {
+  return sha256(stableJson(tables.map((table) => ({
     name: table.name,
     schemaChecksum: table.schemaChecksum,
     rowCount: table.rowCount,
     rowChecksum: table.rowChecksum,
   }))));
+}
+
+function validateManifest(manifest) {
+  if (manifest?.format !== MANIFEST_FORMAT || manifest.engine !== 'sqlite') {
+    throw new Error('Unsupported database manifest.');
+  }
+  const tableMap = uniqueNameMap(manifest.tables, 'Database manifest tables');
+  const tables = [...tableMap.values()].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+  for (const table of tables) {
+    if (!Number.isSafeInteger(table.rowCount) || table.rowCount < 0) throw new Error(`Database manifest row count is invalid: ${table.name}`);
+    if (table.schemaChecksum !== sha256(String(table.schema || ''))) throw new Error(`Database manifest schema checksum mismatch: ${table.name}`);
+    if (!/^[0-9a-f]{64}$/.test(String(table.rowChecksum || ''))) throw new Error(`Database manifest row checksum is invalid: ${table.name}`);
+  }
+  if (manifest.tableCount !== tables.length) throw new Error('Database manifest table count mismatch.');
+  const totalRows = tables.reduce((sum, table) => sum + table.rowCount, 0);
+  if (manifest.totalRows !== totalRows) throw new Error('Database manifest total row count mismatch.');
+  if (manifest.fingerprint !== manifestFingerprint(tables)) throw new Error('Database manifest fingerprint mismatch.');
+  if (!Array.isArray(manifest.foreignKeyFailures)) throw new Error('Database manifest foreign-key status is invalid.');
+  return { manifest, tables, tableMap };
+}
+
+export function buildSqliteManifest(db) {
+  const tables = tableNames(db).map((table) => tableRecord(db, table));
+  const failures = foreignKeyFailures(db);
   return {
     format: MANIFEST_FORMAT,
     generatedAt: new Date().toISOString(),
@@ -114,7 +151,7 @@ export function buildSqliteManifest(db) {
     tableCount: tables.length,
     totalRows: tables.reduce((sum, table) => sum + table.rowCount, 0),
     foreignKeyFailures: failures,
-    fingerprint,
+    fingerprint: manifestFingerprint(tables),
     tables,
   };
 }
@@ -131,12 +168,7 @@ export function createSqliteExport(db, outputPath) {
     tableCount: manifestTables.length,
     totalRows: manifestTables.reduce((sum, table) => sum + table.rowCount, 0),
     foreignKeyFailures: foreignKeyFailures(db),
-    fingerprint: sha256(stableJson(manifestTables.map((table) => ({
-      name: table.name,
-      schemaChecksum: table.schemaChecksum,
-      rowCount: table.rowCount,
-      rowChecksum: table.rowChecksum,
-    })))),
+    fingerprint: manifestFingerprint(manifestTables),
     tables: manifestTables,
   };
   const bundleWithoutChecksum = {
@@ -145,10 +177,7 @@ export function createSqliteExport(db, outputPath) {
     source: { engine: 'sqlite', manifest },
     tables: tables.map(({ name, rows }) => ({ name, rows })),
   };
-  const bundle = {
-    ...bundleWithoutChecksum,
-    bundleChecksum: sha256(stableJson(bundleWithoutChecksum)),
-  };
+  const bundle = { ...bundleWithoutChecksum, bundleChecksum: sha256(stableJson(bundleWithoutChecksum)) };
   const temporary = `${target}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
   fs.writeFileSync(temporary, `${JSON.stringify(bundle)}\n`, { mode: 0o600, flag: 'wx' });
   fs.renameSync(temporary, target);
@@ -164,18 +193,25 @@ export function createSqliteExport(db, outputPath) {
 export function readSqliteExport(inputPath) {
   const source = path.resolve(inputPath);
   const bundle = JSON.parse(fs.readFileSync(source, 'utf8'));
-  if (bundle.format !== EXPORT_FORMAT) throw new Error('Unsupported KukGit database export format.');
+  if (bundle.format !== EXPORT_FORMAT || bundle.source?.engine !== 'sqlite') {
+    throw new Error('Unsupported KukGit database export format.');
+  }
   const { bundleChecksum, ...withoutChecksum } = bundle;
-  const actualBundleChecksum = sha256(stableJson(withoutChecksum));
-  if (!bundleChecksum || bundleChecksum !== actualBundleChecksum) throw new Error('Database export bundle checksum mismatch.');
-  const manifest = bundle.source?.manifest;
-  if (manifest?.format !== MANIFEST_FORMAT) throw new Error('Database export manifest is missing or unsupported.');
-  if (manifest.foreignKeyFailures?.length) throw new Error('Database export contains foreign-key violations.');
-  const tableMap = new Map((bundle.tables || []).map((table) => [table.name, table]));
-  for (const record of manifest.tables || []) {
-    const table = tableMap.get(record.name);
+  if (!bundleChecksum || bundleChecksum !== sha256(stableJson(withoutChecksum))) {
+    throw new Error('Database export bundle checksum mismatch.');
+  }
+  const { manifest, tables: manifestTables, tableMap: manifestMap } = validateManifest(bundle.source?.manifest);
+  if (manifest.foreignKeyFailures.length) throw new Error('Database export contains foreign-key violations.');
+  const bundleMap = uniqueNameMap(bundle.tables, 'Database export tables');
+  if (bundleMap.size !== manifestMap.size) throw new Error('Database export table count does not match its manifest.');
+  for (const name of bundleMap.keys()) {
+    if (!manifestMap.has(name)) throw new Error(`Database export contains an unexpected table: ${name}`);
+  }
+  for (const record of manifestTables) {
+    const table = bundleMap.get(record.name);
     if (!table) throw new Error(`Database export table is missing: ${record.name}`);
-    const rows = (table.rows || []).map(stableValue).sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
+    if (!Array.isArray(table.rows)) throw new Error(`Database export rows are invalid: ${record.name}`);
+    const rows = table.rows.map(stableValue).sort(compareStable);
     if (rows.length !== record.rowCount) throw new Error(`Database export row count mismatch: ${record.name}`);
     if (sha256(rows.map(stableJson).join('\n')) !== record.rowChecksum) {
       throw new Error(`Database export row checksum mismatch: ${record.name}`);
@@ -185,9 +221,9 @@ export function readSqliteExport(inputPath) {
 }
 
 export function verifySqliteAgainstManifest(db, manifest) {
-  if (manifest?.format !== MANIFEST_FORMAT) throw new Error('Unsupported database manifest.');
+  const { manifest: expectedManifest } = validateManifest(manifest);
   const current = buildSqliteManifest(db);
-  const expectedByName = new Map(manifest.tables.map((table) => [table.name, table]));
+  const expectedByName = new Map(expectedManifest.tables.map((table) => [table.name, table]));
   const currentByName = new Map(current.tables.map((table) => [table.name, table]));
   const differences = [];
   for (const name of [...new Set([...expectedByName.keys(), ...currentByName.keys()])].sort()) {
@@ -203,7 +239,7 @@ export function verifySqliteAgainstManifest(db, manifest) {
   }
   return {
     valid: differences.length === 0 && current.foreignKeyFailures.length === 0,
-    expectedFingerprint: manifest.fingerprint,
+    expectedFingerprint: expectedManifest.fingerprint,
     actualFingerprint: current.fingerprint,
     foreignKeyFailures: current.foreignKeyFailures,
     differences,
