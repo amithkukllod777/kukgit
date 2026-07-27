@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -20,70 +20,3 @@ jobs:
       - run: npm run doctor
       - run: npm run check
       - run: npm test
-
-  patch-postgresql-readiness-docs:
-    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/postgresql-data-layer' && !contains(github.event.pull_request.title, '[docs-patched]') }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-      - name: Patch README and roadmap
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          readme = Path('README.md')
-          text = readme.read_text()
-          feature_marker = '- Redacted support notes plus confirmed failed-email and webhook retry controls\n'
-          feature_block = '''- Deterministic SQLite metadata manifests, row checksums and drift verification
-          - Protected full-metadata export with atomic writes, `0600` permissions and tamper detection
-          - SQL portability audit and verified PostgreSQL cutover-readiness gate
-          '''.replace('          ', '')
-          if feature_block not in text:
-              text = text.replace(feature_marker, feature_marker + feature_block)
-          text = text.replace('Production work still required includes hosted CI runners and workflow execution, PostgreSQL and distributed jobs,', 'Production work still required includes hosted CI runners and workflow execution, the PostgreSQL runtime driver/import/cutover stages and distributed jobs,')
-          section = '''## PostgreSQL migration readiness
-
-          KukGit still runs on SQLite. Stage 1 adds deterministic source manifests, complete protected metadata export, SQL portability findings, PostgreSQL URL redaction and checksummed cutover-readiness validation. Selecting `KUKGIT_DATABASE_DRIVER=postgresql` currently fails closed instead of silently continuing on SQLite.
-
-          Use `npm run database -- inventory`, `export`, `verify-export`, `verify-live`, `audit-sql` and `postgresql-status` to prepare migration evidence. Full PostgreSQL runtime, schema import, dual-read validation, cutover and PostgreSQL backup/restore remain open under issue #43. Read [PostgreSQL Metadata Migration](docs/POSTGRESQL_MIGRATION.md).
-
-          '''.replace('          ', '')
-          if '## PostgreSQL migration readiness\n' not in text:
-              text = text.replace('## Instance administration\n', section + '## Instance administration\n')
-          text = text.replace('npm run backup -- # Create, verify, restore and prune verified snapshots\n', 'npm run backup -- # Create, verify, restore and prune verified snapshots\nnpm run database -- # Inventory, export, verify and audit metadata migration readiness\n')
-          text = text.replace('├── scripts/                # Seed, doctor, token, SSH and backup administration', '├── scripts/                # Seed, doctor, token, SSH, backup and database migration administration')
-          readme.write_text(text)
-
-          roadmap = Path('docs/ROADMAP.md')
-          text = roadmap.read_text()
-          delivered = '''- PostgreSQL migration Stage 1 SQL portability inventory
-          - deterministic SQLite schema, row-count and SHA-256 row checksums
-          - full source metadata fingerprint and foreign-key verification
-          - atomic `0600` SQLite metadata export bundle
-          - export bundle, table, row-count and row-checksum tamper detection
-          - live SQLite drift comparison against a saved manifest
-          - PostgreSQL URL validation and credential redaction
-          - checksummed cutover-readiness marker bound to the source manifest fingerprint
-          - fail-closed server and doctor behavior when undeployed PostgreSQL runtime is selected
-          - database migration status, inventory, export, verify and audit CLI
-          - sensitive migration-export Git ignore rules
-          - staged migration, import, dual-read, cutover, backup and rollback runbook
-          '''.replace('          ', '')
-          if delivered not in text:
-              text = text.replace('\nRemaining:\n', '\n' + delivered + '\nRemaining:\n')
-          text = text.replace('- PostgreSQL migration\n', '- PostgreSQL runtime driver, translated schema, verified import, dual-read cutover and backend-aware backup/restore\n')
-          roadmap.write_text(text)
-          PY
-          if git diff --quiet; then
-            echo "Documentation already patched."
-            exit 0
-          fi
-          git config user.name "KukGit CI"
-          git config user.email "actions@users.noreply.github.com"
-          git add README.md docs/ROADMAP.md
-          git commit -m "docs: publish PostgreSQL migration readiness"
-          git push origin HEAD:${{ github.head_ref }}
