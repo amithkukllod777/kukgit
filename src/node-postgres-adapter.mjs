@@ -3,7 +3,12 @@ import fs from 'node:fs';
 import { parsePostgresqlUrl, redactPostgresqlUrl } from './database-selection.mjs';
 
 const SSL_MODES = new Set(['verify-full', 'require', 'disable']);
-const CONNECTION_SSL_OPTIONS = new Set(['sslmode', 'sslcert', 'sslkey', 'sslrootcert']);
+const FORBIDDEN_CONNECTION_OPTIONS = new Set([
+  'sslmode', 'sslcert', 'sslkey', 'sslrootcert',
+  'options', 'application_name', 'fallback_application_name',
+  'connect_timeout', 'statement_timeout', 'query_timeout', 'lock_timeout',
+  'idle_in_transaction_session_timeout', 'search_path', 'target_session_attrs',
+]);
 const NORMALIZED_CONFIG = Symbol('kukgit-node-postgres-normalized-config');
 
 function booleanValue(value, fallback = false) {
@@ -75,8 +80,8 @@ export function loadNodePostgresAdapterConfig(overrides = {}) {
   const databaseUrl = String(overrides.databaseUrl ?? process.env.KUKGIT_DATABASE_URL ?? '').trim();
   const parsedUrl = parsePostgresqlUrl(databaseUrl);
   for (const key of parsedUrl.searchParams.keys()) {
-    if (CONNECTION_SSL_OPTIONS.has(key.toLowerCase())) {
-      throw new Error(`KUKGIT_DATABASE_URL must not contain ${key}; configure TLS through KukGit PostgreSQL settings.`);
+    if (FORBIDDEN_CONNECTION_OPTIONS.has(key.toLowerCase())) {
+      throw new Error(`KUKGIT_DATABASE_URL must not contain ${key}; configure connection policy through KukGit PostgreSQL settings.`);
     }
   }
   const schema = validateIdentifier(
@@ -271,7 +276,7 @@ export async function createNodePostgresAdapter(config, { pgModule = null } = {}
   }
 
   async function listUserTables() {
-    const result = await rawQuery(
+    const tableResult = await rawQuery(
       `SELECT table_name AS name
        FROM information_schema.tables
        WHERE table_schema = $1 AND table_type = 'BASE TABLE'
@@ -279,7 +284,16 @@ export async function createNodePostgresAdapter(config, { pgModule = null } = {}
       [resolved.schema],
       'table inventory',
     );
-    return (result.rows || []).map((row) => row.name);
+    const relationResult = await rawQuery(
+      `SELECT c.relname AS name
+       FROM pg_catalog.pg_class c
+       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = $1 AND c.relkind IN ('p','v','m','S','f')
+       ORDER BY c.relname`,
+      [resolved.schema],
+      'schema relation inventory',
+    );
+    return [...new Set([...(tableResult.rows || []), ...(relationResult.rows || [])].map((row) => row.name))].sort();
   }
 
   async function* scanTable(tableName, columns, { batchSize = 1000, signal = null } = {}) {
