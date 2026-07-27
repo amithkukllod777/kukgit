@@ -146,7 +146,8 @@ async function renderKgEmailHealth() {
     }));
     kgEmailHealthKey = key;
   } catch (error) {
-    content.innerHTML = `<div class="kg-admin-shell kg-email-health-shell"><section class="card"><div class="kg-email-health-empty"><b>${kgEmailEscape(error.message)}</b><br /><button class="btn btn-ghost" type="button" onclick="location.hash='#/instance-admin'">Return to Admin</button></div></section></div>`;
+    content.innerHTML = `<div class="kg-admin-shell kg-email-health-shell"><section class="card"><div class="kg-email-health-empty"><b>${kgEmailEscape(error.message)}</b><br /><button class="btn btn-ghost" type="button" data-email-health-return>Return to Admin</button></div></section></div>`;
+    content.querySelector('[data-email-health-return]')?.addEventListener('click', () => { location.hash = '#/instance-admin'; });
   } finally {
     kgEmailHealthRendering = false;
   }
