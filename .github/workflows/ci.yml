@@ -16,7 +16,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
       - run: git --version
+      - run: npm ci --ignore-scripts
+      - name: Validate node-postgres package
+        run: node -e "import('pg').then((module) => { if (typeof (module.Client || module.default?.Client) !== 'function') process.exit(1) })"
       - run: npm run doctor
       - run: npm run check
       - run: npm test
