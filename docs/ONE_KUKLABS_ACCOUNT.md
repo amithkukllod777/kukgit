@@ -111,7 +111,7 @@ When a verified AuthKit user signs in:
 4. Existing organization memberships, repository ownership, issues, pull requests, audit records, PATs and SSH keys remain attached to the same local ID.
 5. An email already linked to another central ID is rejected.
 6. Central ID and email resolving to different KukGit rows is rejected instead of silently merging data.
-7. Once linked, the local password hash is not accepted for production authentication.
+7. After successful linking, any legacy local password hash is replaced with the non-authenticating `authkit$managed` sentinel.
 
 Do not repair identity conflicts directly in SQL without a verified backup and a written ownership decision.
 
@@ -238,6 +238,7 @@ AUTHKIT_SESSION_INVALID
 AUTHKIT_SESSION_IDENTITY_CHANGED
 AUTHKIT_SESSION_IDENTITY_MISMATCH
 AUTHKIT_IDENTITY_CONFLICT
+AUTHKIT_EMAIL_REQUIRED
 AUTHKIT_EMAIL_ALREADY_LINKED
 AUTHKIT_EMAIL_CONFLICT
 KUKGIT_PRODUCT_ACCESS_DENIED
