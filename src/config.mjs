@@ -59,7 +59,11 @@ export function loadConfig(overrides = {}) {
   const realtimeMaxConnectionsPerUser = boundedInteger(overrides.realtimeMaxConnectionsPerUser ?? process.env.KUKGIT_REALTIME_MAX_CONNECTIONS_PER_USER ?? 10, 'KUKGIT_REALTIME_MAX_CONNECTIONS_PER_USER', 1, 50);
   const realtimeMaxConnections = boundedInteger(overrides.realtimeMaxConnections ?? process.env.KUKGIT_REALTIME_MAX_CONNECTIONS ?? 5000, 'KUKGIT_REALTIME_MAX_CONNECTIONS', 10, 50000);
   const realtimeMaxMessageBytes = boundedInteger(overrides.realtimeMaxMessageBytes ?? process.env.KUKGIT_REALTIME_MAX_MESSAGE_BYTES ?? 4096, 'KUKGIT_REALTIME_MAX_MESSAGE_BYTES', 256, 65535);
-  const emailProviderWebhookSecret = overrides.emailProviderWebhookSecret ?? process.env.KUKGIT_EMAIL_PROVIDER_WEBHOOK_SECRET ?? (isProduction ? '' : 'kukgit-development-email-provider-webhook-secret-change-me');
+  const emailProviderWebhookSecret = String(overrides.emailProviderWebhookSecret ?? process.env.KUKGIT_EMAIL_PROVIDER_WEBHOOK_SECRET ?? '').trim();
+  const emailProviderEventsEnabled = booleanValue(
+    overrides.emailProviderEventsEnabled ?? process.env.KUKGIT_EMAIL_PROVIDER_EVENTS_ENABLED,
+    Boolean(emailProviderWebhookSecret),
+  );
   const emailProviderWebhookToleranceSeconds = boundedInteger(overrides.emailProviderWebhookToleranceSeconds ?? process.env.KUKGIT_EMAIL_PROVIDER_WEBHOOK_TOLERANCE_SECONDS ?? 300, 'KUKGIT_EMAIL_PROVIDER_WEBHOOK_TOLERANCE_SECONDS', 30, 3600);
   const emailSoftBounceThreshold = boundedInteger(overrides.emailSoftBounceThreshold ?? process.env.KUKGIT_EMAIL_SOFT_BOUNCE_THRESHOLD ?? 3, 'KUKGIT_EMAIL_SOFT_BOUNCE_THRESHOLD', 2, 20);
   const emailSoftBounceWindowDays = boundedInteger(overrides.emailSoftBounceWindowDays ?? process.env.KUKGIT_EMAIL_SOFT_BOUNCE_WINDOW_DAYS ?? 7, 'KUKGIT_EMAIL_SOFT_BOUNCE_WINDOW_DAYS', 1, 90);
@@ -89,8 +93,8 @@ export function loadConfig(overrides = {}) {
   } else if (authkitBaseUrlRaw) {
     authkitBaseUrl = validateAuthKitUrl(authkitBaseUrlRaw, false);
   }
-  if (isProduction && String(emailProviderWebhookSecret).length < 32) {
-    throw new Error('KUKGIT_EMAIL_PROVIDER_WEBHOOK_SECRET must contain at least 32 characters in production.');
+  if (emailProviderEventsEnabled && emailProviderWebhookSecret.length < 32) {
+    throw new Error('KUKGIT_EMAIL_PROVIDER_WEBHOOK_SECRET must contain at least 32 characters when provider events are enabled.');
   }
 
   return {
@@ -146,6 +150,7 @@ export function loadConfig(overrides = {}) {
     emailWorkerIntervalMs: Number(overrides.emailWorkerIntervalMs ?? process.env.KUKGIT_EMAIL_WORKER_INTERVAL_MS ?? 30000),
     emailMaxAttempts: Number(overrides.emailMaxAttempts ?? process.env.KUKGIT_EMAIL_MAX_ATTEMPTS ?? 8),
     emailBatchSize: Number(overrides.emailBatchSize ?? process.env.KUKGIT_EMAIL_BATCH_SIZE ?? 20),
+    emailProviderEventsEnabled,
     emailProviderWebhookSecret,
     emailProviderWebhookToleranceSeconds,
     emailSoftBounceThreshold,
