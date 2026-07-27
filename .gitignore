@@ -7,4 +7,7 @@ data/*.db
 data/*.db-*
 data/repos/
 data/tmp/
+data/database-migration/
+data/postgresql-readiness.json
+*.kgdb.json
 !data/.gitkeep

@@ -6,6 +6,12 @@ import { currentRepositoryAccess } from './access-context.mjs';
 import { hashPassword } from './auth.mjs';
 
 export function openDatabase(config) {
+  const requestedDriver = String(process.env.KUKGIT_DATABASE_DRIVER || 'sqlite').trim().toLowerCase();
+  if (requestedDriver !== 'sqlite') {
+    const error = new Error('PostgreSQL runtime is not available in the current KukGit stage. Keep KUKGIT_DATABASE_DRIVER=sqlite until the driver/import stage and verified cutover are delivered.');
+    error.code = 'POSTGRESQL_RUNTIME_NOT_AVAILABLE';
+    throw error;
+  }
   fs.mkdirSync(path.dirname(config.databasePath), { recursive: true });
   const db = new DatabaseSync(config.databasePath);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
@@ -153,7 +159,7 @@ export function seedCore(db, config) {
 
 export function audit(db, { organizationId = null, userId = null, action, targetType, targetId = null, metadata = {} }) {
   db.prepare(`INSERT INTO audit_logs (id, organization_id, user_id, action, target_type, target_id, metadata_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`) 
+    VALUES (?, ?, ?, ?, ?, ?, ?)`)
     .run(uid('aud'), organizationId, userId, action, targetType, targetId, JSON.stringify(metadata));
 }
 

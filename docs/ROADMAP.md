@@ -240,9 +240,22 @@ Progress delivered:
 - instance-admin privacy, isolation, CSRF, confirmation and retry tests
 - instance administration and tenant support operations runbook
 
+- PostgreSQL migration Stage 1 SQL portability inventory
+- deterministic SQLite schema, row-count and SHA-256 row checksums
+- full source metadata fingerprint and foreign-key verification
+- atomic `0600` SQLite metadata export bundle
+- export bundle, table, row-count and row-checksum tamper detection
+- live SQLite drift comparison against a saved manifest
+- PostgreSQL URL validation and credential redaction
+- checksummed cutover-readiness marker bound to the source manifest fingerprint
+- fail-closed server and doctor behavior when undeployed PostgreSQL runtime is selected
+- database migration status, inventory, export, verify and audit CLI
+- sensitive migration-export Git ignore rules
+- staged migration, import, dual-read, cutover, backup and rollback runbook
+
 Remaining:
 
-- PostgreSQL migration
+- PostgreSQL runtime driver, translated schema, verified import, dual-read cutover and backend-aware backup/restore
 - real-time WebSocket notification delivery
 - provider bounce and complaint processing
 

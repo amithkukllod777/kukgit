@@ -73,12 +73,15 @@ This repository contains the working KukGit foundation. It is not a visual mocku
 - Secure Kuklabs instance-admin console with independent operator allowlist
 - Tenant-scoped user, organization, repository, delivery, storage and audit diagnostics
 - Redacted support notes plus confirmed failed-email and webhook retry controls
+- Deterministic SQLite metadata manifests, row checksums and drift verification
+- Protected full-metadata export with atomic writes, `0600` permissions and tamper detection
+- SQL portability audit and verified PostgreSQL cutover-readiness gate
 - No runtime npm dependencies
 - Automated tests for identity, onboarding, API, Git, LFS, backup/restore, collaboration, external access, governance, reviews, checks, webhooks, notifications, SMTP and security helpers
 
 ## Important scope boundary
 
-This is the **Private Alpha foundation**, not yet a GitHub/GitLab replacement. Production work still required includes hosted CI runners and workflow execution, PostgreSQL and distributed jobs, package/container registries, billing and usage metering, abuse controls, scalable object storage, broader administration, enterprise SSO/MFA policy controls and high-availability deployment.
+This is the **Private Alpha foundation**, not yet a GitHub/GitLab replacement. Production work still required includes hosted CI runners and workflow execution, the PostgreSQL runtime driver/import/cutover stages and distributed jobs, package/container registries, billing and usage metering, abuse controls, scalable object storage, broader administration, enterprise SSO/MFA policy controls and high-availability deployment.
 
 ## Local quick start
 
@@ -274,6 +277,12 @@ npm run backup -- maintenance off
 
 Snapshots include SQLite metadata, Git bundles and all recorded Git LFS objects. Restore supports dry-run validation and writes only to a missing or empty target directory. Read [Verified Backups and Disaster Recovery](docs/BACKUPS_AND_DISASTER_RECOVERY.md).
 
+## PostgreSQL migration readiness
+
+KukGit still runs on SQLite. Stage 1 adds deterministic source manifests, complete protected metadata export, SQL portability findings, PostgreSQL URL redaction and checksummed cutover-readiness validation. Selecting `KUKGIT_DATABASE_DRIVER=postgresql` currently fails closed instead of silently continuing on SQLite.
+
+Use `npm run database -- inventory`, `export`, `verify-export`, `verify-live`, `audit-sql` and `postgresql-status` to prepare migration evidence. Full PostgreSQL runtime, schema import, dual-read validation, cutover and PostgreSQL backup/restore remain open under issue #43. Read [PostgreSQL Metadata Migration](docs/POSTGRESQL_MIGRATION.md).
+
 ## Instance administration
 
 Configure `KUKGIT_INSTANCE_ADMIN_EMAILS` with a minimal comma-separated allowlist of verified One Kuklabs Account operators. Authorized operators receive a separate **Instance Admin** navigation entry with adoption metrics, bounded cross-tenant search, tenant and user diagnostics, redacted audit lookup, support notes, and confirmed retry controls for terminal email and webhook failures.
@@ -289,6 +298,7 @@ npm run seed      # Seed local-development founder and demo repository
 npm run doctor    # Check runtime requirements and configuration
 npm run token --  # Create, list or revoke personal access tokens
 npm run backup -- # Create, verify, restore and prune verified snapshots
+npm run database -- # Inventory, export, verify and audit metadata migration readiness
 npm run ssh:authorized-keys # Generate restricted static authorized_keys fallback
 npm run check     # Validate JavaScript source syntax
 npm test          # Run automated tests
@@ -300,7 +310,7 @@ npm test          # Run automated tests
 kukgit/
 ├── public/                 # Dependency-free web application
 ├── src/                    # Identity, onboarding, Git, LFS, access, reviews, backups, notifications and email services
-├── scripts/                # Seed, doctor, token, SSH and backup administration
+├── scripts/                # Seed, doctor, token, SSH, backup and database migration administration
 ├── test/                   # Node test suite
 ├── docs/                   # Product, architecture, operations and security docs
 ├── infra/                  # Container, reverse-proxy and OpenSSH deployment files
