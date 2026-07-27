@@ -140,8 +140,8 @@ function bindAuthKitCard(card) {
     button.disabled = true;
     try {
       authKitUiState.identifier = String(values.identifier || '').trim();
-      const path = authKitUiState.mode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
-      await authRequest(path, {
+      const requestPath = authKitUiState.mode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
+      await authRequest(requestPath, {
         method: 'POST',
         body: {
           identifier: authKitUiState.identifier,
@@ -225,6 +225,15 @@ function renderAuthKitCard(card, error = null) {
   if (!error) card.querySelector('input')?.focus();
 }
 
+function authKitPanel(card) {
+  if (card.tagName !== 'FORM') return card;
+  const panel = document.createElement('section');
+  panel.className = card.className;
+  panel.dataset.authkit = 'true';
+  card.replaceWith(panel);
+  return panel;
+}
+
 let statusPromise = null;
 function getAuthStatus(force = false) {
   if (force) statusPromise = null;
@@ -233,14 +242,16 @@ function getAuthStatus(force = false) {
 }
 
 async function mountAuthKitUi(force = false) {
-  const card = document.querySelector('.login-card');
+  let card = document.querySelector('.login-card');
   if (!card || (card.dataset.authkit === 'true' && !force)) return;
   injectAuthKitStyles();
   try {
     authKitUiState.status = await getAuthStatus(force);
     if (authKitUiState.status?.mode !== 'authkit') return;
+    card = authKitPanel(card);
     renderAuthKitCard(card);
   } catch (error) {
+    card = authKitPanel(card);
     renderAuthKitCard(card, error);
   }
 }
