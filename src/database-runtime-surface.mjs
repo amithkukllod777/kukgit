@@ -141,7 +141,10 @@ export function inventoryDatabaseRuntimeSurface(roots) {
 export function safeRuntimeSurfaceReport(report) {
   if (report?.format !== 'kukgit-database-runtime-surface/1') throw new Error('A valid database runtime surface report is required.');
   return {
-    ...report,
+    format: report.format,
+    generatedAt: report.generatedAt,
+    counts: { ...report.counts },
+    fingerprint: report.fingerprint,
     calls: report.calls.map(({ root, ...call }) => call),
   };
 }
