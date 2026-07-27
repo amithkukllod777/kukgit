@@ -2,7 +2,7 @@
 
 This short file records the implementation boundary for issue #32.
 
-- Production authentication mode is `authkit` only.
+- Production authentication mode is `authkit` only; there is no production local-auth override.
 - Local password authentication is for development and tests only.
 - KukGit keeps its local product user ID solely to preserve product-data foreign keys.
 - `users.kuklabs_user_id` is the unique central identity mapping.
