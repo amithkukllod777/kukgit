@@ -23,10 +23,16 @@ function stableJson(value) {
   return JSON.stringify(stableValue(value));
 }
 
+function compareNames(left, right) {
+  const leftName = String(left?.name ?? left);
+  const rightName = String(right?.name ?? right);
+  return leftName < rightName ? -1 : leftName > rightName ? 1 : 0;
+}
+
 function quoteIdentifier(value) {
   const name = String(value || '');
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-    if (!name || name.includes('\0')) throw new Error('PostgreSQL identifier is invalid.');
+  if (!name || /[\u0000-\u001f\u007f]/.test(name) || Buffer.byteLength(name, 'utf8') > 63) {
+    throw new Error('PostgreSQL identifier is invalid or exceeds the 63-byte limit.');
   }
   return `"${name.replaceAll('"', '""')}"`;
 }
@@ -49,9 +55,16 @@ function manifestTables(manifest) {
   const map = new Map();
   for (const table of manifest.tables) {
     const name = String(table?.name || '');
-    if (!name) throw new Error('Source manifest contains an invalid table name.');
+    quoteIdentifier(name);
     if (map.has(name)) throw new Error(`Source manifest contains a duplicate table: ${name}`);
     if (!Array.isArray(table.columns) || !table.columns.length) throw new Error(`Source table has no columns: ${name}`);
+    const columnNames = new Set();
+    for (const column of table.columns) {
+      const columnName = String(column?.name || '');
+      quoteIdentifier(columnName);
+      if (columnNames.has(columnName)) throw new Error(`Source table contains a duplicate column: ${name}.${columnName}`);
+      columnNames.add(columnName);
+    }
     map.set(name, table);
   }
   return map;
@@ -106,6 +119,7 @@ export function translateSqliteCreateTable(schemaValue) {
     .replace(/\bDATETIME\b/gi, 'TIMESTAMPTZ')
     .replace(/DEFAULT\s*\(\s*datetime\s*\(\s*'now'\s*\)\s*\)/gi, 'DEFAULT CURRENT_TIMESTAMP')
     .replace(/DEFAULT\s+datetime\s*\(\s*'now'\s*\)/gi, 'DEFAULT CURRENT_TIMESTAMP')
+    .replace(/\bTEXT(\s+(?:NOT\s+NULL\s+)?DEFAULT\s+)\(?CURRENT_TIMESTAMP\)?/gi, 'TEXT$1(CURRENT_TIMESTAMP::text)')
     .replace(/\s+/g, ' ')
     .trim();
   if (/\b(?:PRAGMA|sqlite_master|INSERT\s+OR|julianday|strftime)\b/i.test(schema)) {
@@ -183,8 +197,13 @@ export function buildPostgresqlImportPlan(exportResult, { batchSize = 250 } = {}
   const schemaPlan = buildPostgresqlSchemaPlan(manifest);
   const size = Number(batchSize);
   if (!Number.isInteger(size) || size < 1 || size > 5000) throw new Error('PostgreSQL import batch size must be between 1 and 5000.');
-  const sourceTables = new Map((bundle.tables || []).map((table) => [table.name, table]));
+  const sourceTables = new Map();
+  for (const table of bundle.tables || []) {
+    if (!table?.name || sourceTables.has(table.name)) throw new Error('Export table names must be unique.');
+    sourceTables.set(table.name, table);
+  }
   const manifestMap = manifestTables(manifest);
+  if (sourceTables.size !== manifestMap.size) throw new Error('Export table count does not match the source manifest.');
   const operations = [];
   const tableSummaries = [];
   for (const table of schemaPlan.tables) {
@@ -272,6 +291,7 @@ export function verifyPostgresqlTargetSnapshot(sourceManifest, targetSnapshot) {
   const targetMap = new Map();
   for (const table of targetSnapshot.tables) {
     if (!table?.name || targetMap.has(table.name)) throw new Error('PostgreSQL target snapshot table names must be unique.');
+    quoteIdentifier(table.name);
     targetMap.set(table.name, table);
   }
   const differences = [];
@@ -289,7 +309,7 @@ export function verifyPostgresqlTargetSnapshot(sourceManifest, targetSnapshot) {
       }
     }
   }
-  const targetFingerprint = sha256(stableJson([...targetMap.values()].sort((left, right) => left.name.localeCompare(right.name)).map((table) => ({
+  const targetFingerprint = sha256(stableJson([...targetMap.values()].sort(compareNames).map((table) => ({
     name: table.name,
     rowCount: table.rowCount,
     rowChecksum: table.rowChecksum,
