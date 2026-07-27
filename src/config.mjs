@@ -59,7 +59,7 @@ export function loadConfig(overrides = {}) {
     throw new Error('KUKGIT_AUTH_MODE must be local or authkit.');
   }
   if (isProduction && authMode === 'local') {
-    throw new Error('Production KukGit must use One Kuklabs Account/AuthKit.');
+    throw new Error('Local KukGit password authentication is disabled in production. Use KUKGIT_AUTH_MODE=authkit.');
   }
   if (!/^[a-z0-9_-]{2,32}$/.test(authkitProductId)) {
     throw new Error('KUKGIT_AUTHKIT_PRODUCT_ID must contain 2-32 lowercase letters, numbers, underscores or hyphens.');
