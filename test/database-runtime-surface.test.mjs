@@ -40,7 +40,8 @@ test('runtime surface fingerprint is independent of absolute source root', (t) =
   assert.equal(left.fingerprint, right.fingerprint);
   const safe = safeRuntimeSurfaceReport(left);
   assert.equal('root' in safe.calls[0], false);
-  assert.equal(safe.roots[0], path.resolve(first));
+  assert.equal('roots' in safe, false);
+  assert.equal(JSON.stringify(safe).includes(path.resolve(first)), false);
 });
 
 test('safe report rejects unsupported input', () => {
