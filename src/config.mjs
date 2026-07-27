@@ -54,6 +54,11 @@ export function loadConfig(overrides = {}) {
   const authkitTimeoutMs = boundedInteger(overrides.authkitTimeoutMs ?? process.env.KUKGIT_AUTHKIT_TIMEOUT_MS ?? 8000, 'KUKGIT_AUTHKIT_TIMEOUT_MS', 500, 30000);
   const authkitRefreshTtlDays = boundedInteger(overrides.authkitRefreshTtlDays ?? process.env.KUKGIT_AUTHKIT_REFRESH_TTL_DAYS ?? 60, 'KUKGIT_AUTHKIT_REFRESH_TTL_DAYS', 1, 365);
   const organizationOwnerLimit = positiveNumber(overrides.organizationOwnerLimit ?? process.env.KUKGIT_ORGANIZATION_OWNER_LIMIT ?? 5, 'KUKGIT_ORGANIZATION_OWNER_LIMIT');
+  const realtimeHeartbeatMs = boundedInteger(overrides.realtimeHeartbeatMs ?? process.env.KUKGIT_REALTIME_HEARTBEAT_MS ?? 25000, 'KUKGIT_REALTIME_HEARTBEAT_MS', 1000, 120000);
+  const realtimeAuthRevalidateMs = boundedInteger(overrides.realtimeAuthRevalidateMs ?? process.env.KUKGIT_REALTIME_AUTH_REVALIDATE_MS ?? 60000, 'KUKGIT_REALTIME_AUTH_REVALIDATE_MS', 1000, 600000);
+  const realtimeMaxConnectionsPerUser = boundedInteger(overrides.realtimeMaxConnectionsPerUser ?? process.env.KUKGIT_REALTIME_MAX_CONNECTIONS_PER_USER ?? 10, 'KUKGIT_REALTIME_MAX_CONNECTIONS_PER_USER', 1, 50);
+  const realtimeMaxConnections = boundedInteger(overrides.realtimeMaxConnections ?? process.env.KUKGIT_REALTIME_MAX_CONNECTIONS ?? 5000, 'KUKGIT_REALTIME_MAX_CONNECTIONS', 10, 50000);
+  const realtimeMaxMessageBytes = boundedInteger(overrides.realtimeMaxMessageBytes ?? process.env.KUKGIT_REALTIME_MAX_MESSAGE_BYTES ?? 4096, 'KUKGIT_REALTIME_MAX_MESSAGE_BYTES', 256, 65535);
 
   if (!['local', 'authkit'].includes(authMode)) {
     throw new Error('KUKGIT_AUTH_MODE must be local or authkit.');
@@ -110,6 +115,11 @@ export function loadConfig(overrides = {}) {
     authkitTimeoutMs,
     authkitRefreshTtlDays,
     organizationOwnerLimit,
+    realtimeHeartbeatMs,
+    realtimeAuthRevalidateMs,
+    realtimeMaxConnectionsPerUser,
+    realtimeMaxConnections,
+    realtimeMaxMessageBytes,
     adminEmail: overrides.adminEmail ?? process.env.KUKGIT_ADMIN_EMAIL ?? 'admin@kuklabs.local',
     adminPassword: overrides.adminPassword ?? process.env.KUKGIT_ADMIN_PASSWORD ?? 'KukGit@2026',
     adminName: overrides.adminName ?? process.env.KUKGIT_ADMIN_NAME ?? 'Amit Kumar Kuklod',
