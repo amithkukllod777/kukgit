@@ -2,8 +2,14 @@ import { spawnSync } from 'node:child_process';
 import { migrateCollaboration } from '../src/collaboration.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { openDatabase } from '../src/db.mjs';
+import {
+  expireExternalAccessGrants,
+  migrateExternalAccessExpiryGuard,
+} from '../src/external-access-expiry-guard.mjs';
+import { migrateExternalAccessReviews } from '../src/external-access-reviews.mjs';
 import { createLfsSshAuthentication, migrateGitLfs } from '../src/git-lfs.mjs';
 import { migrateRepositoryAccess } from '../src/repository-access.mjs';
+import { migrateRepositoryInvitations } from '../src/repository-invitations.mjs';
 import { migrateRepositoryLifecycle } from '../src/repository-lifecycle.mjs';
 import { authorizeLfsSshAuthentication } from '../src/ssh-lfs.mjs';
 import { authorizeSshCommand, migrateSshKeys } from '../src/ssh-keys.mjs';
@@ -22,9 +28,13 @@ const db = openDatabase(config);
 try {
   migrateCollaboration(db);
   migrateRepositoryAccess(db);
+  migrateRepositoryInvitations(db);
+  migrateExternalAccessReviews(db);
+  migrateExternalAccessExpiryGuard(db);
   migrateRepositoryLifecycle(db);
   migrateSshKeys(db);
   migrateGitLfs(db);
+  expireExternalAccessGrants(db, config);
 
   if (originalCommand.startsWith('git-lfs-authenticate ')) {
     const authorization = authorizeLfsSshAuthentication(db, { keyKind, keyId, originalCommand });
@@ -44,7 +54,7 @@ try {
     LANG: process.env.LANG || 'C.UTF-8',
     LC_ALL: process.env.LC_ALL || 'C.UTF-8',
   };
-  if (process.env.GIT_PROTOCOL && /^[A-Za-z0-9=:.\-]+$/.test(process.env.GIT_PROTOCOL)) {
+  if (process.env.GIT_PROTOCOL && /^[A-Za-z0-9=:.-]+$/.test(process.env.GIT_PROTOCOL)) {
     environment.GIT_PROTOCOL = process.env.GIT_PROTOCOL;
   }
   const result = spawnSync('git', [subcommand, authorization.gitDirectory], {
