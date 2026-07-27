@@ -50,6 +50,6 @@ test('shadow adapter uses read-only transaction and requires no CREATE privilege
 test('shadow adapter fails closed without schema USAGE', async () => {
   const pg = pgModule({ canUse: false });
   const adapter = await createNodePostgresShadowAdapter(config(), { pgModule: pg.module });
-  await assert.rejects(() => adapter.connect(), (error) => error.code === 'POSTGRESQL_SHADOW_CONNECT_FAILED');
+  await assert.rejects(() => adapter.connect(), (error) => error.code === 'POSTGRESQL_SHADOW_SCHEMA_FORBIDDEN');
   assert.ok(pg.calls.some((call) => call.sql === 'END'));
 });
