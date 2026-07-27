@@ -44,6 +44,11 @@ import { createExternalCollaboratorDiscoveryApiHandler } from './src/external-co
 import { createExternalCollaboratorLifecycleGuard } from './src/external-collaborator-lifecycle-guard.mjs';
 import { ensureGitAvailable } from './src/git.mjs';
 import { createGitLfsHandler, migrateGitLfs } from './src/git-lfs-safe.mjs';
+import {
+  createInstanceAdminApiHandlerSafe,
+  instanceAdminEmails,
+  migrateInstanceAdminSafe,
+} from './src/instance-admin-safe.mjs';
 import { createNotificationEventCapture } from './src/notification-events-safe.mjs';
 import {
   createNotificationsApiHandler,
@@ -118,6 +123,7 @@ migrateWebhooks(db);
 migrateRepositoryLifecycle(db);
 migrateSshKeys(db);
 migrateGitLfs(db);
+migrateInstanceAdminSafe(db);
 const seeded = config.authMode === 'local' ? seedCore(db, config) : { seeded: false };
 if (config.authMode === 'authkit') ensureAuthKitCoreOrganization(db);
 migrateNotifications(db);
@@ -128,6 +134,7 @@ const reviewThreadGuardedApp = createReviewThreadMergeGuard({ config, db, app: s
 const governedApp = createBranchGovernanceGuard({ config, db, app: reviewThreadGuardedApp });
 const secureAuthKitLoginApi = createSecureAuthKitLoginApiHandler({ config, db });
 const authKitApi = createAuthKitApiHandler({ config, db });
+const instanceAdminApi = createInstanceAdminApiHandlerSafe({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
 const notificationsApi = createNotificationsApiHandler({ config, db });
 const externalDiscoveryApi = createExternalCollaboratorDiscoveryApiHandler({ config, db });
@@ -155,6 +162,7 @@ const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app: gov
 async function dispatch(req, res) {
   if (await secureAuthKitLoginApi(req, res)) return;
   if (await authKitApi(req, res)) return;
+  if (await instanceAdminApi(req, res)) return;
   if (await tokenApi(req, res)) return;
   if (await notificationsApi(req, res)) return;
   if (await externalDiscoveryApi(req, res)) return;
@@ -202,6 +210,7 @@ server.listen(config.port, config.host, () => {
   console.log(`\nKukGit v0.1.0 is running at ${config.baseUrl}`);
   console.log(`${gitVersion}; data: ${config.dataDir}`);
   console.log(`Authentication: ${config.authMode === 'authkit' ? `One Kuklabs Account via ${config.authkitBaseUrl}` : 'local development mode'}`);
+  console.log(`Instance administrators: ${instanceAdminEmails(config).join(', ') || 'none configured'}`);
   console.log(`Organization ownership limit: ${config.organizationOwnerLimit}`);
   console.log(`Backups: ${config.backupsDir}; retention: ${config.backupRetentionCount} snapshots / ${config.backupRetentionDays} days`);
   console.log(`Git LFS: ${config.lfsDir}; repository quota: ${config.lfsRepositoryQuotaBytes} bytes`);
