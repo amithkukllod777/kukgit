@@ -51,12 +51,38 @@ function sanitizeProviderPayload(db, payload) {
   return sanitized;
 }
 
+function isAdministrationPath(pathname, method) {
+  return pathname.startsWith('/api/email-provider/admin/') || (
+    method === 'POST' && (
+      /^\/api\/instance-admin\/email\/[^/]+\/retry$/.test(pathname) ||
+      /^\/api\/notifications\/admin\/email\/[^/]+\/retry$/.test(pathname)
+    )
+  );
+}
+
+function strictOriginAllowed(req, config) {
+  const supplied = String(req.headers.origin || '').trim();
+  if (!supplied) return true;
+  try { return new URL(supplied).origin === new URL(config.baseUrl).origin; }
+  catch { return false; }
+}
+
 export function createEmailProviderEventsApiHandler({ config, db }) {
   const core = createCoreHandler({ config, db });
   return async function safeEmailProviderEventsApi(req, res) {
     const url = new URL(req.url, config.baseUrl);
+    if (isAdministrationPath(url.pathname, req.method) && !strictOriginAllowed(req, config)) {
+      return sendJson(res, 403, {
+        error: { code: 'CSRF_BLOCKED', message: 'Request origin is not allowed.' },
+      });
+    }
     if (req.method !== 'POST' || url.pathname !== '/api/email-provider/events') {
       return core(req, res);
+    }
+    if (!config.emailProviderEventsEnabled) {
+      return sendJson(res, 404, {
+        error: { code: 'EMAIL_PROVIDER_EVENTS_DISABLED', message: 'Email provider events are not enabled.' },
+      });
     }
     try {
       const raw = await readRaw(req);
