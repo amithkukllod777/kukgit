@@ -1,0 +1,30 @@
+name: Generate PostgreSQL Lockfile
+
+on:
+  pull_request:
+    paths:
+      - package.json
+      - .github/workflows/generate-postgresql-lock.yml
+
+permissions:
+  contents: read
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Generate reproducible lockfile
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Validate pinned node-postgres release
+        run: node -e "const lock=require('./package-lock.json'); if(lock.packages['node_modules/pg']?.version !== '8.22.0') process.exit(1)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-lock-json
+          path: package-lock.json
+          retention-days: 1
+          if-no-files-found: error
