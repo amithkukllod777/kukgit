@@ -26,6 +26,23 @@ check('Repository directory', () => {
   fs.accessSync(config.repositoriesDir, fs.constants.R_OK | fs.constants.W_OK);
   return config.repositoriesDir;
 });
+check('Authentication mode', () => {
+  if (config.authMode === 'local') {
+    if (config.isProduction) throw new Error('Production must use One Kuklabs Account/AuthKit');
+    return 'local development fallback';
+  }
+  const endpoint = new URL(config.authkitBaseUrl);
+  if (config.isProduction && endpoint.protocol !== 'https:') throw new Error('AuthKit must use HTTPS in production');
+  if (String(config.authkitEncryptionKey || '').length < 32) throw new Error('KUKGIT_AUTHKIT_ENCRYPTION_KEY must contain at least 32 characters');
+  if (!Number.isInteger(config.authkitTimeoutMs) || config.authkitTimeoutMs < 500 || config.authkitTimeoutMs > 30000) {
+    throw new Error('KUKGIT_AUTHKIT_TIMEOUT_MS must be an integer between 500 and 30000');
+  }
+  if (!Number.isInteger(config.authkitRefreshTtlDays) || config.authkitRefreshTtlDays < 1 || config.authkitRefreshTtlDays > 365) {
+    throw new Error('KUKGIT_AUTHKIT_REFRESH_TTL_DAYS must be an integer between 1 and 365');
+  }
+  if (config.isProduction && !config.cookieSecure) throw new Error('KUKGIT_COOKIE_SECURE must be true with AuthKit in production');
+  return `One Kuklabs Account via ${config.authkitBaseUrl}; product ${config.authkitProductId}`;
+});
 check('Git LFS directory', () => {
   fs.mkdirSync(config.lfsDir, { recursive: true, mode: 0o700 });
   fs.accessSync(config.lfsDir, fs.constants.R_OK | fs.constants.W_OK);
@@ -73,7 +90,11 @@ check('Maintenance and lock paths', () => {
   if (path.resolve(config.maintenancePath) === path.resolve(config.backupLockPath)) throw new Error('Maintenance and backup lock paths must be different');
   return `${config.maintenancePath}; ${config.backupLockPath}`;
 });
-check('Production password', () => !config.isProduction || config.adminPassword !== 'KukGit@2026' ? 'configured' : (() => { throw new Error('KUKGIT_ADMIN_PASSWORD must be changed'); })());
+check('Production password', () => {
+  if (config.authMode === 'authkit') return 'not used — central AuthKit owns passwords';
+  if (config.isProduction && config.adminPassword === 'KukGit@2026') throw new Error('KUKGIT_ADMIN_PASSWORD must be changed');
+  return 'configured for local development';
+});
 check('Git HTTP token', () => config.gitToken && config.gitToken !== 'kukgit-dev-token-change-me' ? 'configured' : 'development default — change before sharing');
 check('Webhook encryption key', () => {
   if (!config.webhookEncryptionKey) throw new Error('KUKGIT_WEBHOOK_ENCRYPTION_KEY must be configured');
