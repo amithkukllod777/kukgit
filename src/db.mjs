@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import crypto from 'node:crypto';
 import { currentRepositoryAccess } from './access-context.mjs';
 import { hashPassword } from './auth.mjs';
+import { runRuntimeRead } from './runtime-read-service.mjs';
 
 function installTransactionHelper(db) {
   if (typeof db.transaction === 'function') return;
@@ -205,20 +206,12 @@ export function orgAccess(db, userId, orgSlug, minimumRole = 'viewer') {
     };
   }
 
-  const row = db.prepare(`
-    SELECT o.id, o.slug, o.name, o.plan, om.role
-    FROM organizations o JOIN org_members om ON om.organization_id = o.id
-    WHERE o.slug = ? AND om.user_id = ?
-  `).get(orgSlug, userId);
+  const row = runRuntimeRead(db, 'organizations.access_by_slug_and_user', [orgSlug, userId]);
   if (!row) return null;
   if (roleRank[row.role] < roleRank[minimumRole]) return null;
   return row;
 }
 
 export function findRepo(db, orgSlug, repoSlug) {
-  return db.prepare(`
-    SELECT r.*, o.slug AS org_slug, o.name AS org_name
-    FROM repositories r JOIN organizations o ON o.id = r.organization_id
-    WHERE o.slug = ? AND r.slug = ? AND r.deleted_at IS NULL
-  `).get(orgSlug, repoSlug);
+  return runRuntimeRead(db, 'repositories.find_by_slug', [orgSlug, repoSlug]);
 }
