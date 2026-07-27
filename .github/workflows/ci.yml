@@ -23,15 +23,4 @@ jobs:
         run: node -e "import('pg').then((module) => { if (typeof (module.Client || module.default?.Client) !== 'function') process.exit(1) })"
       - run: npm run doctor
       - run: npm run check
-      - name: Run tests
-        shell: bash
-        run: |
-          set -o pipefail
-          npm test 2>&1 | tee authkit-hardening-test-output.txt
-      - name: Upload test output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: authkit-hardening-test-output
-          path: authkit-hardening-test-output.txt
-          retention-days: 1
+      - run: npm test
