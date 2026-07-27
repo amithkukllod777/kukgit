@@ -28,10 +28,8 @@ import { createCollaborationApiHandler, migrateCollaboration } from './src/colla
 import { loadConfig } from './src/config.mjs';
 import { openDatabase, seedCore } from './src/db.mjs';
 import { smtpConfigured } from './src/email-transport.mjs';
-import {
-  createEmailProviderEventsApiHandler,
-  migrateEmailProviderEvents,
-} from './src/email-provider-events.mjs';
+import { migrateEmailProviderEvents } from './src/email-provider-events.mjs';
+import { createEmailProviderEventsApiHandler } from './src/email-provider-events-safe.mjs';
 import {
   createExternalAccessExpiryGuard,
   createExternalAccessHistoryApiHandler,
