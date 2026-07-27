@@ -72,6 +72,20 @@ function verifiedUser(payload) {
   return user;
 }
 
+async function preflightProductAccess(config, accessToken) {
+  const { response, payload } = await requestAuthKit(
+    config,
+    `/v1/auth/products/${encodeURIComponent(config.authkitProductId)}/access`,
+    { accessToken },
+  );
+  if (response.status === 401) {
+    throw httpError(401, 'Kuklabs Account session expired.', 'AUTHKIT_SESSION_EXPIRED');
+  }
+  if (!response.ok || payload?.access === false || ['blocked', 'inactive', 'suspended'].includes(payload?.status)) {
+    throw httpError(403, 'Your Kuklabs Account does not have access to KukGit.', 'KUKGIT_PRODUCT_ACCESS_DENIED');
+  }
+}
+
 function upstreamError(response, payload) {
   const code = payload?.status === 'otp_required' ? 'OTP_REQUIRED' : 'AUTHKIT_REQUEST_FAILED';
   return {
@@ -117,6 +131,10 @@ export function createSecureAuthKitLoginApiHandler({ config, db }) {
       }
 
       verifiedUser(payload);
+      const accessToken = String(payload?.access_token || '');
+      if (!accessToken) throw httpError(502, 'AuthKit returned an invalid token bundle.', 'AUTHKIT_TOKEN_BUNDLE_INVALID');
+      await preflightProductAccess(config, accessToken);
+
       const session = await createAuthKitBridgeSession(db, config, payload);
       scrubLocalPassword(db, session.user.id);
       audit(db, {
