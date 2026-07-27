@@ -3,6 +3,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
 import { loadDatabaseSelection, validatePostgresqlReadiness } from '../src/database-selection.mjs';
 import { loadNodePostgresAdapterConfig } from '../src/node-postgres-adapter.mjs';
+import { loadPostgresqlRuntimeObserverConfig } from '../src/postgresql-runtime-observer.mjs';
 
 function enabled(value) {
   return String(value || '').trim().toLowerCase() === 'true';
@@ -14,6 +15,23 @@ function bounded(value, fallback, minimum, maximum, label) {
     throw new Error(`${label} must be between ${minimum} and ${maximum}.`);
   }
   return number;
+}
+
+function validateRuntimeApproval(runtime) {
+  const report = JSON.parse(fs.readFileSync(runtime.stage5ReportPath, 'utf8'));
+  if (report?.format !== 'kukgit-postgresql-shadow-read-report/1' || report.status !== 'verified') {
+    throw new Error('Stage 6 requires a verified Stage 5 PostgreSQL shadow report.');
+  }
+  if (!/^[0-9a-f]{64}$/i.test(runtime.approval) || report.reportFingerprint !== runtime.approval) {
+    throw new Error('KUKGIT_POSTGRESQL_RUNTIME_SHADOW_APPROVAL must exactly match the verified Stage 5 report fingerprint.');
+  }
+  const stateDirectory = path.dirname(runtime.statePath);
+  fs.mkdirSync(stateDirectory, { recursive: true, mode: 0o700 });
+  fs.accessSync(stateDirectory, fs.constants.R_OK | fs.constants.W_OK);
+  if (path.resolve(runtime.statePath) === path.resolve(runtime.stage5ReportPath)) {
+    throw new Error('Stage 6 state path cannot equal the Stage 5 report path.');
+  }
+  return report.reportFingerprint;
 }
 
 try {
@@ -32,6 +50,16 @@ try {
     console.log(`✓ PostgreSQL shadow reads: enabled, schema ${adapter.schema}, TLS ${adapter.sslMode}, ${sampleLimit} samples/read, ${timeout} ms timeout`);
   } else {
     console.log('✓ PostgreSQL shadow reads: disabled (SQLite-only runtime remains authoritative)');
+  }
+
+  const runtime = loadPostgresqlRuntimeObserverConfig(config);
+  if (runtime.enabled) {
+    if (selection.driver !== 'sqlite') throw new Error('PostgreSQL runtime shadow requires SQLite to remain authoritative.');
+    const fingerprint = validateRuntimeApproval(runtime);
+    const adapter = loadNodePostgresAdapterConfig();
+    console.log(`✓ PostgreSQL runtime shadow: approved ${fingerprint.slice(0, 12)}…, schema ${adapter.schema}, sample rate ${runtime.sampleRate}, queue ${runtime.maxQueue}, concurrency ${runtime.concurrency}`);
+  } else {
+    console.log('✓ PostgreSQL runtime shadow: disabled');
   }
 
   if (selection.driver === 'sqlite') {
