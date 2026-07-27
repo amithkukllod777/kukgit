@@ -46,7 +46,7 @@ export function loadConfig(overrides = {}) {
   const dataDir = path.resolve(overrides.dataDir ?? process.env.KUKGIT_DATA_DIR ?? path.join(root, 'data'));
   const isProduction = (overrides.nodeEnv ?? process.env.NODE_ENV) === 'production';
   const baseUrl = overrides.baseUrl ?? process.env.KUKGIT_BASE_URL ?? `http://localhost:${overrides.port ?? process.env.PORT ?? 8787}`;
-  const cookieSecure = booleanValue(overrides.cookieSecure ?? process.env.KUKGIT_COOKIE_SECURE, false);
+  const cookieSecure = booleanValue(overrides.cookieSecure ?? process.env.KUKGIT_COOKIE_SECURE, isProduction);
   const authMode = String(overrides.authMode ?? process.env.KUKGIT_AUTH_MODE ?? (isProduction ? 'authkit' : 'local')).toLowerCase();
   const allowLocalAuthInProduction = booleanValue(
     overrides.allowLocalAuthInProduction ?? process.env.KUKGIT_ALLOW_LOCAL_AUTH_IN_PRODUCTION,
