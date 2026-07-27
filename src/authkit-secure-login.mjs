@@ -66,6 +66,9 @@ function verifiedUser(payload) {
   if (user.email_verified !== true && user.email_verified !== 1) {
     throw httpError(403, 'Verify your Kuklabs Account email before using KukGit.', 'AUTHKIT_EMAIL_NOT_VERIFIED');
   }
+  if (!user.email) {
+    throw httpError(403, 'A verified email address is required for KukGit.', 'AUTHKIT_EMAIL_REQUIRED');
+  }
   return user;
 }
 
@@ -93,6 +96,13 @@ function upstreamError(response, payload) {
       identifier: payload?.identifier,
     },
   };
+}
+
+function scrubLocalPassword(db, userId) {
+  db.prepare(`
+    UPDATE users SET password_hash = 'authkit$managed', auth_source = 'authkit'
+    WHERE id = ?
+  `).run(userId);
 }
 
 export function createSecureAuthKitLoginApiHandler({ config, db }) {
@@ -126,6 +136,7 @@ export function createSecureAuthKitLoginApiHandler({ config, db }) {
       await preflightProductAccess(config, accessToken);
 
       const session = await createAuthKitBridgeSession(db, config, payload);
+      scrubLocalPassword(db, session.user.id);
       audit(db, {
         userId: session.user.id,
         action: 'auth.authkit_login',
