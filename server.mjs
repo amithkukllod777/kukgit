@@ -45,10 +45,10 @@ import { createExternalCollaboratorLifecycleGuard } from './src/external-collabo
 import { ensureGitAvailable } from './src/git.mjs';
 import { createGitLfsHandler, migrateGitLfs } from './src/git-lfs-safe.mjs';
 import {
-  createInstanceAdminApiHandler,
+  createInstanceAdminApiHandlerSafe,
   instanceAdminEmails,
-  migrateInstanceAdmin,
-} from './src/instance-admin.mjs';
+  migrateInstanceAdminSafe,
+} from './src/instance-admin-safe.mjs';
 import { createNotificationEventCapture } from './src/notification-events-safe.mjs';
 import {
   createNotificationsApiHandler,
@@ -123,7 +123,7 @@ migrateWebhooks(db);
 migrateRepositoryLifecycle(db);
 migrateSshKeys(db);
 migrateGitLfs(db);
-migrateInstanceAdmin(db);
+migrateInstanceAdminSafe(db);
 const seeded = config.authMode === 'local' ? seedCore(db, config) : { seeded: false };
 if (config.authMode === 'authkit') ensureAuthKitCoreOrganization(db);
 migrateNotifications(db);
@@ -134,7 +134,7 @@ const reviewThreadGuardedApp = createReviewThreadMergeGuard({ config, db, app: s
 const governedApp = createBranchGovernanceGuard({ config, db, app: reviewThreadGuardedApp });
 const secureAuthKitLoginApi = createSecureAuthKitLoginApiHandler({ config, db });
 const authKitApi = createAuthKitApiHandler({ config, db });
-const instanceAdminApi = createInstanceAdminApiHandler({ config, db });
+const instanceAdminApi = createInstanceAdminApiHandlerSafe({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
 const notificationsApi = createNotificationsApiHandler({ config, db });
 const externalDiscoveryApi = createExternalCollaboratorDiscoveryApiHandler({ config, db });
