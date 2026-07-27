@@ -15,6 +15,14 @@ function positiveNumber(value, label) {
   return number;
 }
 
+function boundedInteger(value, label, minimum, maximum) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < minimum || number > maximum) {
+    throw new Error(`${label} must be an integer between ${minimum} and ${maximum}.`);
+  }
+  return number;
+}
+
 function validateAuthKitUrl(value, isProduction) {
   let url;
   try { url = new URL(value); }
@@ -38,6 +46,7 @@ export function loadConfig(overrides = {}) {
   const dataDir = path.resolve(overrides.dataDir ?? process.env.KUKGIT_DATA_DIR ?? path.join(root, 'data'));
   const isProduction = (overrides.nodeEnv ?? process.env.NODE_ENV) === 'production';
   const baseUrl = overrides.baseUrl ?? process.env.KUKGIT_BASE_URL ?? `http://localhost:${overrides.port ?? process.env.PORT ?? 8787}`;
+  const cookieSecure = booleanValue(overrides.cookieSecure ?? process.env.KUKGIT_COOKIE_SECURE, isProduction);
   const authMode = String(overrides.authMode ?? process.env.KUKGIT_AUTH_MODE ?? (isProduction ? 'authkit' : 'local')).toLowerCase();
   const allowLocalAuthInProduction = booleanValue(
     overrides.allowLocalAuthInProduction ?? process.env.KUKGIT_ALLOW_LOCAL_AUTH_IN_PRODUCTION,
@@ -46,8 +55,8 @@ export function loadConfig(overrides = {}) {
   const authkitBaseUrlRaw = String(overrides.authkitBaseUrl ?? process.env.KUKGIT_AUTHKIT_BASE_URL ?? '').trim();
   const authkitProductId = String(overrides.authkitProductId ?? process.env.KUKGIT_AUTHKIT_PRODUCT_ID ?? 'kukgit').trim().toLowerCase();
   const authkitEncryptionKey = overrides.authkitEncryptionKey ?? process.env.KUKGIT_AUTHKIT_ENCRYPTION_KEY ?? (isProduction ? '' : 'kukgit-development-authkit-encryption-key-change-me');
-  const authkitTimeoutMs = positiveNumber(overrides.authkitTimeoutMs ?? process.env.KUKGIT_AUTHKIT_TIMEOUT_MS ?? 8000, 'KUKGIT_AUTHKIT_TIMEOUT_MS');
-  const authkitRefreshTtlDays = positiveNumber(overrides.authkitRefreshTtlDays ?? process.env.KUKGIT_AUTHKIT_REFRESH_TTL_DAYS ?? 60, 'KUKGIT_AUTHKIT_REFRESH_TTL_DAYS');
+  const authkitTimeoutMs = boundedInteger(overrides.authkitTimeoutMs ?? process.env.KUKGIT_AUTHKIT_TIMEOUT_MS ?? 8000, 'KUKGIT_AUTHKIT_TIMEOUT_MS', 500, 30000);
+  const authkitRefreshTtlDays = boundedInteger(overrides.authkitRefreshTtlDays ?? process.env.KUKGIT_AUTHKIT_REFRESH_TTL_DAYS ?? 60, 'KUKGIT_AUTHKIT_REFRESH_TTL_DAYS', 1, 365);
   const organizationOwnerLimit = positiveNumber(overrides.organizationOwnerLimit ?? process.env.KUKGIT_ORGANIZATION_OWNER_LIMIT ?? 5, 'KUKGIT_ORGANIZATION_OWNER_LIMIT');
 
   if (!['local', 'authkit'].includes(authMode)) {
@@ -67,6 +76,9 @@ export function loadConfig(overrides = {}) {
     authkitBaseUrl = validateAuthKitUrl(authkitBaseUrlRaw, isProduction);
     if (String(authkitEncryptionKey).length < 32) {
       throw new Error('KUKGIT_AUTHKIT_ENCRYPTION_KEY must contain at least 32 characters.');
+    }
+    if (isProduction && !cookieSecure) {
+      throw new Error('KUKGIT_COOKIE_SECURE must be true when AuthKit authentication is enabled in production.');
     }
   } else if (authkitBaseUrlRaw) {
     authkitBaseUrl = validateAuthKitUrl(authkitBaseUrlRaw, false);
@@ -94,7 +106,7 @@ export function loadConfig(overrides = {}) {
     backupLockPath: path.resolve(overrides.backupLockPath ?? process.env.KUKGIT_BACKUP_LOCK_PATH ?? path.join(dataDir, 'backup.lock')),
     publicDir: path.join(root, 'public'),
     isProduction,
-    cookieSecure: booleanValue(overrides.cookieSecure ?? process.env.KUKGIT_COOKIE_SECURE, false),
+    cookieSecure,
     authMode,
     allowLocalAuthInProduction,
     authkitBaseUrl,
@@ -125,7 +137,7 @@ export function loadConfig(overrides = {}) {
     sshPort: Number(overrides.sshPort ?? process.env.KUKGIT_SSH_PORT ?? 22),
     sshUser: overrides.sshUser ?? process.env.KUKGIT_SSH_USER ?? 'git',
     nodeBinary: overrides.nodeBinary ?? process.env.KUKGIT_NODE_BINARY ?? process.execPath,
-    sshCommandScript: overrides.sshCommandScript ?? process.env.KUKGIT_SSH_COMMAND_SCRIPT ?? path.join(root, 'scripts/ssh-command.mjs'),
+    sshCommandScript: overrides.sshCommandScript ?? process.env.KUKGIT_SSH_COMMAND_SCRIPT ?? path.join(root, 'scripts', 'ssh-command.mjs'),
     authorizedKeysPath: overrides.authorizedKeysPath ?? process.env.KUKGIT_AUTHORIZED_KEYS_PATH ?? path.join(dataDir, 'ssh', 'authorized_keys'),
     aiEndpoint: overrides.aiEndpoint ?? process.env.KUKGIT_AI_ENDPOINT ?? '',
     aiApiKey: overrides.aiApiKey ?? process.env.KUKGIT_AI_API_KEY ?? '',
