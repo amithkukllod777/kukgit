@@ -89,6 +89,23 @@ const READ_CATALOG = Object.freeze([
     sampleParameters: ['orgSlug', 'repoSlug'],
   },
   {
+    id: 'repositories.find_by_slug',
+    mode: 'one',
+    parameters: ['orgSlug', 'repoSlug'],
+    sqliteSql: `
+      SELECT r.*, o.slug AS org_slug, o.name AS org_name
+      FROM repositories r JOIN organizations o ON o.id = r.organization_id
+      WHERE o.slug = ? AND r.slug = ? AND r.deleted_at IS NULL
+    `,
+    sampleSql: `
+      SELECT o.slug AS orgSlug, r.slug AS repoSlug
+      FROM repositories r JOIN organizations o ON o.id = r.organization_id
+      WHERE r.deleted_at IS NULL
+      ORDER BY o.slug, r.slug LIMIT ?
+    `,
+    sampleParameters: ['orgSlug', 'repoSlug'],
+  },
+  {
     id: 'repository_access.membership',
     mode: 'one',
     parameters: ['organizationId', 'userId'],

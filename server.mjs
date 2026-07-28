@@ -65,6 +65,7 @@ import {
   createOrganizationOnboardingApiHandler,
   migrateOrganizationOnboarding,
 } from './src/organization-onboarding.mjs';
+import { createPostgresqlRuntimeObserver } from './src/postgresql-runtime-observer.mjs';
 import {
   createPullRequestDiffsApiHandler,
   migratePullRequestDiffs,
@@ -89,6 +90,11 @@ import {
   createReviewThreadsApiHandler,
   migrateReviewThreads,
 } from './src/review-threads.mjs';
+import {
+  createRuntimeReadService,
+  registerRuntimeReadService,
+  unregisterRuntimeReadService,
+} from './src/runtime-read-service.mjs';
 import { createSshKeysArchiveGuard } from './src/ssh-keys-archive-guard.mjs';
 import { createSshKeysApiHandler, migrateSshKeys } from './src/ssh-keys.mjs';
 import {
@@ -132,6 +138,13 @@ if (config.authMode === 'authkit') ensureAuthKitCoreOrganization(db);
 migrateNotifications(db);
 migrateEmailProviderEvents(db);
 installExistingBranchProtectionHooks(config, db);
+
+const postgresqlRuntimeObserver = createPostgresqlRuntimeObserver({ config });
+const runtimeReadService = registerRuntimeReadService(
+  db,
+  createRuntimeReadService({ sqlite: db, observer: postgresqlRuntimeObserver }),
+);
+
 const app = createApp({ config, db });
 const statusGuardedApp = createStatusCheckMergeGuard({ config, db, app });
 const reviewThreadGuardedApp = createReviewThreadMergeGuard({ config, db, app: statusGuardedApp });
@@ -224,6 +237,7 @@ server.listen(config.port, config.host, () => {
   console.log(`Email delivery: ${smtpConfigured(config) ? `${config.smtpHost}:${config.smtpPort}` : 'disabled until SMTP is configured'}`);
   console.log(`Email provider events: /api/email-provider/events; soft-bounce threshold ${config.emailSoftBounceThreshold}/${config.emailSoftBounceWindowDays} days`);
   console.log(`Real-time notifications: WebSocket ${realtimeNotifications.path}`);
+  console.log(`PostgreSQL runtime shadow: ${postgresqlRuntimeObserver ? 'enabled; SQLite remains authoritative' : 'disabled'}`);
   console.log(`SSH clone endpoint: ${config.sshUser}@${config.sshHost}:${config.sshPort}`);
   if (seeded.seeded && !config.isProduction) {
     console.log(`Development admin: ${config.adminEmail}`);
@@ -243,19 +257,25 @@ server.listen(config.port, config.host, () => {
   }
 });
 
-function shutdown(signal) {
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log(`\n${signal} received. Shutting down KukGit...`);
+  const hardStop = setTimeout(() => process.exit(1), 10000);
+  hardStop.unref();
   stopWebhookWorker();
   stopNotificationWorker();
   stopOperationalNotificationWorker();
   stopExternalAccessReviewWorker();
   realtimeNotifications.stop();
-  server.close(() => {
-    try { db.close(); } catch {}
-    process.exit(0);
-  });
-  setTimeout(() => process.exit(1), 5000).unref();
+  await new Promise((resolve) => server.close(resolve));
+  try { await runtimeReadService.stop({ drainMs: 5000 }); } catch {}
+  unregisterRuntimeReadService(db, runtimeReadService);
+  try { db.close(); } catch {}
+  clearTimeout(hardStop);
+  process.exit(0);
 }
 
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
