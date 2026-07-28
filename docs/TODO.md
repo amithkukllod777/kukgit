@@ -21,6 +21,8 @@ This is the prioritized execution list for KukGit. The phase-level direction is 
 
 Parent: [#43 — PostgreSQL-compatible data layer and migration tooling](https://github.com/amithkukllod777/kukgit/issues/43)
 
+Active next stage: [#68 — driver-neutral write service and integration CI foundation](https://github.com/amithkukllod777/kukgit/issues/68)
+
 Completed prerequisites:
 
 - [x] Stage 1 portability inventory, deterministic manifests and protected exports
