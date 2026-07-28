@@ -229,7 +229,7 @@ test('approval, report, key and state-path validation fail closed', (t) => {
   );
   assert.throws(
     () => loadPostgresqlRuntimeObserverConfig(setupValue.config, observerConfig(setupValue, { samplingKey: 'short' })),
-    /sampling key/i,
+    /sampling[_ ]key/i,
   );
   assert.throws(
     () => loadPostgresqlRuntimeObserverConfig(setupValue.config, observerConfig(setupValue, { statePath: setupValue.stage5ReportPath })),
