@@ -1,265 +1,119 @@
 # KukGit Roadmap
 
-## Phase 0 — Foundation complete
+Updated: 2026-07-28
 
-Status: delivered in v0.1.0
+This document records product phases and safety boundaries. The actionable engineering queue lives in [TODO.md](TODO.md). GitHub issues remain the execution-level source of truth.
 
-- product architecture and business model
-- real Git repositories
-- Git smart HTTP clone/push
-- organizations and RBAC
-- code browser
-- issues and pull requests
+## Status legend
+
+- **Delivered** — merged to `main` with CI and documentation.
+- **Active** — approved work currently tracked by an open issue or pull request.
+- **Planned** — sequenced after the current private-alpha exit work.
+- **Blocked by safety boundary** — must not be enabled before its listed prerequisites are verified.
+
+## Phase 0 — Foundation
+
+Status: **Delivered** in v0.1.0.
+
+- custom Kuklabs-owned product architecture using Git as the repository object engine
+- real bare repositories and Git smart HTTP
+- organizations, role-based access, code browser, issues and pull requests
 - browser commits and merges
-- local repository intelligence
-- audit logs
-- tests and container templates
+- KukAI local repository-health analysis
+- audit logs, CI, tests and container templates
 
 ## Phase 1 — Private alpha
 
-Target: reliable internal use by Kuklabs
+Target: reliable internal use by Kuklabs and controlled external collaboration.
 
-Progress delivered:
+### Identity and tenancy
 
-- scoped personal access token storage
-- `repo:read` and `repo:write` authorization
-- token expiry, revocation and last-used tracking
-- CLI token lifecycle management
-- browser personal-access-token creation, one-time display, listing and revocation
-- same-origin protected token API and token lifecycle audit events
-- production Git HTTP enforcement by token scope and effective repository permission
-- authenticated Git fetch/push audit events
-- organization invitations with role, expiry, secure one-time links and revocation
-- email-verified invitation acceptance with replay protection
-- organization member directory
-- teams with maintainers, members and auditable lifecycle management
-- direct repository collaborators
-- repository team access grants
-- Read, Triage, Write, Maintain and Admin permission hierarchy
-- effective permission calculation across organization, direct and team sources
-- browser repository API enforcement
-- Git smart HTTP clone/fetch/push repository enforcement
-- repository access-management interface and audit events
-- exact-branch protection rules
-- pull-request approve, request-changes and comment reviews
-- required approval count and stale-approval detection
-- server-side merge-policy enforcement
-- protected-branch browser commit blocking
-- Git pre-receive protection for direct pushes
-- branch-governance browser interface and audit events
-- changed-file and line anchored review threads
-- threaded replies, resolve and reopen lifecycle
-- outdated-thread detection by pull-request head SHA
-- optional active-thread resolution requirement before merge
-- review-thread API, browser interface and audit events
-- commit status records keyed by repository, SHA and context
-- pending, success, failure and error status states
-- PAT-authenticated trusted status publishing API
-- exact-branch required status-check policies
-- current-head freshness and stale-result isolation
-- server-side merge blocking for missing, pending, failed or errored checks
-- status-check Settings and pull-request browser interfaces
-- status policy and publisher audit events
-- repository webhook subscriptions and event filters
-- AES-256-GCM encrypted webhook secrets
-- HMAC-SHA256 signed JSON deliveries
-- HTTPS and public-network target enforcement
-- DNS address pinning and SSRF protection
-- pending, processing, success and failure delivery lifecycle
-- bounded exponential retries, ping and manual redelivery
-- automatic push, issue, pull-request, review and status event capture
-- webhook Settings and delivery-history browser interface
-- webhook lifecycle and redelivery audit events
-- archive and unarchive repository workflow
-- read-only enforcement across browser APIs and Git pushes
-- rollback-protected organization transfer and bare-storage move
-- team-grant and incompatible collaborator cleanup during transfer
-- 30-day recoverable repository Trash
-- Admin restore with slug-collision protection
-- Owner-only permanent purge with storage quarantine rollback
-- repository lifecycle Settings and Trash interfaces
-- lifecycle audit and repository webhook events
-- Ed25519, ECDSA and RSA user SSH public keys
-- SHA-256 fingerprint validation and active-key reuse prevention
-- repository-scoped read-only and read/write deploy keys
-- effective repository permission enforcement for user SSH keys
-- forced-command Git upload-pack and receive-pack authorization
-- shell-injection and path-traversal command rejection
-- archived repository and branch-protection enforcement for SSH pushes
-- dynamic OpenSSH AuthorizedKeysCommand integration
-- restricted static authorized_keys generation fallback
-- SSH clone URL and key-management browser interfaces
-- SSH key last-used timestamps and Git SSH audit events
-- merge-base-correct pull-request comparisons
-- Git-native added, modified, deleted, renamed, copied and binary file metadata
-- per-file addition and deletion statistics
-- parsed unified diff hunks with old and new line numbers
-- unified and side-by-side Files Changed browser views
-- paginated file summaries and lazy per-file patch loading
-- whitespace display toggle and raw patch copy
-- actual-patch-only inline review anchors
-- same-side, same-hunk multi-line review ranges
-- file-level binary review threads
-- stable anchor hashes with merge-base and head SHA history
-- large diff safety limits and phantom-line sanitization
-- diff API permission, path, anchor and CSRF enforcement
-- transactionally consistent SQLite metadata snapshots
-- active, trashed and empty repository snapshot coverage
-- Git bundle creation, ref manifests and source `git fsck` verification
-- dependency-free compressed portable backup archives
-- SHA-256 entry checksums, footer validation and manifest enforcement
-- absolute-path, duplicate-entry and traversal protection
-- SQLite integrity, foreign-key and repository-count verification
-- Git bundle verification and restored repository `git fsck`
-- dry-run and atomic empty-directory restore workflows
-- operation locks and maintenance-mode write quiescing
-- retention listing and two-condition pruning policy
-- backup create, list, verify, restore, prune and maintenance CLI
-- instance-admin backup API and Settings status interface
-- backup operation audit events and disaster-recovery runbook
-- Git LFS Batch API with the basic transfer adapter
-- SHA-256 content-addressed streamed uploads
-- declared-size, content-hash and verify-action enforcement
-- public downloads and PAT-protected private LFS access
-- single byte-range downloads, ETags and safe content headers
-- user SSH-key and deploy-key `git-lfs-authenticate` support
-- short-lived repository-scoped signed SSH LFS credentials
-- strict LFS SSH command and repository-path validation
-- maximum object, repository and instance LFS quotas
-- pending-upload projected quota accounting and expiry cleanup
-- cross-repository physical-object deduplication
-- repository-to-object associations and usage accounting
-- archived upload blocking and repository lifecycle integration
-- repository LFS usage, object inventory and integrity Settings interface
-- instance-admin orphan LFS garbage collection
-- LFS objects included in verified backup manifests
-- LFS SHA-256 verification during backup creation, verification and restore
-- durable per-user notification inbox and unread counts
-- notification read, unread and bulk mark-read lifecycle
-- organization, security, pull-request, status and operations categories
-- per-category in-app and email preferences
-- durable transactional email outbox and delivery-attempt history
-- dependency-free SMTP transport with direct TLS and STARTTLS
-- SMTP authentication, MIME alternatives and Unicode subjects
-- email-header injection, body-size and secret-redaction protections
-- bounded retries, exponential backoff and interrupted-attempt recovery
-- instance-admin email queue status, processing and retry interface
-- organization invitation email delivery for existing and external users
-- secure invitation resend with old-link revocation
-- invitation acceptance and membership notifications
-- personal-access-token expiry reminders without token-secret exposure
-- effective-permission pull-request recipient targeting
-- pull-request opened, reviewed and merged notifications
-- current-head failed and errored status-check notifications
-- terminal webhook failure alerts
-- backup and Git LFS operational alerts for the instance administrator
-- topbar notification bell, unread badge and notification drawer
-- Settings notification preferences and email administration
-- notification, email and SMTP production runbook
-- repository-only external collaborators without organization membership
-- SHA-256 hashed, expiring one-time repository invitation tokens
-- exact invited-email acceptance, revoke, resend and replay protection
-- existing-user in-app delivery and external transactional email delivery
-- direct repository grant creation without `org_members` insertion
-- repository-only dashboard, repository, issue and pull-request discovery
-- organization member, team and team-grant privacy for external users
-- external collaborator permission update and immediate access removal
-- scoped browser authorization through exact repository request context
-- Personal Access Token Git HTTP authorization for external collaborators
-- user SSH-key Git authorization for external collaborators
-- Git LFS download and upload authorization for external collaborators
-- external Repository Admin Settings and archive authority
-- organization Admin/Owner requirement for repository transfer and Trash
-- external invitation and collaborator audit events without token exposure
-- external collaborator Settings and acceptance interfaces
-- external collaborator security and operations runbook
-- One Kuklabs Account through the central `/v1/auth/*` AuthKit contract
-- stable one-to-one `kuklabs_user_id` mapping to KukGit product profiles
-- verified-email linking that preserves existing KukGit foreign-key identity
-- duplicate central-ID and email-link conflict protection
-- production default to AuthKit with local-password authentication blocked
-- password, signup, OTP and Google ID-token proxy flows
-- random HttpOnly browser bridge cookies without browser token exposure
-- AES-256-GCM encrypted AuthKit access and refresh tokens at rest
-- access-token refresh with central rotating refresh-token replacement
-- request-scoped central identity for existing authorization code
-- central `/me`, product-access and active device-session validation
-- immediate local bridge removal after central device-session revocation
-- fail-closed protected browser APIs during AuthKit outages
-- password-free founder organization bootstrap after verified central login
-- One Kuklabs Account login, signup and OTP web interface
-- AuthKit production rollout, rollback, key-rotation and incident runbook
-- automated identity, encryption, refresh, revocation, CSRF and production-boundary tests
-- authenticated organization self-service workspace creation
-- atomic free-plan organization, Owner membership and default Developers-team provisioning
-- creator auto-added to the default team as Maintainer
-- verified AuthKit email requirement for production workspace creation
-- globally unique workspace slugs and reserved system/product namespaces
-- transaction-time slug collision handling and complete rollback on failure
-- configurable per-user organization ownership limit
-- organization description, HTTPS website, company-size and onboarding metadata
-- guided zero-organization onboarding interface
-- Create organization action for existing members below their limit
-- repository-only external collaborator exemption from forced onboarding
-- same-origin, request-size and organization-profile validation
-- self-service organization audit events without sensitive identity data
-- organization onboarding rollout, support and operations runbook
-- automated atomicity, limit, reserved-slug, identity and CSRF tests
-- separate invitation-link expiry and accepted external-access duration
-- 7, 30, 90, 180 and 365-day external access durations
-- secure 90-day default for accepted repository invitations
-- expiry, origin, invitation and review metadata on external direct grants
-- request-time expiry enforcement before browser and Git HTTP authorization
-- explicit expiry enforcement before Git-over-SSH and SSH Git LFS authorization
-- transactional expired-grant archival before active permission removal
-- immutable expired/revoked access history and audited renewal
-- renewal without recreating the KukGit or One Kuklabs Account identity
-- external collaborator self-extension prevention
-- organization Admin/Owner certification for external Repository Admin access
-- active, permanent, expiring and expired access lifecycle interface
-- organization-wide external access review campaigns
-- 7, 14 and 30-day campaign due dates and overdue status
-- keep, renew, reduce and revoke campaign decisions
-- automatic campaign completion after all grants are reviewed
-- deduplicated expiring-soon, expired, renewed and reviewed notifications
-- transport-wide expiry, renewal, campaign, CSRF and authorization tests
-- external access expiry and access-review operations runbook
+Status: **Delivered**.
 
-- independent instance-administrator email allowlist
-- read-only-by-default instance operations console
-- adoption, repository, external-access, delivery, LFS, backup and audit metrics
-- bounded cross-tenant user, organization and repository search
-- tenant-scoped member, repository, storage, external-access and delivery diagnostics
-- credential-free user identity, membership and security-count diagnostics
-- recursive server-side audit metadata redaction
-- request ID, action, target and organization audit lookup
-- confirmed tenant support notes with audit events
-- confirmed failed/cancelled email retry and terminal webhook retry
-- responsive Admin navigation, overview, search, tenant, user and audit interfaces
-- no-impersonation and no-credential-exposure support boundary
-- instance-admin privacy, isolation, CSRF, confirmation and retry tests
-- instance administration and tenant support operations runbook
+- One Kuklabs Account through central AuthKit `/v1/auth/*`
+- stable `kuklabs_user_id` mapping while preserving KukGit product foreign keys
+- verified-email account linking and duplicate-identity conflict protection
+- production local-password authentication disabled
+- encrypted server-side AuthKit token custody, refresh rotation and device-session revocation
+- self-service organization onboarding with atomic Owner/default-team provisioning
+- organization members, teams, invitations and repository-only external collaborators
+- time-bounded external access, expiry enforcement, renewal and access-review campaigns
+- independent instance-administrator allowlist and privacy-preserving tenant support console
 
-- PostgreSQL migration Stage 1 SQL portability inventory
-- deterministic SQLite schema, row-count and SHA-256 row checksums
-- full source metadata fingerprint and foreign-key verification
-- atomic `0600` SQLite metadata export bundle
-- export bundle, table, row-count and row-checksum tamper detection
-- live SQLite drift comparison against a saved manifest
-- PostgreSQL URL validation and credential redaction
-- checksummed cutover-readiness marker bound to the source manifest fingerprint
-- fail-closed server and doctor behavior when undeployed PostgreSQL runtime is selected
-- database migration status, inventory, export, verify and audit CLI
-- sensitive migration-export Git ignore rules
-- staged migration, import, dual-read, cutover, backup and rollback runbook
+### Git hosting and repository lifecycle
 
-Remaining:
+Status: **Delivered**.
 
-- PostgreSQL runtime driver, translated schema, verified import, dual-read cutover and backend-aware backup/restore
-- real-time WebSocket notification delivery
-- provider bounce and complaint processing
+- Git smart HTTP and Git-over-SSH clone/fetch/push
+- user SSH keys and read-only/read-write deploy keys
+- scoped personal access tokens and transport-wide repository authorization
+- Git LFS Batch API, verified streaming, range downloads, quotas and deduplication
+- repository archive, organization transfer, recoverable Trash, restore and permanent purge
+- public/private/internal visibility and repository-scoped permission hierarchy
+- verified backups covering SQLite metadata, Git bundles and Git LFS objects
+- dry-run verification, atomic restore, retention pruning and maintenance-mode write quiescing
+
+### Collaboration and governance
+
+Status: **Delivered**.
+
+- exact-branch protection and direct-push/browser-write blocking
+- pull-request approvals, change requests and stale-approval handling
+- required current-head status checks
+- merge-base-correct unified and side-by-side diffs
+- actual patch-line and multi-line review anchors
+- threaded review conversations, resolution and outdated-thread history
+- server-side merge policy for approvals, checks and unresolved active threads
+- repository webhooks with encrypted secrets, HMAC signatures, SSRF protection and retries
+
+### Notifications and email reliability
+
+Status: **Delivered**.
+
+- durable notification inbox, preferences and read lifecycle
+- real-time WebSocket notification delivery with user isolation and session revocation
+- dependency-free SMTP transport, durable outbox, retry history and Admin controls
+- organization, repository, pull-request, review, status and operations notifications
+- provider-neutral signed delivery-event ingestion
+- bounce, complaint, delivered, deferred and rejected normalization
+- replay protection, hard-bounce/complaint suppression and soft-bounce thresholds
+- queued-message cancellation, Admin review and controlled unsuppression
+
+### PostgreSQL migration program
+
+Status: **Stages 1–6 delivered; production cutover not enabled**. Parent tracking issue: [#43](https://github.com/amithkukllod777/kukgit/issues/43).
+
+Delivered stages:
+
+1. **Portability and evidence foundation** — deterministic SQLite schema/row manifests, checksums, drift verification, protected exports and redacted connection policy.
+2. **Schema translation and import planning** — PostgreSQL DDL, foreign-key-safe ordering, parameterized batches and compatibility validation.
+3. **Transactional executor** — atomic target creation/import, rollback, cancellation, parameter limits and verified target receipts.
+4. **Guarded offline import** — explicit enablement, exact source confirmation, readiness evidence and secret-free operation state.
+5. **Read-only shadow verification** — runtime-surface inventory, curated SELECT catalog, least-privilege PostgreSQL adapter and privacy-safe parity reports.
+6. **Driver-neutral live reads and asynchronous observation** — selected live reads behind the catalog, optional bounded PostgreSQL observer, deterministic sampling, circuit breaker and no-result-substitution guarantee.
+
+Safety boundary:
+
+- SQLite remains the authoritative runtime.
+- PostgreSQL observation is disabled by default and read-only.
+- No PostgreSQL write path, dual-write, automatic cutover or backend-aware restore is enabled.
+- A verified Stage 5 report does not authorize cutover.
+- Bare Git repositories and Git LFS object bytes remain outside the metadata migration.
+
+### Private-alpha exit work
+
+Status: **Active / planned**.
+
+1. Complete the remaining driver-neutral metadata service and PostgreSQL write-path design under #43.
+2. Add PostgreSQL-backed integration CI before any write or cutover experiment.
+3. Build explicit maintenance-window cutover, rollback evidence and backend-aware backup/restore.
+4. Rehearse production recovery for AuthKit, metadata, Git repositories, LFS, SMTP/provider events and WebSockets.
+5. Define distributed-job and scalable object-storage boundaries without disrupting live Git traffic.
+6. Establish release, incident, capacity and abuse-response runbooks for wider private-alpha use.
 
 ## Phase 2 — Public beta
+
+Status: **Planned after private-alpha exit gates**.
 
 - subscriptions, quotas and usage metering
 - hosted CI runners
@@ -276,18 +130,21 @@ Remaining:
 
 ## Phase 3 — AI developer operating system
 
-- AI PR reviewer
-- AI codebase chat with source citations
-- AI issue triage
-- AI test generation
-- AI documentation and architecture maps
-- AI security remediation suggestions
+Status: **Planned**.
+
+- AI pull-request reviewer
+- codebase chat with source citations
+- issue triage and test generation
+- documentation and architecture maps
+- security remediation suggestions
 - AI CTO technical-debt and roadmap reports
-- AI developer agent that creates branches and pull requests
-- AI DevOps agent for deployment and rollback
+- developer agent that creates branches and pull requests
+- DevOps agent for deployment and rollback
 - model choice, enterprise privacy and spend controls
 
 ## Phase 4 — Developer cloud
+
+Status: **Planned**.
 
 - cloud workspaces and browser IDE
 - preview environments
@@ -300,11 +157,17 @@ Remaining:
 
 ## Phase 5 — Enterprise and self-hosted
 
+Status: **Planned**.
+
 - dedicated regions and data residency
-- SAML/SCIM
-- advanced audit and legal hold
+- SAML and SCIM
+- advanced audit, legal hold and retention controls
 - customer-managed keys
 - high availability and geo replication
 - self-hosted enterprise distribution
 - government and regulated-industry profiles
 - migration tools from GitHub, GitLab, Bitbucket and Azure DevOps
+
+## Release rule
+
+A roadmap item is marked Delivered only after its implementation, security boundary, automated tests, operational documentation and clean CI are merged to `main`.
