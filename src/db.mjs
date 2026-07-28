@@ -213,5 +213,5 @@ export function orgAccess(db, userId, orgSlug, minimumRole = 'viewer') {
 }
 
 export function findRepo(db, orgSlug, repoSlug) {
-  return runRuntimeRead(db, 'repositories.find_by_slug', [orgSlug, repoSlug]);
+  return runRuntimeRead(db, 'repositories.find_by_slug', [orgSlug, repoSlug]) ?? undefined;
 }
