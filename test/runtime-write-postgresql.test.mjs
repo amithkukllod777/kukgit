@@ -51,6 +51,13 @@ test('PostgreSQL write compatibility preserves constraints and transaction seman
         target_id TEXT,
         metadata_json TEXT NOT NULL DEFAULT '{}',
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE ${quoted}.stage7_value_parity (
+        id TEXT PRIMARY KEY,
+        payload JSONB NOT NULL,
+        happened_at TIMESTAMPTZ NOT NULL,
+        enabled BOOLEAN NOT NULL,
+        optional_text TEXT
       )
     `);
 
@@ -71,6 +78,25 @@ test('PostgreSQL write compatibility preserves constraints and transaction seman
     const secondMigration = await ensurePostgresqlRuntimeWriteMigrations(adapter);
     assert.deepEqual(firstMigration, secondMigration);
     assert.equal(firstMigration.ready, true);
+
+    const parityTimestamp = '2026-07-29T12:34:56.000Z';
+    await adapter.begin();
+    const parityInsert = await adapter.query(
+      `INSERT INTO stage7_value_parity (id, payload, happened_at, enabled, optional_text)
+       VALUES ($1, $2::jsonb, $3::timestamptz, $4::boolean, $5)`,
+      ['value_1', JSON.stringify({ nested: { count: 2 }, labels: ['safe'] }), parityTimestamp, true, null],
+    );
+    assert.equal(parityInsert.rowCount, 1);
+    const parityResult = await adapter.query(
+      'SELECT id, payload, happened_at, enabled, optional_text FROM stage7_value_parity WHERE id = $1',
+      ['value_1'],
+    );
+    await adapter.commit();
+    assert.equal(parityResult.rows[0].id, 'value_1');
+    assert.deepEqual(parityResult.rows[0].payload, { nested: { count: 2 }, labels: ['safe'] });
+    assert.equal(parityResult.rows[0].happened_at.toISOString(), parityTimestamp);
+    assert.equal(parityResult.rows[0].enabled, true);
+    assert.equal(parityResult.rows[0].optional_text, null);
 
     await bootstrap.query(
       `INSERT INTO ${quoted}.users (id, email, password_hash, display_name) VALUES ($1, $2, $3, $4)`,
