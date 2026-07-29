@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { inventoryDatabaseRuntimeSurface } from './database-runtime-surface.mjs';
+import { runtimeWriteCatalog } from './runtime-write-catalog.mjs';
 
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -52,15 +53,37 @@ function classify(call) {
   return { category: 'unknown_write', risk: 'review_required', table };
 }
 
+function managedCatalogCalls() {
+  return runtimeWriteCatalog().map((spec) => ({
+    file: 'runtime-write-catalog',
+    root: 'managed',
+    line: 0,
+    receiver: 'runtimeWriteService',
+    method: 'catalog',
+    dynamic: false,
+    operation: 'write',
+    sqlFingerprint: sha256(spec.sqliteSql),
+    portabilityFindings: [],
+    sqlPreview: spec.sqliteSql,
+    category: spec.operation === 'delete' ? 'delete' : spec.operation === 'update' ? 'mutation' : spec.risk === 'append_only' ? 'append' : 'create',
+    risk: spec.risk,
+    table: tableName(spec.sqliteSql),
+    managed: true,
+    catalogId: spec.id,
+  }));
+}
+
 export function inventoryRuntimeWriteSurface(roots) {
   const runtime = inventoryDatabaseRuntimeSurface(roots);
-  const calls = runtime.calls
-    .map((call) => {
-      const classification = classify(call);
-      return classification ? { ...call, ...classification } : null;
-    })
-    .filter(Boolean)
-    .sort((left, right) => left.file.localeCompare(right.file) || left.line - right.line);
+  const calls = [
+    ...runtime.calls
+      .map((call) => {
+        const classification = classify(call);
+        return classification ? { ...call, ...classification, managed: false } : null;
+      })
+      .filter(Boolean),
+    ...managedCatalogCalls(),
+  ].sort((left, right) => left.file.localeCompare(right.file) || left.line - right.line || String(left.catalogId || '').localeCompare(String(right.catalogId || '')));
 
   const counts = {
     calls: calls.length,
@@ -68,6 +91,7 @@ export function inventoryRuntimeWriteSurface(roots) {
     transactions: calls.filter((call) => call.category === 'transaction').length,
     schema: calls.filter((call) => call.category === 'schema').length,
     dynamic: calls.filter((call) => call.category === 'dynamic').length,
+    managed: calls.filter((call) => call.managed).length,
     appendOnly: calls.filter((call) => call.risk === 'append_only').length,
     mutable: calls.filter((call) => call.risk === 'mutable').length,
     destructive: calls.filter((call) => call.risk === 'destructive').length,
