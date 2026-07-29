@@ -30,18 +30,37 @@ export function normalizeRuntimeWriteError(error, backend = 'unknown') {
     ? String(error.sqlState || error.code)
     : null;
   const sqliteCode = String(error?.code || '');
+  const sqliteMessage = String(error?.message || '');
 
-  if (sqlState === '23505' || sqliteCode.includes('SQLITE_CONSTRAINT_UNIQUE') || sqliteCode.includes('SQLITE_CONSTRAINT_PRIMARYKEY')) {
+  if (
+    sqlState === '23505'
+    || sqliteCode.includes('SQLITE_CONSTRAINT_UNIQUE')
+    || sqliteCode.includes('SQLITE_CONSTRAINT_PRIMARYKEY')
+    || /(?:UNIQUE|PRIMARY KEY) constraint failed/i.test(sqliteMessage)
+  ) {
     return writeError('Runtime metadata write conflicts with existing data.', 'RUNTIME_WRITE_CONFLICT', { backend, sqlState, cause: error });
   }
-  if (sqlState === '23503' || sqliteCode.includes('SQLITE_CONSTRAINT_FOREIGNKEY')) {
+  if (
+    sqlState === '23503'
+    || sqliteCode.includes('SQLITE_CONSTRAINT_FOREIGNKEY')
+    || /FOREIGN KEY constraint failed/i.test(sqliteMessage)
+  ) {
     return writeError('Runtime metadata write references missing or protected data.', 'RUNTIME_WRITE_FOREIGN_KEY', { backend, sqlState, cause: error });
   }
-  if (sqlState === '23514' || sqliteCode.includes('SQLITE_CONSTRAINT_CHECK')) {
+  if (
+    sqlState === '23514'
+    || sqliteCode.includes('SQLITE_CONSTRAINT_CHECK')
+    || /CHECK constraint failed/i.test(sqliteMessage)
+  ) {
     return writeError('Runtime metadata write violates a data constraint.', 'RUNTIME_WRITE_CHECK_FAILED', { backend, sqlState, cause: error });
   }
   if (sqlState === '57014') return cancellationError(backend);
-  if (['40001', '40P01', '55P03'].includes(sqlState)) {
+  if (
+    ['40001', '40P01', '55P03'].includes(sqlState)
+    || sqliteCode.includes('SQLITE_BUSY')
+    || sqliteCode.includes('SQLITE_LOCKED')
+    || /database (?:is )?(?:busy|locked)/i.test(sqliteMessage)
+  ) {
     return writeError('Runtime metadata write can be retried safely.', 'RUNTIME_WRITE_RETRYABLE', { backend, sqlState, cause: error });
   }
   return writeError('Runtime metadata write failed.', 'RUNTIME_WRITE_FAILED', { backend, sqlState, cause: error });
