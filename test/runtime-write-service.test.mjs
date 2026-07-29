@@ -19,7 +19,7 @@ import {
   safeRuntimeWriteSurfaceReport,
 } from '../src/runtime-write-surface.mjs';
 
-function setup(t) {
+function setup(t, overrides = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-runtime-write-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
@@ -31,6 +31,7 @@ function setup(t) {
     adminEmail: 'owner@example.com',
     adminPassword: 'secure-owner-password',
     adminName: 'Repository Owner',
+    ...overrides,
   });
   const db = openDatabase(config);
   t.after(() => db.close());
@@ -95,6 +96,24 @@ test('audit writes preserve the existing synchronous API through the registered 
   assert.equal(service.status().metrics.writes, 1);
 });
 
+test('disabled rollout flag preserves direct SQLite audit behavior and schema', (t) => {
+  const { db, userId, orgId, config } = setup(t, { runtimeWriteServiceEnabled: false });
+  assert.equal(config.runtimeWriteServiceEnabled, false);
+  assert.equal(runtimeWriteServiceFor(db), null);
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) AS count FROM sqlite_master
+    WHERE type = 'table' AND name = 'kukgit_schema_migrations'
+  `).get().count, 0);
+  const id = audit(db, {
+    organizationId: orgId,
+    userId,
+    action: 'test.direct_fallback',
+    targetType: 'database',
+    targetId: 'sqlite',
+  });
+  assert.equal(db.prepare('SELECT action FROM audit_logs WHERE id = ?').get(id).action, 'test.direct_fallback');
+});
+
 test('SQLite runtime write transaction commits atomically', (t) => {
   const { db, userId, orgId } = setup(t);
   const service = runtimeWriteServiceFor(db);
@@ -121,6 +140,20 @@ test('SQLite runtime write transaction rolls back every write on failure', (t) =
   assert.equal(service.status().metrics.rollbacks, 1);
 });
 
+test('SQLite runtime write normalizes unique and foreign-key failures', (t) => {
+  const { db, userId, orgId } = setup(t);
+  const id = uid('aud');
+  runRuntimeWrite(db, 'audit_logs.insert', [id, orgId, userId, 'test.first', 'test', null, '{}']);
+  assert.throws(
+    () => runRuntimeWrite(db, 'audit_logs.insert', [id, orgId, userId, 'test.duplicate', 'test', null, '{}']),
+    (error) => error.code === 'RUNTIME_WRITE_CONFLICT' && error.backend === 'sqlite',
+  );
+  assert.throws(
+    () => runRuntimeWrite(db, 'audit_logs.insert', [uid('aud'), 'org_missing', 'usr_missing', 'test.fk', 'test', null, '{}']),
+    (error) => error.code === 'RUNTIME_WRITE_FOREIGN_KEY' && error.backend === 'sqlite',
+  );
+});
+
 test('SQLite runtime write rejects cancellation and undefined parameters', (t) => {
   const { db, userId, orgId } = setup(t);
   const controller = new AbortController();
@@ -141,8 +174,9 @@ test('write-surface report classifies writes without exposing SQL text', () => {
   assert.equal(report.format, 'kukgit-runtime-write-surface/1');
   assert.ok(report.counts.writes > 0);
   assert.ok(report.counts.transactions > 0);
+  assert.ok(report.counts.managed > 0);
   assert.equal(report.fingerprint.length, 64);
-  assert.ok(report.calls.some((call) => call.table === 'audit_logs' && call.risk === 'append_only'));
+  assert.ok(report.calls.some((call) => call.table === 'audit_logs' && call.risk === 'append_only' && call.managed));
   const safe = safeRuntimeWriteSurfaceReport(report);
   assert.equal(safe.calls.some((call) => 'sqlPreview' in call), false);
   assert.equal(safe.calls.some((call) => 'root' in call), false);
