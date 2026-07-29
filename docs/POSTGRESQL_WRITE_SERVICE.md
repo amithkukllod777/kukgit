@@ -1,11 +1,12 @@
 # PostgreSQL Stage 7 — Runtime Write Service Foundation
 
-Status: private-alpha migration foundation
+Status: active private-alpha migration foundation
 
 Tracking:
 
 - Parent: [#43 — PostgreSQL-compatible data layer and migration tooling](https://github.com/amithkukllod777/kukgit/issues/43)
 - Stage: [#68 — driver-neutral write service and integration CI foundation](https://github.com/amithkukllod777/kukgit/issues/68)
+- Pull request: [#70 — PostgreSQL Stage 7 write service foundation](https://github.com/amithkukllod777/kukgit/pull/70)
 
 ## Purpose
 
@@ -19,6 +20,33 @@ KUKGIT_DATABASE_DRIVER=sqlite
 
 This stage does **not** introduce PostgreSQL production writes, dual-write, request-result substitution, automatic cutover or PostgreSQL restore.
 
+## Rollout flag
+
+The SQLite-authoritative service is controlled by:
+
+```text
+KUKGIT_RUNTIME_WRITE_SERVICE_ENABLED
+```
+
+Defaults:
+
+- production: `false`
+- development and test: `true`
+
+When disabled:
+
+- the runtime write service is not registered
+- `kukgit_schema_migrations` is not created by Stage 7
+- `audit()` uses the previous direct SQLite statement
+- public APIs, audit IDs and stored audit rows remain unchanged
+
+When enabled:
+
+- SQLite remains authoritative
+- Stage 7 creates and verifies its migration-history table
+- `audit()` routes through the managed catalog and synchronous SQLite service
+- PostgreSQL is still never called by the live request path
+
 ## Delivered boundary
 
 Stage 7 introduces four controlled pieces:
@@ -28,13 +56,13 @@ Stage 7 introduces four controlled pieces:
 3. A driver-neutral write/transaction service contract.
 4. A disposable PostgreSQL integration CI job for compatibility evidence.
 
-The first migrated live write is the append-only `audit_logs.insert` operation. Existing callers still invoke the synchronous `audit()` helper and receive the same audit ID immediately.
+The first gated live write is the append-only `audit_logs.insert` operation. Existing callers still invoke the synchronous `audit()` helper and receive the same audit ID immediately.
 
 ## Runtime authority
 
 ### SQLite
 
-SQLite remains the authoritative runtime. The registered SQLite write service is synchronous because existing KukGit request handlers and module APIs are synchronous.
+SQLite remains the authoritative runtime. With the flag enabled, the registered SQLite write service is synchronous because existing KukGit request handlers and module APIs are synchronous.
 
 ```text
 caller
@@ -45,7 +73,16 @@ caller
   -> authoritative result
 ```
 
-No network call, PostgreSQL observer or background task can alter this result.
+With the flag disabled:
+
+```text
+caller
+  -> audit()
+  -> previous direct parameterized SQLite insert
+  -> authoritative result
+```
+
+No network call, PostgreSQL observer or background task can alter either result.
 
 ### PostgreSQL
 
@@ -54,7 +91,7 @@ The PostgreSQL write service is compatibility-only and asynchronous. It is used 
 ```text
 isolated test/tool
   -> PostgreSQL compatibility write service
-  -> explicit SERIALIZABLE transaction
+  -> explicit transaction
   -> translated parameterized SQL
   -> commit or rollback
 ```
@@ -142,11 +179,11 @@ Database-specific failures are normalized before reaching a service caller.
 | `RUNTIME_WRITE_RESULT_MISMATCH` | Unexpected affected-row count/result shape |
 | `RUNTIME_WRITE_FAILED` | Safe generic write failure |
 
-PostgreSQL SQLSTATE may be retained as structured diagnostic metadata, but SQL text, row values and credentials are not included in messages or evidence.
+SQLite error codes/messages and PostgreSQL SQLSTATE values map into the same public error model. PostgreSQL SQLSTATE may be retained as structured diagnostic metadata, but SQL text, row values and credentials are not included in messages or evidence.
 
 ## Migration-history ownership
 
-Stage 7 creates:
+When Stage 7 is enabled, KukGit creates:
 
 ```text
 kukgit_schema_migrations
@@ -165,7 +202,7 @@ Current version:
 1 — runtime-write-foundation-v1
 ```
 
-Startup applies the SQLite migration idempotently. The PostgreSQL integration test applies the same ownership contract in its disposable schema.
+Enabled SQLite startup applies the migration idempotently. The PostgreSQL integration test applies the same ownership contract in its disposable schema.
 
 KukGit fails closed when it detects:
 
@@ -216,7 +253,7 @@ The safe report excludes:
 
 A changed fingerprint is review evidence, not automatic authorization to migrate more writes.
 
-## First migrated slice: audit logs
+## First gated slice: audit logs
 
 `src/db.mjs` keeps the existing function:
 
@@ -224,12 +261,14 @@ A changed fingerprint is review evidence, not automatic authorization to migrate
 audit(db, event)
 ```
 
-The helper now:
+With the flag enabled, the helper:
 
 1. creates the same `aud_...` ID
 2. serializes the existing metadata object
 3. calls `runRuntimeWrite(db, "audit_logs.insert", parameters)`
 4. returns the audit ID synchronously
+
+With the flag disabled, it executes the previous direct parameterized insert and returns the same ID.
 
 This slice was selected because it is append-only and does not control authentication, authorization, repository visibility or lifecycle state.
 
@@ -249,7 +288,7 @@ Not migrated in Stage 7:
 
 ## PostgreSQL integration CI
 
-GitHub Actions runs a dedicated job:
+GitHub Actions defines a dedicated job:
 
 ```text
 postgresql-write-integration
@@ -284,20 +323,29 @@ Without `KUKGIT_TEST_POSTGRES_URL`, the PostgreSQL-specific test is skipped whil
 ### Rollout
 
 1. Keep `KUKGIT_DATABASE_DRIVER=sqlite`.
-2. Deploy the new build normally.
-3. Startup creates/verifies the SQLite migration-history row.
-4. Observe normal audit creation and application health.
-5. Generate and store the privacy-safe write-surface report as engineering evidence.
+2. Deploy with `KUKGIT_RUNTIME_WRITE_SERVICE_ENABLED=false`.
+3. Confirm the application and direct audit path behave normally.
+4. Generate and review the privacy-safe write-surface report.
+5. Enable `KUKGIT_RUNTIME_WRITE_SERVICE_ENABLED=true` in a controlled non-production environment.
+6. Restart KukGit; startup creates/verifies the migration-history row.
+7. Confirm audit creation, rollback tests, backups and application health.
+8. Enable in production only after the Stage 7 PR is merged with clean CI and an approved deployment window.
 
 ### Rollback
 
-The managed audit SQL is equivalent to the former direct insert. A previous application build can continue using the same SQLite database because the new migration-history table is additive and unrelated to existing foreign keys.
+Set:
 
-Do not delete the migration-history table during application rollback. Its checksum records the schema ownership already applied.
+```text
+KUKGIT_RUNTIME_WRITE_SERVICE_ENABLED=false
+```
+
+and restart KukGit. `audit()` immediately returns to the former direct SQLite statement. No database conversion or data copy is required.
+
+The migration-history table is additive and unrelated to existing foreign keys. Do not delete it during rollback; its checksum records schema ownership already applied.
 
 ### Incident handling
 
-A checksum mismatch or future migration version is a deployment-blocking condition. Do not edit the history row manually. Stop rollout, preserve the database and compare the running build, migration definition and deployment artifact.
+A checksum mismatch or future migration version is a deployment-blocking condition. Do not edit the history row manually. Disable the rollout flag, preserve the database and compare the running build, migration definition and deployment artifact.
 
 ## Stage 8 prerequisites
 
