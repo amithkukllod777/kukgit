@@ -8,13 +8,11 @@ on:
 permissions:
   contents: read
 
-jobs:
-  runner-probe:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Confirm hosted runner starts
-        run: echo "runner-ready"
+concurrency:
+  group: kukgit-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
+jobs:
   test:
     runs-on: ubuntu-latest
     steps:
@@ -23,33 +21,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Run captured validation pipeline
-        shell: bash
-        run: |
-          set +e
-          : > stage7-normal-output.txt
-          status=0
-          run_step() {
-            echo "\n===== $1 =====" | tee -a stage7-normal-output.txt
-            shift
-            "$@" 2>&1 | tee -a stage7-normal-output.txt
-            code=${PIPESTATUS[0]}
-            if [ "$code" -ne 0 ]; then status="$code"; fi
-          }
-          run_step "git version" git --version
-          run_step "npm ci" npm ci --ignore-scripts
-          run_step "pg package" node -e "import('pg').then((module) => { if (typeof (module.Client || module.default?.Client) !== 'function') process.exit(1) })"
-          run_step "doctor" npm run doctor
-          run_step "syntax" npm run check
-          run_step "tests" npm test
-          exit "$status"
-      - name: Upload normal-suite diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: stage7-normal-test-output
-          path: stage7-normal-output.txt
-          retention-days: 1
+      - run: git --version
+      - run: npm ci --ignore-scripts
+      - name: Validate node-postgres package
+        run: node -e "import('pg').then((module) => { if (typeof (module.Client || module.default?.Client) !== 'function') process.exit(1) })"
+      - run: npm run doctor
+      - run: npm run check
+      - run: npm test
 
   postgresql-write-integration:
     runs-on: ubuntu-latest
@@ -75,26 +53,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Run captured PostgreSQL pipeline
-        shell: bash
-        run: |
-          set +e
-          : > stage7-postgresql-output.txt
-          status=0
-          run_step() {
-            echo "\n===== $1 =====" | tee -a stage7-postgresql-output.txt
-            shift
-            "$@" 2>&1 | tee -a stage7-postgresql-output.txt
-            code=${PIPESTATUS[0]}
-            if [ "$code" -ne 0 ]; then status="$code"; fi
-          }
-          run_step "npm ci" npm ci --ignore-scripts
-          run_step "PostgreSQL write compatibility" node --test --test-reporter=spec test/runtime-write-postgresql.test.mjs
-          exit "$status"
-      - name: Upload PostgreSQL diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: stage7-postgresql-test-output
-          path: stage7-postgresql-output.txt
-          retention-days: 1
+      - run: npm ci --ignore-scripts
+      - name: Run PostgreSQL write compatibility suite
+        run: node --test --test-reporter=spec test/runtime-write-postgresql.test.mjs
