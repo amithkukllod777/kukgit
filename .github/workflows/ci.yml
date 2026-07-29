@@ -9,6 +9,12 @@ permissions:
   contents: read
 
 jobs:
+  runner-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm hosted runner starts
+        run: echo "runner-ready"
+
   test:
     runs-on: ubuntu-latest
     steps:
