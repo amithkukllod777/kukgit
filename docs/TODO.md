@@ -1,6 +1,6 @@
 # KukGit Engineering TODO
 
-Updated: 2026-07-28
+Updated: 2026-07-29
 
 This is the prioritized execution list for KukGit. The phase-level direction is in [ROADMAP.md](ROADMAP.md). GitHub issues and pull requests are authoritative for implementation status.
 
@@ -8,6 +8,7 @@ This is the prioritized execution list for KukGit. The phase-level direction is 
 
 - Keep `main` deployable and protect live users from downtime.
 - Do not merge failing CI, non-mergeable stale branches or work that weakens an existing authorization contract.
+- Closed or superseded branches must be reconciled against current `main`; they are never force-merged merely to preserve old commits.
 - SQLite remains authoritative until the PostgreSQL cutover milestone is explicitly approved and verified.
 - PostgreSQL observers remain read-only and disabled by default.
 - Do not enable dual-write, automatic cutover or PostgreSQL restore using Stage 1–6 evidence alone.
@@ -64,6 +65,15 @@ Exit gate: PostgreSQL must preserve AuthKit identity links, PATs, SSH keys, invi
 - [ ] add health, capacity and saturation alerts for metadata, Git storage, LFS and delivery queues
 - [ ] publish incident-severity, rollback and customer-communication procedures
 - [ ] rehearse zero-downtime application rollout and fast rollback
+
+### 4. Branch and release hygiene
+
+- [x] keep canonical AuthKit implementation on merged PR #33 and its later hardening commits
+- [x] close superseded AuthKit PRs #51 and #56 instead of merging divergent history
+- [x] reconcile roadmap and TODO against current `main`
+- [ ] require every implementation PR to be mergeable against latest `main` before review-ready state
+- [ ] add a periodic stale branch and superseded PR audit
+- [ ] record release-candidate commit, CI run and rollback commit before every production rollout
 
 ## P1 — Private-alpha exit features
 
@@ -138,7 +148,9 @@ Exit gate: PostgreSQL must preserve AuthKit identity links, PATs, SSH keys, invi
 - [x] real-time WebSocket notifications
 - [x] signed email provider events, bounce/complaint suppression and Admin recovery
 - [x] PostgreSQL migration Stages 1–6
-- [x] roadmap and issue/PR hygiene synchronized on 2026-07-28
+- [x] AuthKit legacy-password scrubbing and mandatory-production enforcement
+- [x] superseded AuthKit branch/PR reconciliation without regression
+- [x] roadmap and issue/PR hygiene synchronized on 2026-07-29
 
 ## Triage rules
 
