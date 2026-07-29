@@ -55,15 +55,33 @@ export function verifyRuntimeWriteMigrationRows(rows) {
   const normalizedRows = rows.map((row) => ({
     version: Number(row.version),
     id: String(row.migration_id ?? row.migrationId ?? ''),
-    checksum: String(row.checksum || ''),
+    checksum: String(row.checksum || '').toLowerCase(),
   })).sort((left, right) => left.version - right.version);
+
+  if (normalizedRows.some((row) => (
+    !Number.isInteger(row.version)
+    || row.version < 1
+    || !/^[a-z][a-z0-9-]{2,100}$/.test(row.id)
+    || !/^[0-9a-f]{64}$/.test(row.checksum)
+  ))) {
+    throw migrationError('Runtime write migration history contains an invalid row.', 'RUNTIME_WRITE_MIGRATION_INVALID');
+  }
 
   const duplicateVersions = normalizedRows.filter((row, index) => index > 0 && row.version === normalizedRows[index - 1].version);
   if (duplicateVersions.length) throw migrationError('Runtime write migration history contains duplicate versions.', 'RUNTIME_WRITE_MIGRATION_DUPLICATE');
+  const ids = new Set();
+  for (const row of normalizedRows) {
+    if (ids.has(row.id)) throw migrationError('Runtime write migration history contains duplicate migration IDs.', 'RUNTIME_WRITE_MIGRATION_DUPLICATE');
+    ids.add(row.id);
+  }
+
   const future = normalizedRows.find((row) => row.version > expected.version);
   if (future) throw migrationError('Runtime write migration history is newer than this KukGit build.', 'RUNTIME_WRITE_MIGRATION_FUTURE_VERSION');
+  const unsupportedPast = normalizedRows.find((row) => row.version < expected.version);
+  if (unsupportedPast) throw migrationError('Runtime write migration history contains an unknown older version.', 'RUNTIME_WRITE_MIGRATION_UNKNOWN_VERSION');
+
   const row = normalizedRows.find((item) => item.version === expected.version);
-  if (!row) return { ready: false, currentVersion: normalizedRows.at(-1)?.version ?? 0, expectedVersion: expected.version };
+  if (!row) return { ready: false, currentVersion: 0, expectedVersion: expected.version };
   if (row.id !== expected.id || row.checksum !== expected.checksum) {
     throw migrationError('Runtime write migration checksum does not match this KukGit build.', 'RUNTIME_WRITE_MIGRATION_CHECKSUM_MISMATCH');
   }
