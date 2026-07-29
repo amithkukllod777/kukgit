@@ -22,6 +22,10 @@ import {
   safePostgresqlImportPlan,
   verifyPostgresqlTargetSnapshot,
 } from '../src/postgresql-import-plan.mjs';
+import {
+  inventoryRuntimeWriteSurface,
+  safeRuntimeWriteSurfaceReport,
+} from '../src/runtime-write-surface.mjs';
 
 function argument(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -78,6 +82,14 @@ if (command === 'audit-sql') {
   const target = writeJson(argument('--output', path.join(migrationDir, 'sql-portability.json')), report);
   print({ command, target, findingCount: report.findingCount, blockingCount: report.blockingCount });
   process.exit(report.blockingCount && flag('--fail-on-blocking') ? 2 : 0);
+}
+
+if (command === 'runtime-write-surface') {
+  const report = inventoryRuntimeWriteSurface([path.join(config.root, 'src'), path.join(config.root, 'scripts')]);
+  const safeReport = safeRuntimeWriteSurfaceReport(report);
+  const target = writeJson(argument('--output', path.join(migrationDir, 'runtime-write-surface.json')), safeReport);
+  print({ command, target, fingerprint: safeReport.fingerprint, counts: safeReport.counts });
+  process.exit(0);
 }
 
 if (command === 'verify-export') {
@@ -212,7 +224,7 @@ try {
     print({ command, ...verification });
     if (!verification.valid) process.exitCode = 2;
   } else {
-    fail('Commands: status, inventory, export, verify-export, verify-live, audit-sql, postgresql-schema, postgresql-plan, verify-postgresql-target, postgresql-receipt, postgresql-status, readiness-marker.');
+    fail('Commands: status, inventory, export, verify-export, verify-live, audit-sql, runtime-write-surface, postgresql-schema, postgresql-plan, verify-postgresql-target, postgresql-receipt, postgresql-status, readiness-marker.');
   }
 } finally {
   db.close();
