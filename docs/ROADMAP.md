@@ -1,6 +1,6 @@
 # KukGit Roadmap
 
-Updated: 2026-07-28
+Updated: 2026-07-29
 
 This document records product phases and safety boundaries. The actionable engineering queue lives in [TODO.md](TODO.md). GitHub issues remain the execution-level source of truth.
 
@@ -8,6 +8,7 @@ This document records product phases and safety boundaries. The actionable engin
 
 - **Delivered** — merged to `main` with CI and documentation.
 - **Active** — approved work currently tracked by an open issue or pull request.
+- **Blocked** — implementation may exist, but a required safety or validation gate is unavailable.
 - **Planned** — sequenced after the current private-alpha exit work.
 - **Blocked by safety boundary** — must not be enabled before its listed prerequisites are verified.
 
@@ -81,7 +82,7 @@ Status: **Delivered**.
 
 ### PostgreSQL migration program
 
-Status: **Stages 1–6 delivered; production cutover not enabled**. Parent tracking issue: [#43](https://github.com/amithkukllod777/kukgit/issues/43).
+Status: **Stages 1–6 delivered; Stage 7 active but validation-blocked; production cutover not enabled**. Parent tracking issue: [#43](https://github.com/amithkukllod777/kukgit/issues/43).
 
 Delivered stages:
 
@@ -92,11 +93,18 @@ Delivered stages:
 5. **Read-only shadow verification** — runtime-surface inventory, curated SELECT catalog, least-privilege PostgreSQL adapter and privacy-safe parity reports.
 6. **Driver-neutral live reads and asynchronous observation** — selected live reads behind the catalog, optional bounded PostgreSQL observer, deterministic sampling, circuit breaker and no-result-substitution guarantee.
 
+Active Stage 7:
+
+- [#68](https://github.com/amithkukllod777/kukgit/issues/68) and draft [PR #70](https://github.com/amithkukllod777/kukgit/pull/70) contain the driver-neutral write-service foundation, migration-history ownership, isolated PostgreSQL integration tests and the first bounded SQLite-authoritative write slice.
+- Stage 7 remains **not delivered** because GitHub-hosted Actions jobs are failing before their first step and provide no executable CI evidence.
+- PR #70 must remain draft and unmerged until normal tests and the disposable PostgreSQL integration job execute successfully from the exact reviewed head.
+
 Safety boundary:
 
 - SQLite remains the authoritative runtime.
 - PostgreSQL observation is disabled by default and read-only.
-- No PostgreSQL write path, dual-write, automatic cutover or backend-aware restore is enabled.
+- Stage 7 does not authorize production PostgreSQL writes, dual-write, result substitution or cutover.
+- No PostgreSQL write path may be treated as delivered without clean integration CI.
 - A verified Stage 5 report does not authorize cutover.
 - Bare Git repositories and Git LFS object bytes remain outside the metadata migration.
 
@@ -104,8 +112,8 @@ Safety boundary:
 
 Status: **Active / planned**.
 
-1. Complete the remaining driver-neutral metadata service and PostgreSQL write-path design under #43.
-2. Add PostgreSQL-backed integration CI before any write or cutover experiment.
+1. Restore GitHub Actions hosted-runner execution and complete exact-head CI for PR #70.
+2. Complete the remaining driver-neutral metadata service and bounded write migration under #43.
 3. Build explicit maintenance-window cutover, rollback evidence and backend-aware backup/restore.
 4. Rehearse production recovery for AuthKit, metadata, Git repositories, LFS, SMTP/provider events and WebSockets.
 5. Define distributed-job and scalable object-storage boundaries without disrupting live Git traffic.
@@ -170,4 +178,4 @@ Status: **Planned**.
 
 ## Release rule
 
-A roadmap item is marked Delivered only after its implementation, security boundary, automated tests, operational documentation and clean CI are merged to `main`.
+A roadmap item is marked Delivered only after its implementation, security boundary, automated tests, operational documentation and clean CI are merged to `main`. Mergeability alone is not evidence of safety, and a branch with zero executed CI steps must never be promoted.
