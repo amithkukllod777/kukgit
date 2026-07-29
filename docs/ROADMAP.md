@@ -1,6 +1,6 @@
 # KukGit Roadmap
 
-Updated: 2026-07-28
+Updated: 2026-07-29
 
 This document records product phases and safety boundaries. The actionable engineering queue lives in [TODO.md](TODO.md). GitHub issues remain the execution-level source of truth.
 
@@ -81,7 +81,7 @@ Status: **Delivered**.
 
 ### PostgreSQL migration program
 
-Status: **Stages 1–6 delivered; production cutover not enabled**. Parent tracking issue: [#43](https://github.com/amithkukllod777/kukgit/issues/43).
+Status: **Stages 1–6 delivered; Stage 7 active; production cutover not enabled**. Parent tracking issue: [#43](https://github.com/amithkukllod777/kukgit/issues/43). Active stage: [#68](https://github.com/amithkukllod777/kukgit/issues/68), draft PR [#70](https://github.com/amithkukllod777/kukgit/pull/70).
 
 Delivered stages:
 
@@ -92,20 +92,26 @@ Delivered stages:
 5. **Read-only shadow verification** — runtime-surface inventory, curated SELECT catalog, least-privilege PostgreSQL adapter and privacy-safe parity reports.
 6. **Driver-neutral live reads and asynchronous observation** — selected live reads behind the catalog, optional bounded PostgreSQL observer, deterministic sampling, circuit breaker and no-result-substitution guarantee.
 
+Active Stage 7 scope:
+
+7. **Driver-neutral write foundation and PostgreSQL integration CI** — privacy-safe write-surface inventory, named parameterized write catalog, explicit transaction/error/cancellation contract, checksummed migration history, production-default-off rollout flag, first append-only audit slice and disposable PostgreSQL compatibility tests.
+
 Safety boundary:
 
 - SQLite remains the authoritative runtime.
 - PostgreSQL observation is disabled by default and read-only.
-- No PostgreSQL write path, dual-write, automatic cutover or backend-aware restore is enabled.
-- A verified Stage 5 report does not authorize cutover.
+- The Stage 7 runtime write service is disabled by default in production and, when enabled, still writes only to authoritative SQLite.
+- PostgreSQL writes exist only inside isolated compatibility tests and explicit migration tooling.
+- No dual-write, result substitution, automatic cutover or backend-aware restore is enabled.
+- A verified shadow report or Stage 7 compatibility test does not authorize cutover.
 - Bare Git repositories and Git LFS object bytes remain outside the metadata migration.
 
 ### Private-alpha exit work
 
 Status: **Active / planned**.
 
-1. Complete the remaining driver-neutral metadata service and PostgreSQL write-path design under #43.
-2. Add PostgreSQL-backed integration CI before any write or cutover experiment.
+1. Complete Stage 7 validation and then migrate additional bounded low-risk metadata writes behind the reviewed catalog.
+2. Keep disposable PostgreSQL integration CI mandatory for every migrated write slice.
 3. Build explicit maintenance-window cutover, rollback evidence and backend-aware backup/restore.
 4. Rehearse production recovery for AuthKit, metadata, Git repositories, LFS, SMTP/provider events and WebSockets.
 5. Define distributed-job and scalable object-storage boundaries without disrupting live Git traffic.
