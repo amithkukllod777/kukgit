@@ -1,6 +1,6 @@
 # KukGit Roadmap
 
-Updated: 2026-07-28
+Updated: 2026-07-29
 
 This document records product phases and safety boundaries. The actionable engineering queue lives in [TODO.md](TODO.md). GitHub issues remain the execution-level source of truth.
 
@@ -81,7 +81,7 @@ Status: **Delivered**.
 
 ### PostgreSQL migration program
 
-Status: **Stages 1–6 delivered; production cutover not enabled**. Parent tracking issue: [#43](https://github.com/amithkukllod777/kukgit/issues/43).
+Status: **Stages 1–6 delivered; production cutover not enabled**. Parent tracking issue: [#43](https://github.com/amithkukllod777/kukgit/issues/43). Active Stage 7 implementation: [#68](https://github.com/amithkukllod777/kukgit/issues/68).
 
 Delivered stages:
 
@@ -104,7 +104,7 @@ Safety boundary:
 
 Status: **Active / planned**.
 
-1. Complete the remaining driver-neutral metadata service and PostgreSQL write-path design under #43.
+1. Complete Stage 7 driver-neutral metadata writes and PostgreSQL integration CI under [#68](https://github.com/amithkukllod777/kukgit/issues/68), within parent program [#43](https://github.com/amithkukllod777/kukgit/issues/43).
 2. Add PostgreSQL-backed integration CI before any write or cutover experiment.
 3. Build explicit maintenance-window cutover, rollback evidence and backend-aware backup/restore.
 4. Rehearse production recovery for AuthKit, metadata, Git repositories, LFS, SMTP/provider events and WebSockets.
