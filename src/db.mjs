@@ -10,6 +10,7 @@ import {
   createRuntimeWriteService,
   registerRuntimeWriteService,
   runRuntimeWrite,
+  runtimeWriteServiceFor,
 } from './runtime-write-service.mjs';
 
 function installTransactionHelper(db) {
@@ -51,8 +52,10 @@ export function openDatabase(config) {
   installTransactionHelper(db);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   migrate(db);
-  ensureSqliteRuntimeWriteMigrations(db);
-  registerRuntimeWriteService(db, createRuntimeWriteService({ sqlite: db }));
+  if (config.runtimeWriteServiceEnabled) {
+    ensureSqliteRuntimeWriteMigrations(db);
+    registerRuntimeWriteService(db, createRuntimeWriteService({ sqlite: db }));
+  }
   return db;
 }
 
@@ -196,15 +199,15 @@ export function seedCore(db, config) {
 
 export function audit(db, { organizationId = null, userId = null, action, targetType, targetId = null, metadata = {} }) {
   const id = uid('aud');
-  runRuntimeWrite(db, 'audit_logs.insert', [
-    id,
-    organizationId,
-    userId,
-    action,
-    targetType,
-    targetId,
-    JSON.stringify(metadata),
-  ]);
+  const parameters = [id, organizationId, userId, action, targetType, targetId, JSON.stringify(metadata)];
+  if (runtimeWriteServiceFor(db)) {
+    runRuntimeWrite(db, 'audit_logs.insert', parameters);
+  } else {
+    db.prepare(`INSERT INTO audit_logs
+      (id, organization_id, user_id, action, target_type, target_id, metadata_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(...parameters);
+  }
   return id;
 }
 
