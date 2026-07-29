@@ -5,6 +5,12 @@ import crypto from 'node:crypto';
 import { currentRepositoryAccess } from './access-context.mjs';
 import { hashPassword } from './auth.mjs';
 import { runRuntimeRead } from './runtime-read-service.mjs';
+import { ensureSqliteRuntimeWriteMigrations } from './runtime-write-migrations.mjs';
+import {
+  createRuntimeWriteService,
+  registerRuntimeWriteService,
+  runRuntimeWrite,
+} from './runtime-write-service.mjs';
 
 function installTransactionHelper(db) {
   if (typeof db.transaction === 'function') return;
@@ -45,6 +51,8 @@ export function openDatabase(config) {
   installTransactionHelper(db);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   migrate(db);
+  ensureSqliteRuntimeWriteMigrations(db);
+  registerRuntimeWriteService(db, createRuntimeWriteService({ sqlite: db }));
   return db;
 }
 
@@ -187,9 +195,17 @@ export function seedCore(db, config) {
 }
 
 export function audit(db, { organizationId = null, userId = null, action, targetType, targetId = null, metadata = {} }) {
-  db.prepare(`INSERT INTO audit_logs (id, organization_id, user_id, action, target_type, target_id, metadata_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(uid('aud'), organizationId, userId, action, targetType, targetId, JSON.stringify(metadata));
+  const id = uid('aud');
+  runRuntimeWrite(db, 'audit_logs.insert', [
+    id,
+    organizationId,
+    userId,
+    action,
+    targetType,
+    targetId,
+    JSON.stringify(metadata),
+  ]);
+  return id;
 }
 
 export function orgAccess(db, userId, orgSlug, minimumRole = 'viewer') {
