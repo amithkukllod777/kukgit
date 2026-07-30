@@ -84,7 +84,7 @@ test('verified backup archives and restores Git LFS objects with metadata', asyn
   assert.equal(verification.lfs.objectCount, 1);
   assert.equal(verification.lfs.totalBytes, content.length);
 
-  const target = path.join(path.dirname(context.config.dataDir), 'restored-lfs-data');
+  const target = path.join(context.config.dataDir, 'restored-lfs-data');
   const restored = await restoreBackupArchive(context.config, backup.path, target);
   assert.equal(restored.restored, true);
   assert.equal(restored.lfs.objectCount, 1);

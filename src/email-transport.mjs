@@ -246,6 +246,21 @@ export function smtpConfigured(config) {
   return Boolean(String(config.smtpHost || '').trim() && String(config.emailFrom || '').trim());
 }
 
+// Tags an SMTP failure with the protocol stage that produced it.
+//
+// Bounce classification depends on this: a 5xx at RCPT TO means the recipient is
+// bad, while the same code at MAIL FROM, AUTH or DATA means our sender, our
+// credentials or the message is the problem. Suppressing a recipient for a
+// sender-side fault would silently blackhole a valid address.
+async function atStage(stage, run) {
+  try {
+    return await run();
+  } catch (error) {
+    if (error && !error.smtpStage) error.smtpStage = stage;
+    throw error;
+  }
+}
+
 export async function sendSmtpMessage(config, message) {
   if (!smtpConfigured(config)) throw httpError(503, 'SMTP delivery is not configured.', 'SMTP_NOT_CONFIGURED');
   if (!Number.isInteger(config.smtpPort) || config.smtpPort < 1 || config.smtpPort > 65535) {
@@ -272,12 +287,12 @@ export async function sendSmtpMessage(config, message) {
     if (config.smtpUser || config.smtpPassword) {
       if (!config.smtpUser || !config.smtpPassword) throw httpError(500, 'SMTP username and password must both be configured.', 'SMTP_CONFIGURATION_INVALID');
       const credential = Buffer.from(`\0${config.smtpUser}\0${config.smtpPassword}`, 'utf8').toString('base64');
-      await connection.command(`AUTH PLAIN ${credential}`, 235);
+      await atStage('auth', () => connection.command(`AUTH PLAIN ${credential}`, 235));
     }
-    await connection.command(`MAIL FROM:<${built.from}>`, 250);
-    await connection.command(`RCPT TO:<${built.to}>`, [250, 251]);
-    await connection.command('DATA', 354);
-    const response = await connection.writeData(built.raw);
+    await atStage('sender', () => connection.command(`MAIL FROM:<${built.from}>`, 250));
+    await atStage('recipient', () => connection.command(`RCPT TO:<${built.to}>`, [250, 251]));
+    await atStage('data', () => connection.command('DATA', 354));
+    const response = await atStage('data', () => connection.writeData(built.raw));
     try { await connection.command('QUIT', 221); } catch {}
     return { accepted: true, responseCode: response.code, response: response.text.slice(0, 1000) };
   } finally {

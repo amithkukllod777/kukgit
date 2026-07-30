@@ -19,6 +19,7 @@ import {
 } from './git.mjs';
 import { handleGitHttp, isGitHttpPath } from './git-http.mjs';
 import { assertBranch, assertSlug, httpError, originAllowed, validateRemoteUrl } from './security.mjs';
+import { KUKGIT_VERSION } from './version.mjs';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -146,7 +147,7 @@ export function createApp({ config, db }) {
       if (!originAllowed(req, config.baseUrl)) throw httpError(403, 'Request origin is not allowed.', 'CSRF_BLOCKED');
 
       if (req.method === 'GET' && pathname === '/api/health') {
-        return sendJson(res, 200, { status: 'ok', service: 'kukgit', version: '0.1.0', uptimeSeconds: Math.floor(process.uptime()), requestId });
+        return sendJson(res, 200, { status: 'ok', service: 'kukgit', version: KUKGIT_VERSION, uptimeSeconds: Math.floor(process.uptime()), requestId });
       }
 
       if (req.method === 'POST' && pathname === '/api/auth/login') {

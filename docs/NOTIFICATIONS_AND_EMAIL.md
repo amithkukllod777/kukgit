@@ -45,6 +45,9 @@ Notification delivery is stored in SQLite:
 - `notifications`
 - `email_outbox`
 - `email_delivery_attempts`
+- `email_provider_events`
+- `email_recipient_health`
+- `email_suppressions`
 
 Notification and email deduplication keys prevent duplicate delivery when event capture or a background sweep sees the same event more than once.
 
@@ -211,18 +214,144 @@ Operational checklist:
 - Confirm application links use the public HTTPS `KUKGIT_BASE_URL`.
 - Include the SQLite database in verified KukGit backups so notification and email history can be recovered.
 
+## Real-time delivery
+
+The notification bell updates over a WebSocket at `/api/notifications/socket`
+(`src/realtime-notifications.mjs`) instead of waiting for a polling interval. The
+transport is implemented directly on Node's HTTP upgrade event; KukGit has no
+runtime npm dependencies, so no `ws` package is involved.
+
+The socket authenticates with the same `kukgit_session` cookie as the REST API and
+requires a same-origin `Origin` header — a missing `Origin` is rejected. Cookies are
+attached to upgrade requests automatically and the browser same-origin policy does
+not restrict WebSocket the way it restricts `fetch`, so this check is what prevents
+cross-site hijacking.
+
+Sessions are re-validated periodically, so a socket outlives a revoked or expired
+session by at most one revalidation interval.
+
+| Setting | Default | Bounds |
+|---|---|---|
+| `KUKGIT_REALTIME_HEARTBEAT_MS` | 25000 | 1000–120000 |
+| `KUKGIT_REALTIME_AUTH_REVALIDATE_MS` | 60000 | 1000–600000 |
+| `KUKGIT_REALTIME_MAX_CONNECTIONS_PER_USER` | 10 | 1–50 |
+| `KUKGIT_REALTIME_MAX_CONNECTIONS` | 5000 | 10–50000 |
+| `KUKGIT_REALTIME_MAX_MESSAGE_BYTES` | 4096 | 256–65535 |
+
+### Reverse proxy
+
+The upgrade fails unless `Upgrade` and `Connection` are forwarded.
+`infra/nginx.conf` derives `Connection` per request through a `map`, because
+sending `Connection: upgrade` on ordinary requests breaks keepalive. Keep
+`proxy_read_timeout` above `KUKGIT_REALTIME_HEARTBEAT_MS`.
+
+If notifications only update on page navigation, check this first.
+
+### Multi-instance caveat
+
+The connection registry is per process. A notification is pushed only to sockets
+held by the instance that created it, so behind more than one instance either pin
+sockets to an instance or rely on the browser's polling fallback.
+
+## Bounce and complaint processing
+
+A dead address is not retried indefinitely, and a recipient who reports mail as
+spam is not emailed again. Two independent signals converge on one
+`email_suppressions` table and one admin review workflow.
+
+### Signal 1 — provider feedback webhook
+
+`src/email-provider-events.mjs` ingests normalized delivery events at
+`POST /api/email-provider/events`. This covers providers that accept a message and
+report the outcome later.
+
+Authentication is an HMAC-SHA256 over `<timestamp>.<raw body>`:
+
+```text
+X-KukGit-Email-Timestamp: 1785350000
+X-KukGit-Email-Signature-256: sha256=<digest>
+```
+
+Binding the timestamp into the signature gives replay protection; requests outside
+`KUKGIT_EMAIL_PROVIDER_WEBHOOK_TOLERANCE_SECONDS` are rejected.
+
+Event types normalize to `delivered`, `deferred`, `bounce` and `complaint`. A hard
+bounce or complaint suppresses immediately. Repeated soft bounces suppress once they
+cross a threshold within a window, and that suppression expires rather than being
+permanent.
+
+| Setting | Default | Bounds |
+|---|---|---|
+| `KUKGIT_EMAIL_PROVIDER_EVENTS_ENABLED` | off | — |
+| `KUKGIT_EMAIL_PROVIDER_WEBHOOK_SECRET` | — | 32+ characters when enabled |
+| `KUKGIT_EMAIL_PROVIDER_WEBHOOK_TOLERANCE_SECONDS` | 300 | 30–3600 |
+| `KUKGIT_EMAIL_SOFT_BOUNCE_THRESHOLD` | 3 | 2–20 |
+| `KUKGIT_EMAIL_SOFT_BOUNCE_WINDOW_DAYS` | 7 | 1–90 |
+| `KUKGIT_EMAIL_SOFT_BOUNCE_SUPPRESSION_DAYS` | 30 | 1–365 |
+
+### Signal 2 — synchronous SMTP rejection
+
+Not every provider sends webhooks, and some failures are visible during the SMTP
+conversation itself. `sendSmtpMessage` tags each failure with the protocol stage
+that produced it, and `classifySmtpRejection` suppresses only on a permanent
+rejection at the **RCPT TO** stage.
+
+The stage matters: the same status code at `MAIL FROM`, `AUTH` or `DATA` describes
+our sender, our credentials or the message body. Suppressing a recipient for a
+sender-side fault would silently blackhole a valid address, so classification is
+deliberately narrow and anything ambiguous retries.
+
+| Response at RCPT TO | Action |
+|---|---|
+| `5.1.1`, `5.1.2`, `5.1.3`, `5.1.6`, `5.1.10`, `5.2.1`, `5.4.4` | Suppress — mailbox does not exist |
+| `550`, `551`, `553` with no enhanced code | Suppress — conventional "no such mailbox" |
+| `5.2.2`, `5.2.3`, `5.3.1`, `5.3.4` (quota, size) | Retry — real address, unusable mailbox |
+| `5.7.x` (policy, reputation) | Retry — ambiguous, usually sender reputation |
+| `552`, `554` | Retry — widely used for quota and policy blocks |
+| Any `4xx` | Retry — transient by definition |
+| Any stage other than RCPT TO | Retry — not about the recipient |
+
+An SMTP-observed suppression files a synthetic `email_provider_events` row with
+provider `smtp`, so both signals share one audit trail and the admin console
+presents them identically.
+
+### Effect of suppression
+
+Enforcement lives in the schema rather than the worker. Outbox triggers cancel a
+newly queued message to a suppressed address and refuse any status change back to
+`pending`, `failed` or `processing`. A message suppressed mid-flight is cancelled
+explicitly so it cannot strand in `processing`.
+
+The failing delivery attempt is recorded before suppression, so the cause stays
+visible in delivery history. Retrying a suppressed message fails until the address
+is released.
+
+Every suppression emits an `email.suppressed` audit event.
+
+### Operating the suppression list
+
+```text
+GET  /api/email-provider/admin/suppressions                      List
+GET  /api/email-provider/admin/events                            Recent events
+POST /api/email-provider/admin/suppressions/:email/unsuppress    Release
+```
+
+Release requires confirming the address. Review the list periodically: a rise in
+`hard_bounce` usually means a stale invitation list, while a rise in `complaint`
+means sending reputation needs attention before it degrades delivery for everyone.
+
 ## Current limitations
 
 The private-alpha implementation does not yet include:
 
-- provider-specific bounce and complaint webhooks
 - DKIM signing inside the KukGit process
 - email localization or per-organization templates
 - notification digests
 - mobile push notifications
-- real-time WebSocket delivery
 - per-repository watch/subscription controls
 - review-request assignment notifications
 - email analytics or billing metering
+- cross-instance WebSocket fan-out
+- automatic re-validation of suppressed addresses
 
 These can be added on top of the existing durable preference, inbox and outbox model.
