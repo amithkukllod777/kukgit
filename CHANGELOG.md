@@ -66,6 +66,16 @@
   automated evidence alone.
 ### Hosted CI
 
+- workflow runs: trigger matching with ignore-beats-include filters, run and job
+  records, dependency-aware scheduling, concurrency groups that cancel what they
+  supersede, and single-claim job dispatch. A job whose dependency did not
+  succeed is skipped rather than failed — it never ran.
+- job tokens are returned once and stored only as a hash, bound to one job,
+  expire in an hour enforced at use, and are destroyed in the same statement that
+  finishes or cancels the job. Permissions are the intersection of what the
+  workflow asked for and a ceiling set by the event; omitting `permissions:`
+  gives read, not the ceiling. A pull request from a fork receives a read-only
+  token and no secrets at all, which closes the "pwn request" class.
 - encrypted repository and organization secrets vault. AES-256-GCM with the scope
   and name authenticated alongside the value, so a ciphertext copied between rows
   or renamed fails to decrypt rather than silently becoming a different secret.

@@ -317,6 +317,8 @@ Nothing executes yet — this is the format and its validator. Runners, scheduli
 
 Secrets live in an encrypted vault scoped to an organization or a single repository. AES-256-GCM, with the scope and name authenticated alongside the value, so a ciphertext copied between rows fails to decrypt rather than quietly becoming a different secret. **There is no read path** — no route returns a stored value, not even to the person who set it, because a secret that can be read back can be exfiltrated by anyone who reaches that route. Listings show names and a truncated digest, which is enough to confirm a rotation and far too little to recover a value. Read [Secrets Vault](docs/SECRETS_VAULT.md).
 
+Between a validated file and a runner sits scheduling and authorization: trigger matching, dependency-aware job queueing, concurrency groups, and the credential a job receives. A job token is returned once, stored as a hash, bound to one job, expires in an hour and is destroyed the moment the job finishes. Its permissions are the intersection of what the workflow asked for and a ceiling set by the event — and a pull request from a fork gets a read-only token and **no secrets at all**, which is the "pwn request" class closed by construction. Read [Workflow Runs](docs/WORKFLOW_RUNS.md).
+
 ## Commands
 
 ```bash
