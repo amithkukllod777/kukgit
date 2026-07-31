@@ -64,8 +64,22 @@
   record carrying the recovery time. Live-protocol checks that need an operator
   credential are tracked as outstanding so a drill is never reported complete on
   automated evidence alone.
+
 ### Hosted CI
 
+- build logs and live status. Runner routes are all `self`, authenticated by the
+  job token, so a runner cannot name another job. Reading needs repository read
+  and cancelling needs write, and a run must belong to the repository it is
+  addressed through. Cursor-paged reads work after a run finishes and from an
+  instance other than the one that recorded it, which a socket does not.
+- secret values are masked at ingestion, before the bytes are stored — masking on
+  read would leave the raw value on disk and in every backup.
+- terminal escape sequences are stripped from build output. A viewer where a
+  build can move the cursor or rewrite earlier lines is a viewer where a failure
+  can be made to look like a pass. Colour is lost deliberately.
+- cancellation reaches a runner as the answer to a heartbeat rather than a push,
+  and a runner that stops reporting for five minutes has its job failed so the
+  run can conclude instead of holding its dependants forever.
 - workflow runs: trigger matching with ignore-beats-include filters, run and job
   records, dependency-aware scheduling, concurrency groups that cancel what they
   supersede, and single-claim job dispatch. A job whose dependency did not

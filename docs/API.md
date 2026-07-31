@@ -522,6 +522,25 @@ SQLite metadata, Git bundles and all recorded LFS objects with SHA-256 checksums
 Restore is CLI-only (`npm run backup -- restore`) and writes only to a missing or
 empty target directory.
 
+## Workflow runs and build logs
+
+`src/workflow-logs.mjs`
+
+```text
+POST /api/workflow-jobs/self/logs                          Runner appends output
+POST /api/workflow-jobs/self/heartbeat                     Runner reports in, learns about cancellation
+POST /api/workflow-jobs/self/complete                      Runner reports the outcome
+
+GET  /api/workflow-runs/:org/:repo/:runId                  Run and every job
+GET  /api/workflow-runs/:org/:repo/:runId/jobs/:jobId/logs Cursor-paged log
+POST /api/workflow-runs/:org/:repo/:runId/cancel           Stop the run
+```
+
+Runner routes are authenticated by a job token (`Authorization: Bearer`) and are
+all `self` — the token identifies exactly one job and there is no job id in the
+path to point elsewhere. Reader routes need repository read; cancelling needs
+write. Read [Build Logs](BUILD_LOGS.md).
+
 ## Secrets
 
 `src/secrets-vault.mjs`

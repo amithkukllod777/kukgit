@@ -73,6 +73,7 @@ import {
 import { createOperationsHealthApiHandler } from './src/operations-health.mjs';
 import { createRateLimitGuard } from './src/rate-limit.mjs';
 import { createSecretsApiHandler, migrateSecrets } from './src/secrets-vault.mjs';
+import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
 import { migrateWorkflowRuns } from './src/workflow-runs.mjs';
 import { createRealtimeNotificationServer } from './src/realtime-notifications.mjs';
 import { KUKGIT_VERSION } from './src/version.mjs';
@@ -136,6 +137,7 @@ migrateStatusChecks(db);
 migrateWebhooks(db);
 migrateSecrets(db);
 migrateWorkflowRuns(db);
+migrateWorkflowLogs(db);
 migrateRepositoryLifecycle(db);
 migrateSshKeys(db);
 migrateGitLfs(db);
@@ -164,6 +166,7 @@ const instanceAdminApi = createInstanceAdminApiHandlerSafe({ config, db });
 // through a getter rather than holding a null reference for the process lifetime.
 const operationsHealthApi = createOperationsHealthApiHandler({ config, db, realtime: () => realtimeNotifications });
 const secretsApi = createSecretsApiHandler({ config, db });
+const workflowLogsApi = createWorkflowLogsApiHandler({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
 const notificationsApi = createNotificationsApiHandler({ config, db });
 const externalDiscoveryApi = createExternalCollaboratorDiscoveryApiHandler({ config, db });
@@ -194,6 +197,7 @@ async function dispatch(req, res) {
   if (await emailProviderEventsApi(req, res)) return;
   if (await operationsHealthApi(req, res)) return;
   if (await secretsApi(req, res)) return;
+  if (await workflowLogsApi(req, res)) return;
   if (await instanceAdminApi(req, res)) return;
   if (await tokenApi(req, res)) return;
   if (await notificationsApi(req, res)) return;
@@ -238,6 +242,7 @@ const rateLimitDispatch = createRateLimitGuard({ config, next: centralSessionDis
 const identityDispatch = createAuthKitIdentityMiddleware({ config, db, next: rateLimitDispatch });
 const stopWebhookWorker = startWebhookWorker(db, config);
 const stopNotificationWorker = startNotificationWorker(db, config);
+const stopStalledJobWorker = startStalledJobWorker(db);
 const stopOperationalNotificationWorker = startOperationalNotificationWorker(db, config);
 const stopExternalAccessReviewWorker = startExternalAccessReviewWorker(db, config);
 const server = http.createServer(identityDispatch);
@@ -286,6 +291,7 @@ async function shutdown(signal) {
   hardStop.unref();
   stopWebhookWorker();
   stopNotificationWorker();
+  stopStalledJobWorker();
   stopOperationalNotificationWorker();
   stopExternalAccessReviewWorker();
   realtimeNotifications.stop();
