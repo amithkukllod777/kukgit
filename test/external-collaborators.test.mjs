@@ -51,7 +51,7 @@ function ed25519Key(seed = 1) {
   return `ssh-ed25519 ${blob.toString('base64')} external@example.com`;
 }
 
-function setup(t) {
+async function setup(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-external-collaborators-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
@@ -97,7 +97,7 @@ function setup(t) {
   db.prepare('INSERT INTO users (id, email, password_hash, display_name) VALUES (?, ?, ?, ?)')
     .run(wrongId, 'wrong@example.com', hashPassword('secure-wrong-password'), 'Wrong User');
 
-  const sharedRepositoryId = createRepository(db, config, {
+  const sharedRepositoryId = await createRepository(db, config, {
     organizationId: orgId,
     createdBy: ownerId,
     orgSlug: 'kuklabs',
@@ -107,7 +107,7 @@ function setup(t) {
   const otherOrgId = uid('org');
   db.prepare("INSERT INTO organizations (id, slug, name, plan) VALUES (?, 'otherco', 'Other Company', 'free')")
     .run(otherOrgId);
-  const unrelatedRepositoryId = createRepository(db, config, {
+  const unrelatedRepositoryId = await createRepository(db, config, {
     organizationId: otherOrgId,
     createdBy: ownerId,
     orgSlug: 'otherco',
@@ -126,7 +126,7 @@ function setup(t) {
   };
 }
 
-function createRepository(db, config, { organizationId, createdBy, orgSlug, slug }) {
+async function createRepository(db, config, { organizationId, createdBy, orgSlug, slug }) {
   const id = uid('repo');
   createBareRepository(config, orgSlug, slug);
   db.prepare(`
@@ -134,7 +134,7 @@ function createRepository(db, config, { organizationId, createdBy, orgSlug, slug
       (id, organization_id, slug, name, description, visibility, default_branch, created_by)
     VALUES (?, ?, ?, ?, ?, 'private', 'main', ?)
   `).run(id, organizationId, slug, slug, `${slug} test repository`, createdBy);
-  createDemoCommit(config, orgSlug, slug);
+  await createDemoCommit(config, orgSlug, slug);
   return id;
 }
 
@@ -190,7 +190,7 @@ async function patchPermission(origin, ownerCookie, userId, permission) {
 }
 
 test('external invitation grants only one repository across browser, Git, SSH and LFS transports', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   const origin = await listen(t, context);
   const ownerCookie = await login(origin, 'owner@example.com', 'secure-owner-password');
   const externalCookie = await login(origin, 'external@example.com', 'secure-external-password');
@@ -387,7 +387,7 @@ test('external invitation grants only one repository across browser, Git, SSH an
 });
 
 test('repository invitations enforce revoke, expiry, resend, permissions and CSRF', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   const origin = await listen(t, context);
   const ownerCookie = await login(origin, 'owner@example.com', 'secure-owner-password');
   const externalCookie = await login(origin, 'external@example.com', 'secure-external-password');

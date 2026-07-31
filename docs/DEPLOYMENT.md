@@ -236,8 +236,12 @@ Plan capacity with these in mind:
 - **Per-process WebSockets.** The real-time registry is not shared between
   instances, so a notification reaches only sockets held by the instance that
   created it.
-- **Synchronous Git.** Browser commits and merges run a full working clone inline. A
-  large repository merge blocks the event loop for its duration.
+- **Partially synchronous Git.** The expensive operations — mirror import, browser
+  commits and merges, all of which clone a whole repository — run off the event
+  loop. The read-only plumbing (branch, commit, tree and blob listing) is still
+  synchronous; each is a single fast command, but a very large repository can
+  still stall a request briefly. There is no job queue yet, so a long import still
+  occupies its request for the full duration.
 - **Local storage.** Repositories and LFS objects live on the instance volume.
 - **No rate limiting.** No per-user, per-token or per-IP limits exist on any surface.
 

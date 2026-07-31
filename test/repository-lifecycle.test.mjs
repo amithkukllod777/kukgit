@@ -24,7 +24,7 @@ import {
 } from '../src/repository-lifecycle.mjs';
 import { migrateWebhooks } from '../src/webhooks.mjs';
 
-function setup(t) {
+async function setup(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-lifecycle-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
@@ -60,7 +60,7 @@ function setup(t) {
       (id, organization_id, slug, name, description, visibility, default_branch, created_by)
     VALUES (?, ?, 'lifecycle-demo', 'Lifecycle Demo', '', 'private', 'main', ?)
   `).run(repositoryId, orgId, ownerId);
-  createDemoCommit(config, 'kuklabs', 'lifecycle-demo');
+  await createDemoCommit(config, 'kuklabs', 'lifecycle-demo');
 
   const repository = () => db.prepare(`
     SELECT r.id, r.slug, r.name, r.description, r.visibility,
@@ -90,7 +90,7 @@ async function login(origin, email, password) {
 }
 
 test('archived repositories remain readable and block browser and Git writes', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   archiveRepository(context.db, context.repository(), context.owner);
   assert.ok(context.repository().archivedAt);
 
@@ -118,8 +118,8 @@ test('archived repositories remain readable and block browser and Git writes', a
   assert.equal(writeAfter.status, 204);
 });
 
-test('transfer moves Git storage and cleans organization-scoped grants', (t) => {
-  const context = setup(t);
+test('transfer moves Git storage and cleans organization-scoped grants', async (t) => {
+  const context = await setup(t);
   const oldOnlyUserId = uid('usr');
   context.db.prepare('INSERT INTO users (id, email, password_hash, display_name) VALUES (?, ?, ?, ?)')
     .run(oldOnlyUserId, 'old-only@example.com', hashPassword('secure-old-password'), 'Old Only User');
@@ -151,8 +151,8 @@ test('transfer moves Git storage and cleans organization-scoped grants', (t) => 
   assert.ok(findRepo(context.db, 'target-org', 'lifecycle-demo'));
 });
 
-test('trash hides a repository, restore recovers it, and purge destroys storage', (t) => {
-  const context = setup(t);
+test('trash hides a repository, restore recovers it, and purge destroys storage', async (t) => {
+  const context = await setup(t);
   archiveRepository(context.db, context.repository(), context.owner);
   assert.throws(
     () => trashRepository(context.db, context.repository(), context.owner, 'wrong-confirmation'),
@@ -175,8 +175,8 @@ test('trash hides a repository, restore recovers it, and purge destroys storage'
   assert.equal(fs.existsSync(repoDiskPath(context.config, 'kuklabs', 'lifecycle-demo')), false);
 });
 
-test('restore detects slug collisions created during trash retention', (t) => {
-  const context = setup(t);
+test('restore detects slug collisions created during trash retention', async (t) => {
+  const context = await setup(t);
   archiveRepository(context.db, context.repository(), context.owner);
   const deleted = trashRepository(context.db, context.repository(), context.owner, 'kuklabs/lifecycle-demo');
   context.db.prepare(`
@@ -191,7 +191,7 @@ test('restore detects slug collisions created during trash retention', (t) => {
 });
 
 test('lifecycle API requires Admin access and same-origin writes', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   const viewerId = uid('usr');
   context.db.prepare('INSERT INTO users (id, email, password_hash, display_name) VALUES (?, ?, ?, ?)')
     .run(viewerId, 'viewer@example.com', hashPassword('secure-viewer-password'), 'Viewer');

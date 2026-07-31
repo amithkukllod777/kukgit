@@ -64,9 +64,14 @@ change — it appears in `README.md`, `docs/ARCHITECTURE.md`, `BUILD_REPORT.md` 
 
 Not roadmap features, but they compound if deferred:
 
-- **Async Git execution.** `src/git.mjs` uses `spawnSync` throughout, and
-  `withWorkingClone` clones synchronously. A large browser merge blocks the whole
-  event loop. This gates any meaningful concurrency.
+- **Async Git execution — partly done.** `withWorkingClone`, `commitFile`,
+  `mergeBranches`, `createDemoCommit` and `importMirror` now run through
+  `execGitAsync` and no longer block the event loop. The read-only plumbing in
+  `src/git.mjs` is still `spawnSync`; converting it would cascade `await` through
+  twelve modules and seventeen test files for little gain, so it was left alone
+  deliberately. What remains is a durable job queue so a long mirror import does
+  not occupy its request for minutes.
+
 - **Single-node workers.** Email, webhook, notification and access-review workers run
   on in-process timers, and the WebSocket registry is per process. Two instances
   against one database double-fire the workers and split real-time delivery.

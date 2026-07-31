@@ -27,15 +27,17 @@ Kuklabs security owner and include:
   double-deliver email and webhooks.
 - The real-time notification registry is per process, so WebSocket delivery does not
   fan out across instances.
-- Git execution is synchronous; a large browser merge blocks request processing and
-  is a denial-of-service risk under concurrency.
+- Long Git operations have no job queue. Clone-based paths (import, browser commit,
+  merge) run off the event loop, so they no longer stall unrelated requests, but a
+  large mirror import still occupies its own request for its full duration.
 
 ## Required controls before public beta
 
 1. PostgreSQL write path, verified cutover, encrypted object storage and encrypted backups.
 2. Rate limiting, WAF, bot mitigation and abuse controls.
 3. External worker scheduling with leases, and cross-instance WebSocket fan-out.
-4. Async Git execution behind a durable job queue.
+4. A durable job queue for long Git operations. The clone-based paths no longer
+   block the event loop, but a long mirror import still holds its request open.
 5. Secret scanning with verified patterns and push protection.
 6. Dependency, container, IaC and license scanning.
 7. Malware scanning and upload quarantine.

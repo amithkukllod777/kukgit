@@ -25,7 +25,7 @@ function git(args, cwd, input) {
   return result.stdout.trim();
 }
 
-function setup(t) {
+async function setup(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-pr-diff-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
@@ -52,7 +52,7 @@ function setup(t) {
       (id, organization_id, slug, name, description, visibility, default_branch, created_by)
     VALUES (?, ?, 'diff-demo', 'Diff Demo', '', 'private', 'main', ?)
   `).run(repositoryId, orgId, ownerId);
-  createDemoCommit(config, 'kuklabs', 'diff-demo');
+  await createDemoCommit(config, 'kuklabs', 'diff-demo');
 
   const work = path.join(dataDir, 'work');
   git(['clone', repoDiskPath(config, 'kuklabs', 'diff-demo'), work]);
@@ -104,8 +104,8 @@ function setup(t) {
   return { config, db, repository, pull, user, work };
 }
 
-test('lists merge-base PR changes with rename, delete, binary and line statistics', (t) => {
-  const context = setup(t);
+test('lists merge-base PR changes with rename, delete, binary and line statistics', async (t) => {
+  const context = await setup(t);
   const summary = listPullRequestDiffFiles(context.config, context.repository, context.pull);
   assert.notEqual(summary.refs.mergeBase, summary.refs.baseTipSha);
   assert.ok(summary.files.some((file) => file.path === 'README.md' && file.status === 'modified'));
@@ -118,8 +118,8 @@ test('lists merge-base PR changes with rename, delete, binary and line statistic
   assert.ok(summary.deletions > 0);
 });
 
-test('parses hunk line numbers without inventing phantom trailing lines', (t) => {
-  const context = setup(t);
+test('parses hunk line numbers without inventing phantom trailing lines', async (t) => {
+  const context = await setup(t);
   const patch = getPullRequestFilePatch(context.config, context.repository, context.pull, 'src/new.js');
   assert.equal(patch.binary, false);
   assert.equal(patch.tooLarge, false);
@@ -135,8 +135,8 @@ test('parses hunk line numbers without inventing phantom trailing lines', (t) =>
   assert.equal(parsed[0].lines.length, 2);
 });
 
-test('validates only actual patch lines and same-hunk ranges', (t) => {
-  const context = setup(t);
+test('validates only actual patch lines and same-hunk ranges', async (t) => {
+  const context = await setup(t);
   const patch = getPullRequestFilePatch(context.config, context.repository, context.pull, 'src/new.js');
   const rightLines = patch.hunks[0].lines.filter((line) => line.newLine !== null).map((line) => line.newLine);
   const start = Math.min(...rightLines);
@@ -161,8 +161,8 @@ test('validates only actual patch lines and same-hunk ranges', (t) => {
   );
 });
 
-test('binary diffs support file-level threads only', (t) => {
-  const context = setup(t);
+test('binary diffs support file-level threads only', async (t) => {
+  const context = await setup(t);
   const patch = getPullRequestFilePatch(context.config, context.repository, context.pull, 'binary.bin');
   assert.equal(patch.binary, true);
   const fileAnchor = validateDiffAnchor(context.config, context.repository, context.pull, { path: 'binary.bin', side: 'file' });
@@ -173,8 +173,8 @@ test('binary diffs support file-level threads only', (t) => {
   );
 });
 
-test('creates range metadata and marks threads outdated after a new head commit', (t) => {
-  const context = setup(t);
+test('creates range metadata and marks threads outdated after a new head commit', async (t) => {
+  const context = await setup(t);
   const patch = getPullRequestFilePatch(context.config, context.repository, context.pull, 'src/new.js');
   const rightLines = patch.hunks[0].lines.filter((line) => line.newLine !== null).map((line) => line.newLine);
   const start = Math.min(...rightLines);
@@ -204,8 +204,8 @@ test('creates range metadata and marks threads outdated after a new head commit'
   assert.equal(listed.find((item) => item.id === thread.id).outdated, true);
 });
 
-test('ignore-whitespace mode suppresses whitespace-only patch hunks', (t) => {
-  const context = setup(t);
+test('ignore-whitespace mode suppresses whitespace-only patch hunks', async (t) => {
+  const context = await setup(t);
   const normal = getPullRequestFilePatch(context.config, context.repository, context.pull, 'space.txt');
   const ignored = getPullRequestFilePatch(context.config, context.repository, context.pull, 'space.txt', { ignoreWhitespace: true });
   assert.ok(normal.hunks.length > 0);

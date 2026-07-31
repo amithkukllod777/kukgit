@@ -139,6 +139,17 @@ disabled by default; no write path, dual-write or cutover is enabled.
 
 ### Changed in this release
 
+- Git operations that clone an entire repository — `importMirror`, and
+  `withWorkingClone` behind `commitFile`, `mergeBranches` and `createDemoCommit` —
+  now run through a non-blocking `execGitAsync` instead of `spawnSync`. Previously a
+  browser commit or merge froze the event loop for its whole duration, stalling every
+  other request on the instance. Measured on a small repository: a commit takes the
+  same wall-clock time either way, but the event loop went from zero ticks during the
+  operation to staying responsive throughout, with a worst-case stall of 6 ms. The
+  read-only plumbing (branch, commit, tree and blob listing) is deliberately still
+  synchronous — each is a single fast command, and converting it would cascade
+  `await` through twelve modules and seventeen test files for no measurable gain.
+
 - the release version is defined once in `src/version.mjs` and consumed by the
   server banner, `GET /api/health` and backup manifests, replacing three
   independently hardcoded copies

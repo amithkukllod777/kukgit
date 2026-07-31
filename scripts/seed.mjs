@@ -16,7 +16,7 @@ if (!repo) {
   db.prepare(`INSERT INTO repositories (id, organization_id, slug, name, description, visibility, default_branch, created_by)
     VALUES (?, ?, 'kukgit-demo', 'KukGit Demo', 'A real Git repository created by the KukGit seed script.', 'public', 'main', ?)`)
     .run(id, org.id, user.id);
-  createDemoCommit(config, 'kuklabs', 'kukgit-demo');
+  await createDemoCommit(config, 'kuklabs', 'kukgit-demo');
   db.prepare(`INSERT INTO issues (id, repository_id, number, title, body, priority, author_id) VALUES (?, ?, 1, ?, ?, 'high', ?)`)
     .run(uid('iss'), id, 'Add organization invitation flow', 'Invite developers by email and assign organization roles.', user.id);
   db.prepare(`INSERT INTO issues (id, repository_id, number, title, body, priority, author_id) VALUES (?, ?, 2, ?, ?, 'medium', ?)`)

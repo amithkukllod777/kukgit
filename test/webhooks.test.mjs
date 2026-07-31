@@ -23,7 +23,7 @@ import {
   resolveWebhookTarget,
 } from '../src/webhooks.mjs';
 
-function setup(t) {
+async function setup(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-webhooks-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
@@ -51,7 +51,7 @@ function setup(t) {
       (id, organization_id, slug, name, description, visibility, default_branch, created_by)
     VALUES (?, ?, 'webhook-demo', 'Webhook Demo', '', 'private', 'main', ?)
   `).run(repositoryId, orgId, ownerId);
-  createDemoCommit(config, 'kuklabs', 'webhook-demo');
+  await createDemoCommit(config, 'kuklabs', 'webhook-demo');
   const repository = {
     id: repositoryId,
     slug: 'webhook-demo',
@@ -87,7 +87,7 @@ async function login(origin, email, password) {
 }
 
 test('delivers signed payloads and keeps webhook secrets encrypted at rest', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   const received = [];
   const receiver = http.createServer((req, res) => {
     const chunks = [];
@@ -133,7 +133,7 @@ test('delivers signed payloads and keeps webhook secrets encrypted at rest', asy
 });
 
 test('retries failed deliveries, stops after five attempts and supports redelivery', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   let healthy = false;
   const receiver = http.createServer((_req, res) => {
     res.writeHead(healthy ? 204 : 500, { 'Content-Type': 'text/plain' });
@@ -192,7 +192,7 @@ test('production webhook targets require HTTPS and reject private networks', asy
 });
 
 test('webhook API requires repository Admin permission and blocks cross-origin writes', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   const app = createApp({ config: context.config, db: context.db });
   const webhooksApi = createWebhooksApiHandler({ config: context.config, db: context.db });
   const server = http.createServer(async (req, res) => {
@@ -224,7 +224,7 @@ test('webhook API requires repository Admin permission and blocks cross-origin w
 });
 
 test('automatic event capture queues successful repository activity only', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   await createRepositoryWebhook(context.db, context.config, {
     repositoryId: context.repository.id,
     userId: context.owner.id,

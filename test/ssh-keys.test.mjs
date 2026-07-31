@@ -50,7 +50,7 @@ function rsaKey(bytes = 256) {
   return `ssh-rsa ${blob.toString('base64')} generated`;
 }
 
-function setup(t) {
+async function setup(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-ssh-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
@@ -88,7 +88,7 @@ function setup(t) {
         (id, organization_id, slug, name, description, visibility, default_branch, created_by)
       VALUES (?, ?, ?, ?, '', 'private', 'main', ?)
     `).run(id, orgId, slug, slug === 'ssh-demo' ? 'SSH Demo' : 'Other Demo', ownerId);
-    createDemoCommit(config, 'kuklabs', slug);
+    await createDemoCommit(config, 'kuklabs', slug);
     repositories.push({ id, slug, orgSlug: 'kuklabs', organizationId: orgId });
   }
 
@@ -128,8 +128,8 @@ test('validates Ed25519 and RSA public-key blobs and computes stable fingerprint
   assert.throws(() => parseSshPublicKey(`${ed.publicKey}\nmalicious`), (error) => error.code === 'SSH_KEY_INVALID');
 });
 
-test('prevents active key reuse across user and deploy-key scopes', (t) => {
-  const context = setup(t);
+test('prevents active key reuse across user and deploy-key scopes', async (t) => {
+  const context = await setup(t);
   const key = ed25519Key(11);
   const userKey = createUserSshKey(context.db, context.ownerId, { title: 'Owner laptop', publicKey: key });
   assert.throws(
@@ -145,8 +145,8 @@ test('prevents active key reuse across user and deploy-key scopes', (t) => {
   );
 });
 
-test('authorizes user keys by effective permission and deploy keys by repository scope', (t) => {
-  const context = setup(t);
+test('authorizes user keys by effective permission and deploy keys by repository scope', async (t) => {
+  const context = await setup(t);
   const ownerKey = createUserSshKey(context.db, context.ownerId, { title: 'Owner', publicKey: ed25519Key(21) });
   const viewerKey = createUserSshKey(context.db, context.viewerId, { title: 'Viewer', publicKey: ed25519Key(22) });
   const readOnlyDeploy = createDeployKey(context.db, context.repositories[0].id, context.ownerId, {
@@ -204,8 +204,8 @@ test('authorizes user keys by effective permission and deploy keys by repository
   );
 });
 
-test('archived repositories allow SSH fetch but reject SSH push', (t) => {
-  const context = setup(t);
+test('archived repositories allow SSH fetch but reject SSH push', async (t) => {
+  const context = await setup(t);
   const key = createUserSshKey(context.db, context.ownerId, { title: 'Owner', publicKey: ed25519Key(31) });
   archiveRepository(context.db, context.repository(), context.owner);
   const fetch = authorizeSshCommand(context.db, context.config, {
@@ -234,8 +234,8 @@ test('forced SSH command parser rejects shell injection and unsupported commands
   }
 });
 
-test('generates restricted authorized_keys entries and SSH clone URLs', (t) => {
-  const context = setup(t);
+test('generates restricted authorized_keys entries and SSH clone URLs', async (t) => {
+  const context = await setup(t);
   const userKey = createUserSshKey(context.db, context.ownerId, { title: 'Owner', publicKey: ed25519Key(41) });
   const deployKey = createDeployKey(context.db, context.repositories[0].id, context.ownerId, {
     title: 'Deploy', publicKey: ed25519Key(42), canWrite: true,
@@ -249,7 +249,7 @@ test('generates restricted authorized_keys entries and SSH clone URLs', (t) => {
 });
 
 test('archive guard blocks deploy-key writes but permits reads', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   archiveRepository(context.db, context.repository(), context.owner);
   const next = (_req, res) => { res.writeHead(204); res.end(); };
   const guard = createSshKeysArchiveGuard({ config: context.config, db: context.db, next });

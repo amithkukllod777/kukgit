@@ -27,7 +27,7 @@ function ed25519Key(seed) {
   return `ssh-ed25519 ${blob.toString('base64')} api-test`;
 }
 
-function setup(t) {
+async function setup(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-ssh-api-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
@@ -56,7 +56,7 @@ function setup(t) {
       (id, organization_id, slug, name, description, visibility, default_branch, created_by)
     VALUES (?, ?, 'ssh-api-demo', 'SSH API Demo', '', 'private', 'main', ?)
   `).run(repositoryId, orgId, ownerId);
-  createDemoCommit(config, 'kuklabs', 'ssh-api-demo');
+  await createDemoCommit(config, 'kuklabs', 'ssh-api-demo');
 
   const viewerId = uid('usr');
   db.prepare('INSERT INTO users (id, email, password_hash, display_name) VALUES (?, ?, ?, ?)')
@@ -82,7 +82,7 @@ async function login(origin, email, password) {
 }
 
 test('SSH key API enforces ownership, repository Admin and same-origin writes', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   const app = createApp({ config: context.config, db: context.db });
   const sshApi = createSshKeysApiHandler({ config: context.config, db: context.db });
   const server = http.createServer(async (req, res) => {
