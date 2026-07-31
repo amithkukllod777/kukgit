@@ -222,6 +222,38 @@ export function linkAuthKitUser(db, payload) {
   `).get(id);
 }
 
+// Reads a claim out of an AuthKit access token.
+//
+// The signature is deliberately not verified here, and that is safe for this one
+// use: the token was just handed to us by AuthKit over TLS in the response we are
+// processing, and the value is only used to pick a session identifier that is
+// afterwards compared against AuthKit's own `/v1/auth/sessions` listing. A forged
+// or wrong value therefore cannot grant access — the comparison fails and the
+// bridge session is revoked. It must never be used to make a trust decision on
+// its own.
+export function authKitTokenClaims(token) {
+  const segments = String(token || '').split('.');
+  if (segments.length < 2) return null;
+  try {
+    const json = Buffer.from(segments[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    const claims = JSON.parse(json);
+    return claims && typeof claims === 'object' ? claims : null;
+  } catch {
+    return null;
+  }
+}
+
+// Resolves the AuthKit device-session id to bind this bridge session to.
+// Top-level response field first, then the access-token claim, which is where
+// AuthKit carries it when the response envelope omits it.
+export function resolveAuthKitSid(authkitPayload, accessToken) {
+  const direct = authkitPayload?.sid ?? authkitPayload?.session_id ?? null;
+  if (direct) return String(direct);
+  const claims = authKitTokenClaims(accessToken);
+  const claimed = claims?.sid ?? claims?.sess_id ?? claims?.session_id ?? null;
+  return claimed ? String(claimed) : null;
+}
+
 function tokenBundle(payload) {
   const accessToken = String(payload?.access_token || '');
   const refreshToken = String(payload?.refresh_token || '');
@@ -271,7 +303,7 @@ export async function createAuthKitBridgeSession(db, config, authkitPayload) {
     encryptAuthKitSecret(config, tokens.refreshToken, sessionHash),
     tokens.accessExpiresAt,
     refreshExpiresAt,
-    authkitPayload?.sid ? String(authkitPayload.sid) : null,
+    resolveAuthKitSid(authkitPayload, tokens.accessToken),
   );
   return { browserToken, user, expiresAt: refreshExpiresAt };
 }
@@ -421,30 +453,6 @@ async function proxyPublicAuth(config, route, body) {
   return requestAuthKit(config, route, { method: 'POST', body });
 }
 
-async function completeLogin(db, config, response, payload, res) {
-  if (!response.ok) {
-    return sendJson(res, response.status, {
-      error: {
-        code: payload?.status === 'otp_required' ? 'OTP_REQUIRED' : 'AUTHKIT_REQUEST_FAILED',
-        message: payload?.message || 'Kuklabs Account request failed.',
-      },
-      status: payload?.status,
-      identifier: payload?.identifier,
-    });
-  }
-  const session = await createAuthKitBridgeSession(db, config, payload);
-  audit(db, {
-    userId: session.user.id,
-    action: 'auth.authkit_login',
-    targetType: 'user',
-    targetId: session.user.id,
-    metadata: { product: config.authkitProductId, kuklabsUserId: session.user.kuklabsUserId },
-  });
-  return sendJson(res, 200, { user: session.user, authMode: 'authkit' }, {
-    'Set-Cookie': authKitSessionCookie(session.browserToken, config),
-  });
-}
-
 async function logoutAuthKitSession(db, config, req) {
   const session = sessionFromRequest(db, req);
   if (!session) return null;
@@ -488,25 +496,12 @@ export function createAuthKitApiHandler({ config, db }) {
 
       if (config.authMode !== 'authkit') return false;
 
-      if (req.method === 'POST' && pathname === '/api/auth/login') {
-        const body = await readJson(req);
-        const result = await proxyPublicAuth(config, '/v1/auth/login', {
-          identifier: body.identifier ?? body.email,
-          password: body.password,
-        });
-        return completeLogin(db, config, result.response, result.payload, res);
-      }
-
-      if (req.method === 'POST' && pathname === '/api/auth/signup') {
-        const body = await readJson(req);
-        const result = await proxyPublicAuth(config, '/v1/auth/signup', {
-          full_name: body.full_name ?? body.fullName,
-          identifier: body.identifier ?? body.email,
-          phone: body.phone,
-          password: body.password,
-        });
-        return completeLogin(db, config, result.response, result.payload, res);
-      }
+      // login, signup, otp/verify and google are owned by
+      // createSecureAuthKitLoginApiHandler, which runs earlier in the dispatch
+      // chain. Duplicates lived here and were unreachable, but they lacked the
+      // verified-email requirement, the product-access preflight and the legacy
+      // password scrub — so a change in dispatch order would have silently
+      // dropped three protections. One owner per route instead.
 
       if (req.method === 'POST' && pathname === '/api/auth/otp/request') {
         const body = await readJson(req);
@@ -516,23 +511,6 @@ export function createAuthKitApiHandler({ config, db }) {
         return sendJson(res, response.status, response.ok ? payload : {
           error: { code: 'AUTHKIT_OTP_REQUEST_FAILED', message: payload?.message || 'Could not send the code.' },
         });
-      }
-
-      if (req.method === 'POST' && pathname === '/api/auth/otp/verify') {
-        const body = await readJson(req);
-        const result = await proxyPublicAuth(config, '/v1/auth/otp/verify', {
-          identifier: body.identifier ?? body.email,
-          code: body.code ?? body.otp,
-        });
-        return completeLogin(db, config, result.response, result.payload, res);
-      }
-
-      if (req.method === 'POST' && pathname === '/api/auth/google') {
-        const body = await readJson(req);
-        const result = await proxyPublicAuth(config, '/v1/auth/google', {
-          id_token: body.id_token ?? body.idToken,
-        });
-        return completeLogin(db, config, result.response, result.payload, res);
       }
 
       if (req.method === 'POST' && pathname === '/api/auth/logout') {

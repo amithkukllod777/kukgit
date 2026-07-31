@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- AuthKit bridge sessions now bind to a specific central device session in every
+  case. The device-session id is derived from the access-token claim when the
+  login response omits it, and a bridge that still has no id adopts the one
+  AuthKit reports on its first validation instead of skipping the comparison.
+  Previously a null id downgraded "this device session is still live" to "the
+  account has some live session", so revoking the device that created a bridge
+  did not end it while the user stayed signed in elsewhere.
+- The credential routes (`/api/auth/login`, `/signup`, `/otp/verify`, `/google`)
+  have a single owner again. Unreachable duplicates in the identity module
+  lacked the verified-email requirement, the product-access preflight and the
+  legacy-password scrub, so a change in dispatch order would have silently
+  dropped three protections.
+
 ## 0.2.0 — 2026-07-29
 
 Private Alpha. Everything below shipped after v0.1.0 and had not previously been

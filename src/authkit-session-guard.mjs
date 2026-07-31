@@ -69,6 +69,22 @@ export function createAuthKitCentralSessionGuard({ config, db, next }) {
       }
       const sessions = Array.isArray(payload?.sessions) ? payload.sessions : [];
       const current = sessions.find((item) => item?.current === true);
+
+      // Bind the bridge to a specific AuthKit device session.
+      //
+      // Previously a null `authkit_sid` skipped this comparison outright, which
+      // silently downgraded "this exact device session is still live" to "the
+      // account has some live session" — so revoking the device that created this
+      // bridge did not end it as long as the user was signed in anywhere. Rather
+      // than skip, adopt the id AuthKit reports on the first validation and
+      // enforce it exactly from then on. That closes the hole for sessions
+      // created before the id could be derived, without forcing everyone to sign
+      // in again.
+      if (current?.id && !session.authkitSid) {
+        db.prepare('UPDATE sessions SET authkit_sid = ? WHERE token_hash = ? AND authkit_sid IS NULL')
+          .run(String(current.id), session.tokenHash);
+        session.authkitSid = String(current.id);
+      }
       const matchesStoredSid = !session.authkitSid || current?.id === session.authkitSid;
       if (!current || !matchesStoredSid) {
         revokeBridge(db, session);
