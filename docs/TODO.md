@@ -112,7 +112,7 @@ Implementation of the designed model:
 - [x] cancellable build logs and live status — [BUILD_LOGS.md](BUILD_LOGS.md)
 - [ ] cache and artifact storage with quotas and retention
 - [ ] required-check integration without bypassing branch governance
-- [ ] self-hosted runner agent and registration
+- [x] self-hosted runner agent and registration — [SELF_HOSTED_RUNNERS.md](SELF_HOSTED_RUNNERS.md)
 
 **Hosted** runners are Phase 2 work, not private-alpha exit — [ROADMAP.md](ROADMAP.md)
 places them in public beta and this list previously contradicted it. Running

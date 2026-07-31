@@ -15,6 +15,7 @@
     "token": "node scripts/token.mjs",
     "backup": "node scripts/backup.mjs",
     "rehearse": "node scripts/recovery-rehearsal.mjs",
+    "runner": "node scripts/runner.mjs",
     "database": "node scripts/database.mjs",
     "database:postgresql-import": "node scripts/postgresql-import.mjs",
     "database:postgresql-shadow": "node scripts/postgresql-shadow.mjs",

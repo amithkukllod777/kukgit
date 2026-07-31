@@ -325,6 +325,8 @@ Between a validated file and a runner sits scheduling and authorization: trigger
 
 A runner reports through `self` routes authenticated by its job token — it cannot name another job, because there is no job id in the path. Secret values are masked **before the bytes are stored**, so the raw value is never on disk or in a backup. Terminal escape sequences are stripped from output: a viewer where a build can move the cursor or rewrite earlier lines is a viewer where a failure can be made to look like a pass. Read [Build Logs](docs/BUILD_LOGS.md).
 
+Jobs execute on **self-hosted runners** — a machine you own, running your own code, so instance isolation is not the boundary being trusted. `npm run runner -- --url … --token kgr_…`. Each `run:` script is written to a file and executed as `bash <file>`, so nothing in a job definition escapes into the agent's command line, and only the secrets a step names reach that step's environment. There is no sandbox, which is exactly why a fork job is not offered unless the runner opted in. Read [Self-Hosted Runners](docs/SELF_HOSTED_RUNNERS.md).
+
 ## Commands
 
 ```bash
@@ -335,6 +337,7 @@ npm run doctor    # Check runtime requirements and configuration
 npm run token --  # Create, list or revoke personal access tokens
 npm run backup -- # Create, verify, restore and prune verified snapshots
 npm run rehearse  # Restore a snapshot into a throwaway copy and prove it is serviceable
+npm run runner -- # Run a self-hosted CI runner against an instance
 npm run database -- # Inventory, export, verify and audit metadata migration readiness
 npm run ssh:authorized-keys # Generate restricted static authorized_keys fallback
 npm run check     # Validate JavaScript source syntax

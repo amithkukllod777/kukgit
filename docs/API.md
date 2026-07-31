@@ -522,6 +522,24 @@ SQLite metadata, Git bundles and all recorded LFS objects with SHA-256 checksums
 Restore is CLI-only (`npm run backup -- restore`) and writes only to a missing or
 empty target directory.
 
+## Runners
+
+`src/runners.mjs`
+
+```text
+GET    /api/runners/orgs/:org              List runners (never their tokens)
+POST   /api/runners/orgs/:org              Register a runner, token returned once
+DELETE /api/runners/orgs/:org/:runnerId    Remove a runner
+
+POST   /api/runners/claim                  Agent claims the next job
+```
+
+Registration requires organization **Admin**. The runner token is stored only as
+a SHA-256 hash and carries its organization, so a runner cannot claim work for a
+tenancy it was not registered for. An idle claim answers `204`, not an error — an
+idle runner polls constantly and a `4xx` would make every quiet minute look like
+a fault. Read [Self-Hosted Runners](SELF_HOSTED_RUNNERS.md).
+
 ## Workflow runs and build logs
 
 `src/workflow-logs.mjs`

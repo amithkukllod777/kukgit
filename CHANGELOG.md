@@ -67,6 +67,20 @@
 
 ### Hosted CI
 
+- self-hosted runners: organization-scoped registration with a token shown once
+  and stored as a hash, an agent that claims work, prepares a workspace, executes
+  steps and reports back, and a `npm run runner` command. Each `run:` script is
+  written to a file and executed as `bash <file>`, so nothing in a job definition
+  can escape into the agent's own command line. Only the secrets a step names
+  reach that step's environment. A fork job is not offered unless the runner
+  opted in, and opting in to running the code never means opting in to the
+  credentials.
+- a job claim now requires the organization it is for. Previously any runner with
+  a matching label could have claimed any organization's queued job; tenancy is a
+  required argument rather than an option, because a claim that can be made
+  without naming a tenancy is a claim that can cross one.
+- job definitions are persisted with the run, so a runner receives the steps and
+  a single merged environment rather than having to know the precedence rule.
 - build logs and live status. Runner routes are all `self`, authenticated by the
   job token, so a runner cannot name another job. Reading needs repository read
   and cancelling needs write, and a run must belong to the repository it is
