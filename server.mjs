@@ -74,6 +74,7 @@ import { createOperationsHealthApiHandler } from './src/operations-health.mjs';
 import { createRateLimitGuard } from './src/rate-limit.mjs';
 import { createSecretsApiHandler, migrateSecrets } from './src/secrets-vault.mjs';
 import { createRunnersApiHandler, migrateRunners } from './src/runners.mjs';
+import { createWorkflowDispatchCapture } from './src/workflow-dispatch.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
 import { migrateWorkflowRuns } from './src/workflow-runs.mjs';
 import { createRealtimeNotificationServer } from './src/realtime-notifications.mjs';
@@ -235,7 +236,8 @@ const maintenanceDispatch = createMaintenanceGuard({ config, next: lifecycleDisp
 const collaborationNotificationDispatch = createCollaborationNotificationCapture({ config, db, next: maintenanceDispatch });
 const notificationEventDispatch = createNotificationEventCapture({ config, db, next: collaborationNotificationDispatch });
 const operationsNotificationDispatch = createOperationsNotificationCapture({ config, db, next: notificationEventDispatch });
-const capturedDispatch = createWebhookEventCapture({ config, db, next: operationsNotificationDispatch });
+const workflowDispatch = createWorkflowDispatchCapture({ config, db, next: operationsNotificationDispatch });
+const capturedDispatch = createWebhookEventCapture({ config, db, next: workflowDispatch });
 const externalAccessExpiryDispatch = createExternalAccessExpiryGuard({ config, db, next: capturedDispatch });
 const authKitBootstrapDispatch = createAuthKitBootstrapGuard({ config, db, next: externalAccessExpiryDispatch });
 const centralSessionDispatch = createAuthKitCentralSessionGuard({ config, db, next: authKitBootstrapDispatch });

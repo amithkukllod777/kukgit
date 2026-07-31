@@ -67,6 +67,20 @@
 
 ### Hosted CI
 
+- workflow dispatch: a push or tag now starts runs. Workflow files are read at the
+  commit being built rather than from a branch tip, so a change to a workflow
+  cannot silently rewrite how already-pushed commits are built. Runs are created
+  from a ref snapshot taken before and after the request, which is exact for
+  every path that can move a ref without any of them agreeing on a format.
+- a workflow file that fails validation becomes a failed run carrying the error
+  and its line number, not a skipped one — an author who sees no run at all
+  cannot tell a typo from a filter that legitimately did not match. One broken
+  file never stops the others.
+- a deleted ref produces no event and cancels its queued runs.
+- the runner substitutes the repository-controlled fields the validator allows
+  inside a `run:` script. Found by running the chain end to end: `${{ github.sha }}`
+  reached bash untouched and produced `bad substitution`, while unit tests on
+  either side of the seam were green.
 - self-hosted runners: organization-scoped registration with a token shown once
   and stored as a hash, an agent that claims work, prepares a workspace, executes
   steps and reports back, and a `npm run runner` command. Each `run:` script is

@@ -327,6 +327,8 @@ A runner reports through `self` routes authenticated by its job token — it can
 
 Jobs execute on **self-hosted runners** — a machine you own, running your own code, so instance isolation is not the boundary being trusted. `npm run runner -- --url … --token kgr_…`. Each `run:` script is written to a file and executed as `bash <file>`, so nothing in a job definition escapes into the agent's command line, and only the secrets a step names reach that step's environment. There is no sandbox, which is exactly why a fork job is not offered unless the runner opted in. Read [Self-Hosted Runners](docs/SELF_HOSTED_RUNNERS.md).
 
+A push starts it. Workflow files are read **at the commit being built**, so a change to a workflow cannot silently rewrite how already-pushed commits are built, and a file that fails validation becomes a **failed run carrying the error** rather than a skipped one — an author who sees no run at all cannot tell a typo from a filter that legitimately did not match. Read [Workflow Dispatch](docs/WORKFLOW_DISPATCH.md).
+
 ## Commands
 
 ```bash

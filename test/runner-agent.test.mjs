@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   createLogBuffer,
   executeJob,
+  resolveRunScript,
   runStep,
   stepEnvironment,
 } from '../src/runner-agent.mjs';
@@ -263,4 +264,41 @@ test('a job that exceeds its own timeout stops before the next step', async (t) 
 
   assert.equal(result.status, 'failure');
   assert.match(client.state.completed.reason, /exceeded its 1 minute timeout/);
+});
+
+test('a run script receives the repository-controlled fields it is allowed to name', () => {
+  const context = {
+    job: { key: 'build' },
+    run: {
+      commitSha: 'abc123', ref: 'refs/heads/main', repository: 'kuklabs/app',
+      id: 'run_1', event: 'push', workflow: 'CI', workspace: '/w',
+    },
+  };
+
+  assert.equal(
+    resolveRunScript('echo ${{ github.sha }} on ${{ github.ref_name }} in ${{ github.repository }}', context),
+    'echo abc123 on main in kuklabs/app',
+  );
+  assert.equal(resolveRunScript('echo ${{ github.ref_type }}', context), 'echo branch');
+  assert.equal(resolveRunScript('echo ${{ github.repository_owner }}', context), 'echo kuklabs');
+
+  // Anything the validator would have rejected is left exactly as written. A
+  // script reaching the runner with an unrecognised expression is a validator
+  // bug, and substituting something would hide it.
+  assert.equal(resolveRunScript('echo ${{ matrix.os }}', context), 'echo ${{ matrix.os }}');
+  assert.equal(resolveRunScript('echo ${{ secrets.TOKEN }}', context), 'echo ${{ secrets.TOKEN }}');
+  assert.equal(resolveRunScript('echo ${{ github.event.issue.title }}', context), 'echo ${{ github.event.issue.title }}');
+
+  const tag = { ...context, run: { ...context.run, ref: 'refs/tags/v1.0.0' } };
+  assert.equal(resolveRunScript('echo ${{ github.ref_name }} ${{ github.ref_type }}', tag), 'echo v1.0.0 tag');
+});
+
+test('a job substitutes allowed fields before the script is written to disk', async (t) => {
+  const client = fakeClient();
+  const result = await executeJob(client, jobFixture([
+    { type: 'run', run: 'echo "commit ${{ github.sha }}"' },
+  ]), { workspaceRoot: workspace(t) });
+
+  assert.equal(result.status, 'success', 'an unsubstituted expression would be a bash syntax error');
+  assert.match(client.state.logs.map((chunk) => chunk.content).join(''), new RegExp(`commit ${'a'.repeat(40)}`));
 });
