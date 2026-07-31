@@ -64,6 +64,21 @@
   record carrying the recovery time. Live-protocol checks that need an operator
   credential are tracked as outstanding so a drill is never reported complete on
   automated evidence alone.
+### Hosted CI
+
+- workflow file format and validation (`.kukgit/workflows/*.yml`), parsed by a
+  dependency-free YAML subset that refuses anchors, aliases, merge keys, tags,
+  multiple documents and tab indentation rather than reinterpreting them, with
+  the line number and the reason.
+- validation refuses unknown keys instead of ignoring them, requires action
+  references to be pinned to a tag or commit, rejects reserved environment
+  prefixes, resolves `needs` into a topological order and reports a dependency
+  cycle with its actual path.
+- untrusted values cannot be interpolated into a `run:` script. Only an
+  allow-list of repository-controlled fields may appear there; event content,
+  fork branch names and secrets must go through `env:`, where the runner passes
+  them as data rather than as command text. Nothing executes yet — this release
+  is the format and its validator only.
 
 ## 0.2.0 — 2026-07-29
 

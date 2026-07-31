@@ -106,7 +106,7 @@ Implementation of the designed model:
 
 ### Hosted CI and workflows
 
-- [ ] workflow YAML format and validation
+- [x] workflow YAML format and validation — [WORKFLOWS.md](WORKFLOWS.md)
 - [ ] encrypted repository/organization secrets vault
 - [ ] isolated hosted runners and job authorization
 - [ ] cancellable build logs and live status

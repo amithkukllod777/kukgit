@@ -125,7 +125,8 @@ Status: **Planned after private-alpha exit gates**.
 
 - subscriptions, quotas and usage metering
 - hosted CI runners
-- workflow YAML and secrets vault
+- workflow YAML — format and validation delivered ([WORKFLOWS.md](WORKFLOWS.md)); execution outstanding
+- secrets vault
 - build logs, cache and artifacts
 - package registry
 - container registry

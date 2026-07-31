@@ -9,6 +9,11 @@ function booleanValue(value, fallback = false) {
   return String(value).toLowerCase() === 'true';
 }
 
+function listValue(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
+  return String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
 function positiveNumber(value, label) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) throw new Error(`${label} must be a positive number.`);
@@ -168,6 +173,17 @@ export function loadConfig(overrides = {}) {
       databaseCriticalBytes: Number(overrides.saturationDatabaseCriticalBytes ?? process.env.KUKGIT_SATURATION_DATABASE_CRITICAL_BYTES ?? 20 * 1024 * 1024 * 1024),
       backupAgeWarningSeconds: Number(overrides.saturationBackupAgeWarningSeconds ?? process.env.KUKGIT_SATURATION_BACKUP_AGE_WARNING_SECONDS ?? 36 * 3600),
       backupAgeCriticalSeconds: Number(overrides.saturationBackupAgeCriticalSeconds ?? process.env.KUKGIT_SATURATION_BACKUP_AGE_CRITICAL_SECONDS ?? 72 * 3600),
+    },
+    // Workflow policy. `allowedRunners` and `allowedActionOwners` are empty by
+    // default, which means "no restriction" — an instance that offers hosted
+    // runners is expected to set them, and an empty list is visible in the
+    // rejection message rather than silently permissive.
+    workflow: {
+      allowedRunners: listValue(overrides.workflowAllowedRunners ?? process.env.KUKGIT_WORKFLOW_ALLOWED_RUNNERS),
+      allowedActionOwners: listValue(overrides.workflowAllowedActionOwners ?? process.env.KUKGIT_WORKFLOW_ALLOWED_ACTION_OWNERS),
+      maxJobs: Number(overrides.workflowMaxJobs ?? process.env.KUKGIT_WORKFLOW_MAX_JOBS ?? 50),
+      defaultTimeoutMinutes: Number(overrides.workflowDefaultTimeoutMinutes ?? process.env.KUKGIT_WORKFLOW_DEFAULT_TIMEOUT_MINUTES ?? 60),
+      maxTimeoutMinutes: Number(overrides.workflowMaxTimeoutMinutes ?? process.env.KUKGIT_WORKFLOW_MAX_TIMEOUT_MINUTES ?? 360),
     },
     maintenancePath: path.resolve(overrides.maintenancePath ?? process.env.KUKGIT_MAINTENANCE_PATH ?? path.join(dataDir, 'maintenance.json')),
     backupLockPath: path.resolve(overrides.backupLockPath ?? process.env.KUKGIT_BACKUP_LOCK_PATH ?? path.join(dataDir, 'backup.lock')),
