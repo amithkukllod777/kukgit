@@ -171,6 +171,19 @@ KukGit fails closed for protected browser APIs when AuthKit cannot validate the 
 - public static assets and health checks remain available
 - logout always removes the local bridge even when central logout is unavailable
 
+### Device-session binding
+
+Each bridge session stores the id of the AuthKit device session that created it,
+and every protected request requires that exact id to still be the current one.
+The id comes from the login response when AuthKit sends it there, otherwise from
+the access-token claim. A bridge created before an id could be derived adopts the
+one AuthKit reports on its first validation and is enforced strictly from then
+on, so no user is signed out to close the gap.
+
+The binding is what makes "revoke this device" work. Without it the check
+degrades to "the account has some live session", and revoking the device that
+created a bridge would not end it while the user is signed in anywhere else.
+
 KukGit PAT and SSH credentials remain product credentials governed by repository permission. They are not substitutes for browser login.
 
 ## Rollout procedure

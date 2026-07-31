@@ -17,6 +17,7 @@ import {
   linkAuthKitUser,
   migrateAuthKitIdentity,
 } from '../src/authkit-identity.mjs';
+import { createSecureAuthKitLoginApiHandler } from '../src/authkit-secure-login.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { openDatabase } from '../src/db.mjs';
 
@@ -152,10 +153,15 @@ function createAuthKitMock(t) {
   return { server, state };
 }
 
+// Mirrors the production dispatch order in server.mjs: the hardened login
+// handler owns every credential route and runs before the general AuthKit API,
+// which keeps the remaining status/OTP-request/logout/me surface.
 function appServer(config, db) {
   const app = createApp({ config, db });
+  const secureLoginApi = createSecureAuthKitLoginApiHandler({ config, db });
   const authApi = createAuthKitApiHandler({ config, db });
   const dispatch = async (req, res) => {
+    if (await secureLoginApi(req, res)) return;
     if (await authApi(req, res)) return;
     return app(req, res);
   };
