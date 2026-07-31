@@ -20,7 +20,10 @@ Kuklabs security owner and include:
   program has delivered read-only shadow and live-read stages but no write path or
   cutover.
 - Repository objects and Git LFS objects are stored on local disk.
-- No rate limiting exists on any surface — browser API, Git HTTP, Git SSH or LFS.
+- Rate limiting covers the HTTP surfaces (auth, browser API, Git smart HTTP,
+  invitations, webhooks) but **not Git over SSH**, which is served by an OpenSSH
+  forced command outside the HTTP server. Limits are also per instance, not per
+  cluster, so a multi-instance deployment multiplies the effective allowance.
 - No malware scanning, abuse detection or upload quarantine exists.
 - Secret detection is heuristic and cannot guarantee credential safety.
 - Workers run on in-process timers, so multiple instances against one database will
@@ -34,7 +37,8 @@ Kuklabs security owner and include:
 ## Required controls before public beta
 
 1. PostgreSQL write path, verified cutover, encrypted object storage and encrypted backups.
-2. Rate limiting, WAF, bot mitigation and abuse controls.
+2. Rate limiting for Git over SSH, shared cross-instance limit state, plus WAF,
+   bot mitigation and broader abuse controls.
 3. External worker scheduling with leases, and cross-instance WebSocket fan-out.
 4. A durable job queue for long Git operations. The clone-based paths no longer
    block the event loop, but a long mirror import still holds its request open.
@@ -100,6 +104,11 @@ Kuklabs security owner and include:
 - Git processes are invoked with argument arrays, never shell command strings.
 - The SSH forced command rejects shell injection and unsupported commands.
 - State-changing browser requests validate `Origin` against `KUKGIT_BASE_URL`.
+- HTTP surfaces are rate limited by token bucket, keyed by authenticated user where
+  one exists and by source address otherwise, with separate budgets for auth,
+  browser API, Git smart HTTP, invitations and webhooks. `X-Forwarded-For` is only
+  honoured when `KUKGIT_TRUST_PROXY` is set, because an untrusted client can
+  otherwise forge a fresh identity per request and bypass every limit.
 - WebSocket upgrades require a present, same-origin `Origin` header and a valid
   session before the handshake completes. This is what prevents cross-site WebSocket
   hijacking: cookies are attached to upgrades automatically and the browser

@@ -70,6 +70,7 @@ import {
   createPullRequestDiffsApiHandler,
   migratePullRequestDiffs,
 } from './src/pull-request-diffs-safe.mjs';
+import { createRateLimitGuard } from './src/rate-limit.mjs';
 import { createRealtimeNotificationServer } from './src/realtime-notifications.mjs';
 import { KUKGIT_VERSION } from './src/version.mjs';
 import {
@@ -219,7 +220,11 @@ const capturedDispatch = createWebhookEventCapture({ config, db, next: operation
 const externalAccessExpiryDispatch = createExternalAccessExpiryGuard({ config, db, next: capturedDispatch });
 const authKitBootstrapDispatch = createAuthKitBootstrapGuard({ config, db, next: externalAccessExpiryDispatch });
 const centralSessionDispatch = createAuthKitCentralSessionGuard({ config, db, next: authKitBootstrapDispatch });
-const identityDispatch = createAuthKitIdentityMiddleware({ config, db, next: centralSessionDispatch });
+// Sits after identity resolution so an authenticated caller is limited as a
+// person rather than as an address, and before the central session check so a
+// flood cannot force one AuthKit network round trip per request.
+const rateLimitDispatch = createRateLimitGuard({ config, next: centralSessionDispatch });
+const identityDispatch = createAuthKitIdentityMiddleware({ config, db, next: rateLimitDispatch });
 const stopWebhookWorker = startWebhookWorker(db, config);
 const stopNotificationWorker = startNotificationWorker(db, config);
 const stopOperationalNotificationWorker = startOperationalNotificationWorker(db, config);
@@ -238,6 +243,9 @@ server.listen(config.port, config.host, () => {
   console.log(`Email delivery: ${smtpConfigured(config) ? `${config.smtpHost}:${config.smtpPort}` : 'disabled until SMTP is configured'}`);
   console.log(`Email provider events: /api/email-provider/events; soft-bounce threshold ${config.emailSoftBounceThreshold}/${config.emailSoftBounceWindowDays} days`);
   console.log(`Real-time notifications: WebSocket ${realtimeNotifications.path}`);
+  console.log(config.rateLimitEnabled
+    ? `Rate limits: auth ${config.rateLimits.auth.perMinute}/min, api ${config.rateLimits.api.perMinute}/min, git ${config.rateLimits.git.perMinute}/min${config.rateLimitTrustProxy ? '' : ' (X-Forwarded-For NOT trusted — set KUKGIT_TRUST_PROXY behind a proxy)'}`
+    : 'Rate limits: disabled');
   console.log(`PostgreSQL runtime shadow: ${postgresqlRuntimeObserver ? 'enabled; SQLite remains authoritative' : 'disabled'}`);
   console.log(`SSH clone endpoint: ${config.sshUser}@${config.sshHost}:${config.sshPort}`);
   if (seeded.seeded && !config.isProduction) {
@@ -270,6 +278,7 @@ async function shutdown(signal) {
   stopOperationalNotificationWorker();
   stopExternalAccessReviewWorker();
   realtimeNotifications.stop();
+  rateLimitDispatch.stop();
   await new Promise((resolve) => server.close(resolve));
   try { await runtimeReadService.stop({ drainMs: 5000 }); } catch {}
   unregisterRuntimeReadService(db, runtimeReadService);

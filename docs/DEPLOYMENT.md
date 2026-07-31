@@ -145,6 +145,42 @@ also rejects WebSocket upgrades.
 
 Adjust `client_max_body_size` if `KUKGIT_LFS_MAX_OBJECT_BYTES` is raised above 2 GB.
 
+### Rate limiting and X-Forwarded-For
+
+Rate limiting is on by default. Anonymous callers are bucketed by source address,
+so **`KUKGIT_TRUST_PROXY=true` is required behind a reverse proxy**:
+
+```bash
+KUKGIT_TRUST_PROXY=true
+```
+
+Without it, every request arrives from the proxy's address and all anonymous
+callers share a single bucket — one noisy client throttles everyone, and the auth
+limit stops being per-attacker. The bundled Nginx template already sets
+`X-Forwarded-For`, so any deployment using it must set this.
+
+The inverse is worse: never set it when KukGit is reachable directly, because
+`X-Forwarded-For` is client-supplied and a caller could mint a fresh identity per
+request, bypassing every limit.
+
+Default budgets, all per identity per minute with a burst allowance:
+
+| Surface | Per minute | Burst | Covers |
+|---|---|---|---|
+| `auth` | 20 | 10 | login, signup, OTP, Google exchange |
+| `api` | 600 | 120 | authenticated browser API |
+| `git` | 1200 | 240 | Git smart HTTP |
+| `invitation` | 30 | 10 | organization and repository invitations, resends |
+| `webhook` | 60 | 20 | webhook create, ping, redeliver |
+
+Tune with `KUKGIT_RATE_LIMIT_<SURFACE>_PER_MINUTE` and `_BURST`, or disable
+entirely with `KUKGIT_RATE_LIMIT_ENABLED=false`. An exhausted budget answers `429`
+with `Retry-After` and `RateLimit-*` headers.
+
+Two limits to plan around: **Git over SSH is not covered**, because it is served by
+an OpenSSH forced command rather than the HTTP server, and **state is per
+instance**, so running two instances doubles the effective allowance.
+
 ### WebSocket upgrades
 
 Real-time notifications use a WebSocket at `/api/notifications/socket`. The upgrade
@@ -243,6 +279,8 @@ Plan capacity with these in mind:
   still stall a request briefly. There is no job queue yet, so a long import still
   occupies its request for the full duration.
 - **Local storage.** Repositories and LFS objects live on the instance volume.
+- **Per-instance rate limits.** The limiter is in-process, so limits are enforced
+  per instance rather than per cluster, and Git over SSH is not covered at all.
 - **No rate limiting.** No per-user, per-token or per-IP limits exist on any surface.
 
 ## Public deployment warning

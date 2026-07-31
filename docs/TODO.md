@@ -107,7 +107,8 @@ Exit gate: PostgreSQL must preserve AuthKit identity links, PATs, SSH keys, invi
 
 ### Security and abuse readiness
 
-- [ ] rate limits for public/authenticated Git, API, webhook and invitation surfaces
+- [x] rate limits for public/authenticated Git, API, webhook and invitation surfaces
+      (HTTP surfaces done; Git over SSH and cross-instance shared state remain open)
 - [ ] repository and account abuse-report workflow
 - [ ] malware and dangerous-file handling policy for LFS/artifacts/packages
 - [ ] secret scanning and push protection foundation

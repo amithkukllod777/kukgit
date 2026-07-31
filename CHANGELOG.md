@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Rate limiting on the HTTP surfaces (`src/rate-limit.mjs`), closing the first item
+  of the TODO's "Security and abuse readiness" section. Token bucket rather than a
+  fixed window, because a fixed window lets a caller spend a full allowance at the
+  end of one window and again at the start of the next — exactly the burst an abuse
+  control exists to stop. Refill is lazy, so there is no timer per key, and idle
+  buckets are swept on an interval to bound memory.
+  - separate budgets for `auth`, `api`, `git`, `invitation` and `webhook`, so
+    exhausting one does not lock a caller out of the product
+  - keyed by authenticated user where one exists, so a shared office address does
+    not throttle everyone behind it and rotating addresses does not mask one
+    abusive account; Git HTTP callers are keyed by a hash of their credential, and
+    the credential never enters the key space
+  - `X-Forwarded-For` honoured only when `KUKGIT_TRUST_PROXY` is set. Trusting it
+    unconditionally would let any caller forge a fresh identity per request and
+    bypass every limit; the startup banner warns when it is unset
+  - `429` responses carry `Retry-After` and `RateLimit-Limit`/`-Remaining`/`-Reset`
+  - verified end to end against a running server: with a burst of 3, the fourth
+    failed login in a row returns `429` while `/api/health` is unaffected
+
+### Known limits
+
+- Git over SSH is not rate limited; it is served by an OpenSSH forced command
+  outside the HTTP server.
+- Limit state is per instance, so a multi-instance deployment multiplies the
+  effective allowance.
+
+
 ## 0.2.0 — 2026-07-29
 
 Private Alpha. Everything below shipped after v0.1.0 and had not previously been
