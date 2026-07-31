@@ -19,6 +19,51 @@
 
 ### Added
 
+- Build artifact and cache storage (`src/workflow-storage.mjs`), closing the P1
+  CI item "cache and artifact storage with quotas and retention". Content is
+  addressed by SHA-256 and shared: the same dependency cache written by every
+  branch is one file, so the quota counts distinct content rather than branches.
+  - **A run may only write a cache for its own ref.** The ref is taken from the
+    run record, never from the request. Without this, anyone who could open a
+    pull request could write a cache the default branch's next build would
+    restore and execute.
+  - **A fork pull request may not write a cache at all.** Its ref is a branch
+    name in somebody else's repository and two forks can pick the same one, so a
+    fork write would let one contributor hand another's build content it never
+    produced. Restoring stays open — reading cannot change what anyone else's
+    build runs.
+  - artifacts **refuse** at the quota (`507`) and caches **evict** least recently
+    *used*. An artifact is evidence somebody may be about to download; a cache
+    costs a slower build and nothing else. Least recently *used* rather than
+    oldest, because an old cache every build restores is the most valuable one.
+  - a second write under an existing cache key is kept, not overwritten: a key
+    describes its own contents, so a second write means the key is wrong, and
+    overwriting would hide that while handing later runs the wrong bytes
+  - restore keys are matched with `LIKE` and `%`, `_` and `\` are escaped first.
+    `_` is legal in a cache key and is also SQL's single-character wildcard, so
+    an unescaped restore key would silently match a family it never named.
+  - `ORDER BY created_at` is tie-broken by `rowid` everywhere ordering is
+    load-bearing. SQLite timestamps have one-second granularity, so two entries
+    written in the same second would otherwise order arbitrarily and "newest
+    match wins" would mean "whichever the planner returned".
+  - no write request names a repository, run, job or ref — the job token decides
+    all four, so there is nothing for a job to name incorrectly. Reading needs
+    repository read; deleting an artifact needs write and a same-origin request.
+  - downloads are served `application/octet-stream` with `nosniff`, so an
+    artifact upload cannot become a way to host interpretable content on the
+    instance's own origin
+  - uploads are refused on the declared `Content-Length` before a byte is read,
+    and re-checked while reading because a chunked upload declares nothing
+  - blobs are collected by reference count, never by age, so expiring one
+    artifact never removes content another still points at
+  - hourly retention worker; 30-day default, 90-day maximum
+  - `GET /api/repositories/:org/:repo/ci-storage` reports usage against quota
+  - 21 tests including the authorization boundaries: cross-repository artifact
+    reads, run ids from a foreign repository, delete-needs-write, CSRF on delete,
+    forged and absent job tokens, and the fork cache write
+  - documented in [ARTIFACTS_AND_CACHE.md](docs/ARTIFACTS_AND_CACHE.md), with
+    migration and rollback
+
 - Rate limiting on the HTTP surfaces (`src/rate-limit.mjs`), closing the first item
   of the TODO's "Security and abuse readiness" section. Token bucket rather than a
   fixed window, because a fixed window lets a caller spend a full allowance at the

@@ -317,7 +317,7 @@ The rule that matters most: a value supplied by whoever triggered the workflow �
                                               #   run: echo "$TITLE"
 ```
 
-Nothing executes yet — this is the format and its validator. Runners, scheduling, logs and artifacts remain open. Read [Workflow Format](docs/WORKFLOWS.md).
+This is the format and its validator; what follows describes the rest of the chain. Read [Workflow Format](docs/WORKFLOWS.md).
 
 Secrets live in an encrypted vault scoped to an organization or a single repository. AES-256-GCM, with the scope and name authenticated alongside the value, so a ciphertext copied between rows fails to decrypt rather than quietly becoming a different secret. **There is no read path** — no route returns a stored value, not even to the person who set it, because a secret that can be read back can be exfiltrated by anyone who reaches that route. Listings show names and a truncated digest, which is enough to confirm a rotation and far too little to recover a value. Read [Secrets Vault](docs/SECRETS_VAULT.md).
 
@@ -328,6 +328,8 @@ A runner reports through `self` routes authenticated by its job token — it can
 Jobs execute on **self-hosted runners** — a machine you own, running your own code, so instance isolation is not the boundary being trusted. `npm run runner -- --url … --token kgr_…`. Each `run:` script is written to a file and executed as `bash <file>`, so nothing in a job definition escapes into the agent's command line, and only the secrets a step names reach that step's environment. There is no sandbox, which is exactly why a fork job is not offered unless the runner opted in. Read [Self-Hosted Runners](docs/SELF_HOSTED_RUNNERS.md).
 
 A push starts it. Workflow files are read **at the commit being built**, so a change to a workflow cannot silently rewrite how already-pushed commits are built, and a file that fails validation becomes a **failed run carrying the error** rather than a skipped one — an author who sees no run at all cannot tell a typo from a filter that legitimately did not match. Read [Workflow Dispatch](docs/WORKFLOW_DISPATCH.md).
+
+Builds keep bytes in two kinds of storage, and the difference decides how each behaves. An **artifact** is evidence somebody may be about to download, so at the quota an upload is refused rather than something older being deleted to make room. A **cache** is an optimisation, so at the quota the least recently *used* entry is evicted — losing one costs a slower build and nothing else. Content is addressed by SHA-256, so the same dependency cache written by fifty branches is one file. A run may only write a cache **for its own ref**, taken from the run record and never from the request, and a fork pull request may not write one at all: two forks can pick the same branch name, so a fork write would let one contributor hand another's build content it never produced. Reading across refs stays open, because that direction cannot change what anyone else's build will run. Read [Artifacts and Cache](docs/ARTIFACTS_AND_CACHE.md).
 
 A run publishes a commit status that branch protection can require. The context comes from the workflow's **file path**, never from the file's contents — a workflow that could name its own context could declare the one a branch rule requires and report success without running anything. Nothing about it relaxes a branch rule; at most it adds a check that has to pass. Read [Workflow Checks](docs/WORKFLOW_CHECKS.md).
 
