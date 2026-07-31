@@ -243,6 +243,81 @@ export function cancelRunsForDeletedRefs(db, { repository, before, after }) {
   return cancelled;
 }
 
+/**
+ * Starts `pull_request` runs for every open pull request whose head has moved.
+ *
+ * Reconciliation rather than reacting to a specific action: it asks "does a run
+ * exist for this pull request at this commit", which is the question that
+ * actually matters. That makes it idempotent, correct whether the head moved by
+ * a push, a browser commit or a reopen, and impossible to miss because a route
+ * was not on a list.
+ *
+ * KukGit has no fork model yet, so every pull request is branch-to-branch within
+ * one repository and `fork` is false. The fork path exists in scheduling and in
+ * the runner for when that changes; it is deliberately not reachable from here.
+ */
+export function reconcilePullRequestRuns(db, config, { repository, actorId = null, branches = null }) {
+  const pulls = db.prepare(`
+    SELECT id, number, base_branch AS baseBranch, head_branch AS headBranch
+    FROM pull_requests WHERE repository_id = ? AND status = 'open'
+  `).all(repository.id).filter((pull) => !branches || branches.includes(pull.headBranch));
+
+  const results = [];
+  for (const pull of pulls) {
+    let sha;
+    try { sha = resolveHeadSha(config, repository, pull.headBranch); }
+    catch { continue; }
+    if (!sha) continue;
+
+    const existing = db.prepare(`
+      SELECT 1 AS found FROM workflow_runs
+      WHERE repository_id = ? AND event = 'pull_request' AND commit_sha = ? AND ref = ?
+      LIMIT 1
+    `).get(repository.id, sha, `refs/heads/${pull.headBranch}`);
+    if (existing) continue;
+
+    // The first run for a pull request is `opened`; any later head is a
+    // `synchronize`, which is what a `types:` filter is written against.
+    const seen = db.prepare(`
+      SELECT 1 AS found FROM workflow_runs
+      WHERE repository_id = ? AND event = 'pull_request' AND ref = ? LIMIT 1
+    `).get(repository.id, `refs/heads/${pull.headBranch}`);
+
+    const event = {
+      name: 'pull_request',
+      action: seen ? 'synchronize' : 'opened',
+      ref: `refs/heads/${pull.headBranch}`,
+      sha,
+      paths: changedPathsBetween(config, repository, pull.baseBranch, sha),
+    };
+    results.push({
+      pullNumber: pull.number,
+      action: event.action,
+      ...dispatchWorkflows(db, config, { repository, event, actorId, fork: false }),
+    });
+  }
+  return results;
+}
+
+function resolveHeadSha(config, repository, branch) {
+  const gitDir = repoDiskPath(config, repository.orgSlug, repository.repoSlug);
+  const result = git(gitDir, ['rev-parse', `refs/heads/${branch}`], { allowFailure: true });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
+// A pull request's changed paths are everything it proposes relative to its
+// base, not just the last push. A filter asking whether a pull request touches
+// `src/**` means the whole change, and evaluating only the newest commit would
+// skip a build whose earlier commits are exactly what the filter is about.
+function changedPathsBetween(config, repository, baseBranch, headSha) {
+  const gitDir = repoDiskPath(config, repository.orgSlug, repository.repoSlug);
+  const base = git(gitDir, ['merge-base', `refs/heads/${baseBranch}`, headSha], { allowFailure: true });
+  if (base.status !== 0) return [];
+  const diff = git(gitDir, ['diff', '--name-only', `${base.stdout.trim()}..${headSha}`], { allowFailure: true });
+  if (diff.status !== 0) return [];
+  return diff.stdout.trim().split('\n').filter(Boolean).slice(0, DISPATCH_LIMITS.maxChangedPaths);
+}
+
 function findRepository(db, orgSlug, repoSlug) {
   return db.prepare(`
     SELECT r.id, r.slug AS repoSlug, o.slug AS orgSlug, r.organization_id AS organizationId
@@ -254,6 +329,9 @@ function findRepository(db, orgSlug, repoSlug) {
 const PUSH_ROUTES = [
   { regex: /^\/api\/repos\/([^/]+)\/([^/]+)\/(?:branches|files)(?:\/.*)?$/, methods: ['POST', 'PUT', 'PATCH'] },
   { regex: /^\/git\/([^/]+)\/([^/]+)\.git\/git-receive-pack$/, methods: ['POST'] },
+  // Creating or reopening a pull request does not move a ref, but it does create
+  // the first thing that should be built at one.
+  { regex: /^\/api\/repos\/([^/]+)\/([^/]+)\/pulls(?:\/.*)?$/, methods: ['POST', 'PATCH'] },
 ];
 
 function pushTarget(pathname, method) {
@@ -299,6 +377,7 @@ export function createWorkflowDispatchCapture({ config, db, next }) {
         const changes = refChanges(before, after);
         cancelRunsForDeletedRefs(db, { repository, before, after });
         if (changes.length) dispatchForRefChanges(db, config, { repository, changes, actorId });
+        reconcilePullRequestRuns(db, config, { repository, actorId });
       } catch (error) {
         // A dispatch failure must never turn a successful push into an error the
         // client sees; the push happened and has already been acknowledged.

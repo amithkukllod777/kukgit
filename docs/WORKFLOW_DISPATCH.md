@@ -96,10 +96,31 @@ were green.
 `workflow.dispatched` records the event, the ref and the workflow paths that
 started or failed. Never their contents.
 
+## Pull requests
+
+Handled by **reconciliation**, not by reacting to a particular action: for every
+open pull request, does a run exist for its current head?
+
+That question is the one that actually matters, and asking it makes the whole
+thing idempotent — correct whether the head moved by a Git push, a browser
+commit or a reopen, and impossible to miss because a route was not on a list.
+
+The first run for a pull request is `opened`; any later head is `synchronize`,
+which is what a `types:` filter is written against.
+
+**Path filters see the whole change**, from the merge base to the head — not just
+the newest commit. A filter asking whether a pull request touches `src/**` means
+the entire pull request, and evaluating only the last push would skip a build
+whose earlier commits are exactly what the filter is about.
+
+KukGit has **no fork model yet**, so every pull request is branch-to-branch
+within one repository and `fork` is false. The fork path exists in scheduling and
+in the runner for when that changes; it is deliberately not reachable from here.
+
 ## Not dispatched yet
 
-- **`pull_request`** — the event, filters and fork handling all exist; only the
-  trigger from a pull-request action is missing.
+- **`closed`** — the activity type validates, but a merge or close is a
+  transition reconciliation cannot see.
 - **`schedule`** — cron is validated and stored, but nothing fires it. That needs
   the job-lease model first, or two instances would fire every schedule twice
   ([OPERATIONS_BOUNDARY.md](OPERATIONS_BOUNDARY.md)).
