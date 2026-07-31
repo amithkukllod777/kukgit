@@ -113,7 +113,8 @@ Implementation of the designed model:
 - [x] workflow dispatch: push and tag events start runs — [WORKFLOW_DISPATCH.md](WORKFLOW_DISPATCH.md)
 - [x] pull_request dispatch — [WORKFLOW_DISPATCH.md](WORKFLOW_DISPATCH.md)
 - [ ] schedule, manual and pull_request `closed` dispatch
-- [ ] cache and artifact storage with quotas and retention
+- [x] cache and artifact storage with quotas and retention — [ARTIFACTS_AND_CACHE.md](ARTIFACTS_AND_CACHE.md)
+- [ ] runner-side `kukgit/cache` and `kukgit/upload-artifact` steps that use it
 - [x] required-check integration without bypassing branch governance — [WORKFLOW_CHECKS.md](WORKFLOW_CHECKS.md)
 - [x] self-hosted runner agent and registration — [SELF_HOSTED_RUNNERS.md](SELF_HOSTED_RUNNERS.md)
 

@@ -79,6 +79,7 @@ import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
 import { migrateWorkflowRuns } from './src/workflow-runs.mjs';
+import { createWorkflowStorageApiHandler, migrateWorkflowStorage, startStorageRetentionWorker } from './src/workflow-storage.mjs';
 import { createRealtimeNotificationServer } from './src/realtime-notifications.mjs';
 import { KUKGIT_VERSION } from './src/version.mjs';
 import {
@@ -142,6 +143,7 @@ migrateWebhooks(db);
 migrateSecrets(db);
 migrateWorkflowRuns(db);
 migrateWorkflowLogs(db);
+migrateWorkflowStorage(db);
 migrateRunners(db);
 // Every run-state change publishes a commit status, so a branch rule can require
 // a workflow the same way it requires any other check.
@@ -174,6 +176,9 @@ const instanceAdminApi = createInstanceAdminApiHandlerSafe({ config, db });
 // through a getter rather than holding a null reference for the process lifetime.
 const operationsHealthApi = createOperationsHealthApiHandler({ config, db, realtime: () => realtimeNotifications });
 const secretsApi = createSecretsApiHandler({ config, db });
+// Registered before the logs handler, which claims the same two path prefixes
+// and answers unknown routes under them with a 404.
+const workflowStorageApi = createWorkflowStorageApiHandler({ config, db });
 const workflowLogsApi = createWorkflowLogsApiHandler({ config, db });
 const runnersApi = createRunnersApiHandler({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
@@ -206,6 +211,7 @@ async function dispatch(req, res) {
   if (await emailProviderEventsApi(req, res)) return;
   if (await operationsHealthApi(req, res)) return;
   if (await secretsApi(req, res)) return;
+  if (await workflowStorageApi(req, res)) return;
   if (await workflowLogsApi(req, res)) return;
   if (await runnersApi(req, res)) return;
   if (await instanceAdminApi(req, res)) return;
@@ -254,6 +260,7 @@ const identityDispatch = createAuthKitIdentityMiddleware({ config, db, next: rat
 const stopWebhookWorker = startWebhookWorker(db, config);
 const stopNotificationWorker = startNotificationWorker(db, config);
 const stopStalledJobWorker = startStalledJobWorker(db);
+const stopStorageRetentionWorker = startStorageRetentionWorker(db, config);
 const stopOperationalNotificationWorker = startOperationalNotificationWorker(db, config);
 const stopExternalAccessReviewWorker = startExternalAccessReviewWorker(db, config);
 const server = http.createServer(identityDispatch);
@@ -303,6 +310,7 @@ async function shutdown(signal) {
   stopWebhookWorker();
   stopNotificationWorker();
   stopStalledJobWorker();
+  stopStorageRetentionWorker();
   stopOperationalNotificationWorker();
   stopExternalAccessReviewWorker();
   realtimeNotifications.stop();

@@ -559,6 +559,29 @@ all `self` — the token identifies exactly one job and there is no job id in th
 path to point elsewhere. Reader routes need repository read; cancelling needs
 write. Read [Build Logs](BUILD_LOGS.md).
 
+## Build artifacts and cache
+
+`src/workflow-storage.mjs`
+
+```text
+POST   /api/workflow-jobs/self/artifacts                     Runner uploads an artifact
+POST   /api/workflow-jobs/self/cache                         Runner saves a cache entry
+GET    /api/workflow-jobs/self/cache?key=&restoreKey=        Runner restores a cache entry
+
+GET    /api/workflow-runs/:org/:repo/:runId/artifacts        Artifact metadata for a run
+GET    /api/workflow-runs/:org/:repo/:runId/artifacts/:id    Download the bytes
+DELETE /api/workflow-runs/:org/:repo/:runId/artifacts/:id    Delete one artifact
+GET    /api/repositories/:org/:repo/ci-storage               Usage against quota
+```
+
+Uploads carry raw bytes; the name is `X-Artifact-Name` and the cache key is
+`X-Cache-Key`. No write request names a repository, a run or a ref — the job
+token decides all three, so a job cannot write to another repository's storage.
+
+Reading needs repository read; deleting needs write and a same-origin request. A
+fork pull request may restore a cache but never save one. Read
+[Artifacts and Cache](ARTIFACTS_AND_CACHE.md).
+
 ## Secrets
 
 `src/secrets-vault.mjs`
