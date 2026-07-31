@@ -292,6 +292,21 @@ Configure `KUKGIT_INSTANCE_ADMIN_EMAILS` with a minimal comma-separated allowlis
 
 Instance authority is independent from organization roles. The console never exposes passwords, OTPs, AuthKit tokens, PAT material, webhook secrets or SSH private keys, and it does not support impersonation. Read [Instance Admin Console](docs/INSTANCE_ADMIN_CONSOLE.md) before enabling production support access.
 
+## Workflow files
+
+Hosted CI begins with a file format. Workflows live in `.kukgit/workflows/*.yml` and are parsed by KukGit's own YAML subset, which refuses anchors, aliases, merge keys, tags, multiple documents and tab indentation rather than silently reinterpreting them.
+
+The rule that matters most: a value supplied by whoever triggered the workflow — a pull-request title, a fork branch name — **cannot be interpolated into a `run:` script**, because there it is code rather than data. Only an allow-list of repository-controlled fields may appear inline; everything else, including every secret, goes through `env:`.
+
+```yaml
+# rejected                                    # accepted
+- run: echo "${{ github.event.issue.title }}" # - env:
+                                              #     TITLE: ${{ github.event.issue.title }}
+                                              #   run: echo "$TITLE"
+```
+
+Nothing executes yet — this is the format and its validator. Runners, scheduling, logs and artifacts remain open. Read [Workflow Format](docs/WORKFLOWS.md).
+
 ## Commands
 
 ```bash
