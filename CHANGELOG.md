@@ -67,6 +67,12 @@
 
 ### Hosted CI
 
+- pull requests are built, by reconciliation rather than by reacting to a
+  particular action: for every open pull request, does a run exist for its
+  current head? That question makes it idempotent and correct whether the head
+  moved by a push, a browser commit or a reopen. Path filters see the whole
+  change from the merge base, not just the newest commit — a filter asking
+  whether a pull request touches `src/**` means the whole pull request.
 - a run publishes a commit status a branch rule can require. The context is
   derived from the workflow's file path and cannot be declared by the workflow —
   a file that could name its own context could declare the one a branch rule

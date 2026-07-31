@@ -111,7 +111,8 @@ Implementation of the designed model:
 - [x] job authorization: dependency-aware scheduling, least-privilege job tokens, fork isolation — [WORKFLOW_RUNS.md](WORKFLOW_RUNS.md)
 - [x] cancellable build logs and live status — [BUILD_LOGS.md](BUILD_LOGS.md)
 - [x] workflow dispatch: push and tag events start runs — [WORKFLOW_DISPATCH.md](WORKFLOW_DISPATCH.md)
-- [ ] pull_request, schedule and manual dispatch
+- [x] pull_request dispatch — [WORKFLOW_DISPATCH.md](WORKFLOW_DISPATCH.md)
+- [ ] schedule, manual and pull_request `closed` dispatch
 - [ ] cache and artifact storage with quotas and retention
 - [x] required-check integration without bypassing branch governance — [WORKFLOW_CHECKS.md](WORKFLOW_CHECKS.md)
 - [x] self-hosted runner agent and registration — [SELF_HOSTED_RUNNERS.md](SELF_HOSTED_RUNNERS.md)
