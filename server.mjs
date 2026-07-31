@@ -73,6 +73,7 @@ import {
 import { createOperationsHealthApiHandler } from './src/operations-health.mjs';
 import { createRateLimitGuard } from './src/rate-limit.mjs';
 import { createSecretsApiHandler, migrateSecrets } from './src/secrets-vault.mjs';
+import { migrateWorkflowRuns } from './src/workflow-runs.mjs';
 import { createRealtimeNotificationServer } from './src/realtime-notifications.mjs';
 import { KUKGIT_VERSION } from './src/version.mjs';
 import {
@@ -134,6 +135,7 @@ migratePullRequestDiffs(db);
 migrateStatusChecks(db);
 migrateWebhooks(db);
 migrateSecrets(db);
+migrateWorkflowRuns(db);
 migrateRepositoryLifecycle(db);
 migrateSshKeys(db);
 migrateGitLfs(db);

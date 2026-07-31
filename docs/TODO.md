@@ -108,7 +108,8 @@ Implementation of the designed model:
 
 - [x] workflow YAML format and validation — [WORKFLOWS.md](WORKFLOWS.md)
 - [x] encrypted repository/organization secrets vault — [SECRETS_VAULT.md](SECRETS_VAULT.md)
-- [ ] isolated hosted runners and job authorization
+- [x] job authorization: dependency-aware scheduling, least-privilege job tokens, fork isolation — [WORKFLOW_RUNS.md](WORKFLOW_RUNS.md)
+- [ ] isolated hosted runners (sandboxing, image and egress policy)
 - [ ] cancellable build logs and live status
 - [ ] cache and artifact storage with quotas and retention
 - [ ] runner abuse controls and egress policy
