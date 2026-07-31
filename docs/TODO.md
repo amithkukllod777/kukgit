@@ -69,13 +69,22 @@ Exit gate: PostgreSQL must preserve AuthKit identity links, PATs, SSH keys, invi
 
 ### 2. Production recovery rehearsal
 
-- [ ] restore a fresh instance from a verified `.kgbak` archive
-- [ ] confirm active, trashed and empty Git repositories pass `git fsck`
-- [ ] verify every restored Git LFS object by SHA-256
+Automated by `npm run rehearse` — see [RECOVERY_REHEARSAL.md](RECOVERY_REHEARSAL.md).
+
+- [x] restore a fresh instance from a verified `.kgbak` archive
+- [x] confirm active, archived, trashed and empty Git repositories pass `git fsck` with their exact recorded refs
+- [x] verify every restored Git LFS object by SHA-256
+- [x] confirm no credential is restored in the clear
+- [x] record recovery time, data-loss window and operator evidence
+
+Manual sign-off, which needs a live instance, a reachable AuthKit and an operator
+credential a backup deliberately does not contain. Each is tracked as
+`outstanding` in the evidence record until confirmed:
+
 - [ ] test AuthKit login, refresh rotation and centrally revoked device sessions
 - [ ] test Git HTTP, SSH and Git LFS authorization after restore
 - [ ] test SMTP retry, provider suppression and WebSocket notification recovery
-- [ ] record recovery time, data-loss window and operator evidence
+- [ ] run the drill against a production-sized archive and file the evidence
 
 ### 3. Production operations boundary
 

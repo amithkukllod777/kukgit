@@ -280,6 +280,14 @@ npm run backup -- maintenance off
 
 Snapshots include SQLite metadata, Git bundles and all recorded Git LFS objects. Restore supports dry-run validation and writes only to a missing or empty target directory. Read [Verified Backups and Disaster Recovery](docs/BACKUPS_AND_RESTORE.md).
 
+Rehearse the recovery rather than assuming it:
+
+```bash
+npm run rehearse
+```
+
+The drill restores the newest archive into a throwaway directory, confirms every repository passes `git fsck` with the exact refs the snapshot recorded, re-hashes every Git LFS object, asserts no credential was restored in the clear, measures the data-loss window against the live database and files a secret-free evidence record with the measured recovery time. The live instance is never touched. Read [Production Recovery Rehearsal](docs/RECOVERY_REHEARSAL.md).
+
 ## PostgreSQL migration readiness
 
 KukGit still runs on SQLite. Stage 1 adds deterministic source manifests, complete protected metadata export, SQL portability findings, PostgreSQL URL redaction and checksummed cutover-readiness validation. Selecting `KUKGIT_DATABASE_DRIVER=postgresql` currently fails closed instead of silently continuing on SQLite.
@@ -301,6 +309,7 @@ npm run seed      # Seed local-development founder and demo repository
 npm run doctor    # Check runtime requirements and configuration
 npm run token --  # Create, list or revoke personal access tokens
 npm run backup -- # Create, verify, restore and prune verified snapshots
+npm run rehearse  # Restore a snapshot into a throwaway copy and prove it is serviceable
 npm run database -- # Inventory, export, verify and audit metadata migration readiness
 npm run ssh:authorized-keys # Generate restricted static authorized_keys fallback
 npm run check     # Validate JavaScript source syntax

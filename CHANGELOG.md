@@ -56,6 +56,14 @@
 - production operations boundary documented: background-job ownership model,
   object-storage migration order, alerting rules, incident severities, rollback
   and rollout procedure.
+- automated production recovery rehearsal (`npm run rehearse`): restores a real
+  `.kgbak` archive into a throwaway directory, confirms every repository passes
+  `git fsck` with the exact refs the snapshot recorded, re-hashes every Git LFS
+  object on disk, asserts no credential was restored in the clear, measures the
+  data-loss window against the live database, and writes a secret-free evidence
+  record carrying the recovery time. Live-protocol checks that need an operator
+  credential are tracked as outstanding so a drill is never reported complete on
+  automated evidence alone.
 
 ## 0.2.0 — 2026-07-29
 

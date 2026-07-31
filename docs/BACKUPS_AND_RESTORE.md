@@ -284,4 +284,8 @@ KukGit does not choose business RPO or RTO automatically.
 - RPO is determined by backup frequency and whether maintenance mode is used for a quiesced snapshot.
 - RTO is determined by archive size, storage throughput, repository count and smoke-test requirements.
 
-Measure both with scheduled restore drills rather than estimates alone.
+Measure both with scheduled restore drills rather than estimates alone. The drill
+itself is automated — see [RECOVERY_REHEARSAL.md](RECOVERY_REHEARSAL.md), which
+restores a real archive into a throwaway directory, proves the restored instance
+is serviceable and writes an evidence record carrying the measured RTO and
+data-loss window.

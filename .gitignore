@@ -7,6 +7,10 @@ data/*.db
 data/*.db-*
 data/repos/
 data/tmp/
+data/lfs/
+data/backups/
+data/maintenance.json
+data/backup.lock
 data/database-migration/
 data/postgresql-readiness.json
 *.kgdb.json
