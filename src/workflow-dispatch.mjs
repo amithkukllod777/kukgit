@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { currentUser } from './auth.mjs';
+import { verifyPersonalAccessToken } from './tokens.mjs';
 import { audit, uid } from './db.mjs';
 import { repoDiskPath } from './git.mjs';
 import { httpError } from './security.mjs';
@@ -309,11 +310,28 @@ export function createWorkflowDispatchCapture({ config, db, next }) {
   };
 }
 
+// Resolves who caused the push.
+//
+// A Git push over HTTP carries a personal access token in Basic auth rather than
+// a session cookie, and that is the ordinary case for CI. Reading only the
+// session would leave almost every run with no actor at all, which then has
+// nowhere to attribute the commit status it publishes.
 function currentActorId(db, req) {
-  // A Git push over HTTP carries a personal access token rather than a session,
-  // so an absent user is normal and not an error.
-  try { return currentUser(db, req)?.id ?? null; }
-  catch { return null; }
+  try {
+    const session = currentUser(db, req);
+    if (session?.id) return session.id;
+  } catch {
+    // Not a session request; fall through to the credential.
+  }
+  try {
+    const header = String(req.headers.authorization || '');
+    if (!header.startsWith('Basic ')) return null;
+    const [username, password] = Buffer.from(header.slice(6), 'base64').toString('utf8').split(':');
+    const credential = password || (username?.startsWith('kgp_') ? username : '');
+    return credential ? verifyPersonalAccessToken(db, credential)?.userId ?? null : null;
+  } catch {
+    return null;
+  }
 }
 
 export function runSummary(db, runId) {

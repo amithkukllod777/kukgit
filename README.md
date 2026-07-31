@@ -329,6 +329,8 @@ Jobs execute on **self-hosted runners** — a machine you own, running your own 
 
 A push starts it. Workflow files are read **at the commit being built**, so a change to a workflow cannot silently rewrite how already-pushed commits are built, and a file that fails validation becomes a **failed run carrying the error** rather than a skipped one — an author who sees no run at all cannot tell a typo from a filter that legitimately did not match. Read [Workflow Dispatch](docs/WORKFLOW_DISPATCH.md).
 
+A run publishes a commit status that branch protection can require. The context comes from the workflow's **file path**, never from the file's contents — a workflow that could name its own context could declare the one a branch rule requires and report success without running anything. Nothing about it relaxes a branch rule; at most it adds a check that has to pass. Read [Workflow Checks](docs/WORKFLOW_CHECKS.md).
+
 ## Commands
 
 ```bash
