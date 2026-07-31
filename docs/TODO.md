@@ -109,11 +109,24 @@ Implementation of the designed model:
 - [x] workflow YAML format and validation — [WORKFLOWS.md](WORKFLOWS.md)
 - [x] encrypted repository/organization secrets vault — [SECRETS_VAULT.md](SECRETS_VAULT.md)
 - [x] job authorization: dependency-aware scheduling, least-privilege job tokens, fork isolation — [WORKFLOW_RUNS.md](WORKFLOW_RUNS.md)
-- [ ] isolated hosted runners (sandboxing, image and egress policy)
-- [ ] cancellable build logs and live status
+- [x] cancellable build logs and live status — [BUILD_LOGS.md](BUILD_LOGS.md)
 - [ ] cache and artifact storage with quotas and retention
-- [ ] runner abuse controls and egress policy
 - [ ] required-check integration without bypassing branch governance
+- [ ] self-hosted runner agent and registration
+
+**Hosted** runners are Phase 2 work, not private-alpha exit — [ROADMAP.md](ROADMAP.md)
+places them in public beta and this list previously contradicted it. Running
+untrusted code for other people needs real sandbox isolation (Firecracker, gVisor
+or Kata; KukGit must not write its own), a host with the runtime installed, and
+adversarial testing on that host. None of that can be proved by writing code
+alone, and an unverified sandbox is worse than none because it looks finished.
+
+Private alpha is served by **self-hosted** runners: the customer runs the agent on
+their own machine and the code it executes is their own, so instance isolation is
+not the boundary being trusted. Those items stay in scope here.
+
+- [ ] hosted runner sandbox selection, image policy and egress policy — Phase 2
+- [ ] hosted runner abuse controls — Phase 2
 
 ### Platform administration
 

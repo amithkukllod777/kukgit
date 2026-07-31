@@ -319,6 +319,8 @@ Secrets live in an encrypted vault scoped to an organization or a single reposit
 
 Between a validated file and a runner sits scheduling and authorization: trigger matching, dependency-aware job queueing, concurrency groups, and the credential a job receives. A job token is returned once, stored as a hash, bound to one job, expires in an hour and is destroyed the moment the job finishes. Its permissions are the intersection of what the workflow asked for and a ceiling set by the event — and a pull request from a fork gets a read-only token and **no secrets at all**, which is the "pwn request" class closed by construction. Read [Workflow Runs](docs/WORKFLOW_RUNS.md).
 
+A runner reports through `self` routes authenticated by its job token — it cannot name another job, because there is no job id in the path. Secret values are masked **before the bytes are stored**, so the raw value is never on disk or in a backup. Terminal escape sequences are stripped from output: a viewer where a build can move the cursor or rewrite earlier lines is a viewer where a failure can be made to look like a pass. Read [Build Logs](docs/BUILD_LOGS.md).
+
 ## Commands
 
 ```bash
