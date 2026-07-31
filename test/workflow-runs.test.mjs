@@ -174,7 +174,7 @@ test('a run queues independent jobs and holds dependants until they succeed', (t
   assert.deepEqual(jobs.map((job) => job.status), ['queued', 'queued', 'pending']);
   assert.equal(getRun(context.db, runId).status, 'queued');
 
-  const lint = claimNextJob(context.db, { runnerId: 'runner-1', labels: ['kukgit-linux'] });
+  const lint = claimNextJob(context.db, { runnerId: 'runner-1', labels: ['kukgit-linux'], organizationId: context.orgId });
   assert.ok(lint.token);
   assert.equal(getRun(context.db, runId).status, 'running');
   completeJob(context.db, lint.jobId, { status: 'success' });
@@ -183,24 +183,24 @@ test('a run queues independent jobs and holds dependants until they succeed', (t
   jobs = listRunJobs(context.db, runId);
   assert.equal(jobs.find((job) => job.jobKey === 'deploy').status, 'pending');
 
-  const second = claimNextJob(context.db, { runnerId: 'runner-1', labels: ['kukgit-linux'] });
+  const second = claimNextJob(context.db, { runnerId: 'runner-1', labels: ['kukgit-linux'], organizationId: context.orgId });
   completeJob(context.db, second.jobId, { status: 'success' });
   assert.equal(listRunJobs(context.db, runId).find((job) => job.jobKey === 'deploy').status, 'queued');
 
-  const deploy = claimNextJob(context.db, { runnerId: 'runner-1', labels: ['kukgit-linux'] });
+  const deploy = claimNextJob(context.db, { runnerId: 'runner-1', labels: ['kukgit-linux'], organizationId: context.orgId });
   const finished = completeJob(context.db, deploy.jobId, { status: 'success' });
   assert.equal(finished.status, 'success');
   assert.ok(finished.completedAt);
-  assert.equal(claimNextJob(context.db, { runnerId: 'runner-1', labels: ['kukgit-linux'] }), null);
+  assert.equal(claimNextJob(context.db, { runnerId: 'runner-1', labels: ['kukgit-linux'], organizationId: context.orgId }), null);
 });
 
 test('a job whose dependency failed is skipped, not failed', (t) => {
   const context = setup(t);
   const { runId } = run(context);
 
-  const first = claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-linux'] });
+  const first = claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-linux'], organizationId: context.orgId });
   completeJob(context.db, first.jobId, { status: 'failure', reason: 'exit code 1' });
-  const second = claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-linux'] });
+  const second = claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-linux'], organizationId: context.orgId });
   completeJob(context.db, second.jobId, { status: 'success' });
 
   const jobs = listRunJobs(context.db, runId);
@@ -215,10 +215,10 @@ test('a job whose dependency failed is skipped, not failed', (t) => {
 test('a runner only receives jobs matching a label it declared', (t) => {
   const context = setup(t);
   run(context);
-  assert.equal(claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-windows'] }), null);
-  assert.ok(claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-windows', 'kukgit-linux'] }));
-  assert.throws(() => claimNextJob(context.db, { runnerId: '', labels: ['x'] }), (error) => error.code === 'RUNNER_ID_REQUIRED');
-  assert.throws(() => claimNextJob(context.db, { runnerId: 'r', labels: [] }), (error) => error.code === 'RUNNER_LABELS_REQUIRED');
+  assert.equal(claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-windows'], organizationId: context.orgId }), null);
+  assert.ok(claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-windows', 'kukgit-linux'], organizationId: context.orgId }));
+  assert.throws(() => claimNextJob(context.db, { runnerId: '', labels: ['x'], organizationId: context.orgId }), (error) => error.code === 'RUNNER_ID_REQUIRED');
+  assert.throws(() => claimNextJob(context.db, { runnerId: 'r', labels: [], organizationId: context.orgId }), (error) => error.code === 'RUNNER_LABELS_REQUIRED');
 });
 
 test('a job is handed to exactly one runner', (t) => {
@@ -226,7 +226,7 @@ test('a job is handed to exactly one runner', (t) => {
   run(context);
   const claimed = new Set();
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const job = claimNextJob(context.db, { runnerId: `runner-${attempt}`, labels: ['kukgit-linux'] });
+    const job = claimNextJob(context.db, { runnerId: `runner-${attempt}`, labels: ['kukgit-linux'], organizationId: context.orgId });
     if (!job) break;
     assert.equal(claimed.has(job.jobId), false, 'a job must not be claimed twice');
     claimed.add(job.jobId);
@@ -237,7 +237,7 @@ test('a job is handed to exactly one runner', (t) => {
 test('the job token is stored only as a hash and expires', (t) => {
   const context = setup(t);
   run(context);
-  const claimed = claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-linux'] });
+  const claimed = claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-linux'], organizationId: context.orgId });
 
   const row = context.db.prepare('SELECT token_hash AS hash FROM workflow_jobs WHERE id = ?').get(claimed.jobId);
   assert.ok(row.hash);
@@ -261,12 +261,12 @@ test('finishing or cancelling a job destroys its token immediately', (t) => {
   const context = setup(t);
   const { runId } = run(context);
 
-  const finished = claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-linux'] });
+  const finished = claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-linux'], organizationId: context.orgId });
   completeJob(context.db, finished.jobId, { status: 'success' });
   assert.throws(() => authorizeJobToken(context.db, finished.token), (error) => error.code === 'JOB_TOKEN_INVALID');
   assert.throws(() => completeJob(context.db, finished.jobId, { status: 'failure' }), (error) => error.code === 'WORKFLOW_JOB_ALREADY_COMPLETE');
 
-  const running = claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-linux'] });
+  const running = claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-linux'], organizationId: context.orgId });
   cancelRun(context.db, runId, 'cancelled by an operator');
   // A runner that has not noticed the cancellation cannot keep acting.
   assert.throws(() => authorizeJobToken(context.db, running.token), (error) => error.code === 'JOB_TOKEN_INVALID');
@@ -344,7 +344,12 @@ test('a fork pull request receives no secrets at all', (t) => {
   const event = { name: 'pull_request', ref: 'refs/heads/feature', sha: 'b'.repeat(40), paths: [] };
 
   const forked = run(context, { source, event, fork: true });
-  const forkJob = claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-linux'] });
+  // A fork job is not offered to a runner unless it opts in: on a self-hosted
+  // runner that job would be untrusted code on someone's own machine.
+  assert.equal(claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-linux'], organizationId: context.orgId }), null);
+  const forkJob = claimNextJob(context.db, {
+    runnerId: 'r', labels: ['kukgit-linux'], organizationId: context.orgId, allowForkJobs: true,
+  });
   const forkContext = authorizeJobToken(context.db, forkJob.token);
   assert.equal(forkContext.fork, true);
   // Handing a fork the repository's credentials would make every secret readable
@@ -353,7 +358,7 @@ test('a fork pull request receives no secrets at all', (t) => {
   cancelRun(context.db, forked.runId);
 
   run(context, { source, event, fork: false });
-  const internalJob = claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-linux'] });
+  const internalJob = claimNextJob(context.db, { runnerId: 'r', labels: ['kukgit-linux'], organizationId: context.orgId });
   const internalContext = authorizeJobToken(context.db, internalJob.token);
   const secrets = secretsForJob(context.db, context.config, internalContext, { organizationId: context.orgId });
   assert.deepEqual(secrets.map((secret) => secret.name).sort(), ['DEPLOY_TOKEN', 'REPO_TOKEN']);

@@ -70,6 +70,8 @@ export function migrateWorkflowRuns(db) {
       name TEXT NOT NULL,
       runs_on TEXT NOT NULL,
       needs_json TEXT NOT NULL DEFAULT '[]',
+      steps_json TEXT NOT NULL DEFAULT '[]',
+      env_json TEXT NOT NULL DEFAULT '{}',
       permissions_json TEXT NOT NULL DEFAULT '{}',
       timeout_minutes INTEGER NOT NULL DEFAULT 60,
       position INTEGER NOT NULL,
@@ -241,15 +243,20 @@ export function createWorkflowRun(db, {
 
     const statement = db.prepare(`
       INSERT INTO workflow_jobs
-        (id, run_id, job_key, name, runs_on, needs_json, permissions_json, timeout_minutes, position, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, run_id, job_key, name, runs_on, needs_json, steps_json, env_json,
+         permissions_json, timeout_minutes, position, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     workflow.jobOrder.forEach((jobKey, position) => {
       const job = workflow.jobs.find((candidate) => candidate.id === jobKey);
       const permissions = resolveJobPermissions(job.permissions ?? workflow.permissions, { event: event.name, fork });
       statement.run(
         uid('job'), runId, job.id, job.name, job.runsOn,
-        JSON.stringify(job.needs), JSON.stringify(permissions), job.timeoutMinutes, position,
+        JSON.stringify(job.needs), JSON.stringify(job.steps),
+        // Workflow-level env is merged in here so a runner receives one map and
+        // does not have to know the precedence rule.
+        JSON.stringify({ ...workflow.env, ...job.env }),
+        JSON.stringify(permissions), job.timeoutMinutes, position,
         job.needs.length ? 'pending' : 'queued',
       );
     });
@@ -274,6 +281,7 @@ export function getRun(db, runId) {
 export function listRunJobs(db, runId) {
   return db.prepare(`
     SELECT id, job_key AS jobKey, name, runs_on AS runsOn, needs_json AS needsJson,
+      steps_json AS stepsJson, env_json AS envJson,
       permissions_json AS permissionsJson, timeout_minutes AS timeoutMinutes, position, status,
       conclusion_reason AS conclusionReason, runner_id AS runnerId, token_expires_at AS tokenExpiresAt,
       started_at AS startedAt, completed_at AS completedAt
@@ -281,8 +289,12 @@ export function listRunJobs(db, runId) {
   `).all(runId).map((job) => ({
     ...job,
     needs: JSON.parse(job.needsJson),
+    steps: JSON.parse(job.stepsJson || '[]'),
+    env: JSON.parse(job.envJson || '{}'),
     permissions: JSON.parse(job.permissionsJson),
     needsJson: undefined,
+    stepsJson: undefined,
+    envJson: undefined,
     permissionsJson: undefined,
   }));
 }
@@ -340,18 +352,25 @@ function advanceRun(db, runId) {
  * The token is returned once and stored only as a hash, so a leaked database
  * cannot be used to impersonate a job.
  */
-export function claimNextJob(db, { runnerId, labels }) {
+export function claimNextJob(db, { runnerId, labels, organizationId, allowForkJobs = false }) {
   if (!runnerId) throw httpError(400, 'A runner identifier is required.', 'RUNNER_ID_REQUIRED');
   const available = Array.isArray(labels) ? labels : [labels];
   if (!available.length) throw httpError(400, 'A runner must declare at least one label.', 'RUNNER_LABELS_REQUIRED');
+  // Tenancy is a required argument rather than an option. A claim that could be
+  // made without naming an organization is a claim that can cross one.
+  if (!organizationId) throw httpError(400, 'A claim must name the organization it is for.', 'RUNNER_ORGANIZATION_REQUIRED');
 
   const placeholders = available.map(() => '?').join(', ');
   const claim = db.transaction(() => {
     const job = db.prepare(`
-      SELECT id, run_id AS runId FROM workflow_jobs
-      WHERE status = 'queued' AND runs_on IN (${placeholders})
-      ORDER BY created_at, position LIMIT 1
-    `).get(...available);
+      SELECT j.id, j.run_id AS runId FROM workflow_jobs j
+      JOIN workflow_runs r ON r.id = j.run_id
+      JOIN repositories repo ON repo.id = r.repository_id
+      WHERE j.status = 'queued' AND j.runs_on IN (${placeholders})
+        AND repo.organization_id = ?
+        AND (r.fork = 0 OR ? = 1)
+      ORDER BY j.created_at, j.position LIMIT 1
+    `).get(...available, organizationId, allowForkJobs ? 1 : 0);
     if (!job) return null;
 
     const token = randomToken(32);

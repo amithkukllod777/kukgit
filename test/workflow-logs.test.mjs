@@ -80,7 +80,7 @@ function setup(t) {
     event: { name: 'push', ref: 'refs/heads/main', sha: 'a'.repeat(40), paths: [] },
     actorId: userId,
   });
-  const claimed = claimNextJob(db, { runnerId: 'runner-1', labels: ['kukgit-linux'] });
+  const claimed = claimNextJob(db, { runnerId: 'runner-1', labels: ['kukgit-linux'], organizationId: orgId });
 
   return { config, db, userId, orgId, repositoryId, runId: created.runId, job: claimed };
 }
