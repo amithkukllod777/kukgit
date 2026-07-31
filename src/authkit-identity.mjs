@@ -398,7 +398,7 @@ export function createAuthKitIdentityMiddleware({ config, db, next }) {
   return async function authKitIdentityMiddleware(req, res) {
     if (config.authMode !== 'authkit') return next(req, res);
     const url = new URL(req.url, config.baseUrl);
-    if (!url.pathname.startsWith('/api/') || url.pathname === '/api/health' || authRouteNeedsNoSession(url.pathname)) {
+    if (!url.pathname.startsWith('/api/') || url.pathname.startsWith('/api/health') || authRouteNeedsNoSession(url.pathname)) {
       return runWithRequestIdentity({ mode: 'authkit', user: null }, () => next(req, res));
     }
     try {

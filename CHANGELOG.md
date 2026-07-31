@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Operations
+
+- saturation and readiness surface: `GET /api/health/ready` (public, status code
+  only) and `GET /api/instance-admin/health` (operator-only), reporting queue
+  depth and backlog age separately, rows stranded by a dead worker, storage and
+  quota headroom, backup freshness and WebSocket capacity — each with the
+  configurable threshold it was judged against and a verdict. Contains no user
+  data, so it is safe to forward to a monitoring system.
+- production operations boundary documented: background-job ownership model,
+  object-storage migration order, alerting rules, incident severities, rollback
+  and rollout procedure.
+
 ## 0.2.0 — 2026-07-29
 
 Private Alpha. Everything below shipped after v0.1.0 and had not previously been
