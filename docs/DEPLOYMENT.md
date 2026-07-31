@@ -244,6 +244,23 @@ npm run backup -- restore --archive <file.kgbak> --target /srv/kukgit-restore --
 
 Read [Verified Backups and Disaster Recovery](BACKUPS_AND_RESTORE.md).
 
+## Secrets vault
+
+Configure a dedicated key before any organization stores a secret:
+
+```bash
+KUKGIT_SECRETS_ENCRYPTION_KEY=$(openssl rand -base64 48)
+```
+
+Do not reuse the AuthKit, webhook or LFS key — one compromised key would then
+open more than one kind of stored material. Without a key of at least 32
+characters the vault returns `503` rather than storing anything readable.
+
+Backups contain the ciphertext, not the key. A restored instance needs the same
+key, so store it with the same care as the archive and **separately from it**.
+Losing it means every stored secret must be re-entered; there is no recovery
+path, by design. Read [Secrets Vault](SECRETS_VAULT.md).
+
 ## Recovery rehearsal
 
 Prove the backups on a schedule instead of during an incident:
