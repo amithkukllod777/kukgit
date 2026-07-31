@@ -151,6 +151,24 @@ export function loadConfig(overrides = {}) {
     backupsDir: path.resolve(overrides.backupsDir ?? process.env.KUKGIT_BACKUPS_DIR ?? path.join(dataDir, 'backups')),
     backupRetentionCount: Number(overrides.backupRetentionCount ?? process.env.KUKGIT_BACKUP_RETENTION_COUNT ?? 14),
     backupRetentionDays: Number(overrides.backupRetentionDays ?? process.env.KUKGIT_BACKUP_RETENTION_DAYS ?? 30),
+    // Saturation alerting thresholds. They live here rather than in the
+    // monitoring system so every deployment alerts on the same numbers, and so a
+    // rehearsal or a support session can read the same values the alerts use.
+    saturation: {
+      queueDepthWarning: Number(overrides.saturationQueueDepthWarning ?? process.env.KUKGIT_SATURATION_QUEUE_DEPTH_WARNING ?? 100),
+      queueDepthCritical: Number(overrides.saturationQueueDepthCritical ?? process.env.KUKGIT_SATURATION_QUEUE_DEPTH_CRITICAL ?? 1000),
+      queueAgeWarningSeconds: Number(overrides.saturationQueueAgeWarningSeconds ?? process.env.KUKGIT_SATURATION_QUEUE_AGE_WARNING_SECONDS ?? 900),
+      queueAgeCriticalSeconds: Number(overrides.saturationQueueAgeCriticalSeconds ?? process.env.KUKGIT_SATURATION_QUEUE_AGE_CRITICAL_SECONDS ?? 3600),
+      stuckProcessingMinutes: Number(overrides.saturationStuckProcessingMinutes ?? process.env.KUKGIT_SATURATION_STUCK_PROCESSING_MINUTES ?? 15),
+      quotaWarningPercent: Number(overrides.saturationQuotaWarningPercent ?? process.env.KUKGIT_SATURATION_QUOTA_WARNING_PERCENT ?? 75),
+      quotaCriticalPercent: Number(overrides.saturationQuotaCriticalPercent ?? process.env.KUKGIT_SATURATION_QUOTA_CRITICAL_PERCENT ?? 90),
+      diskFreeWarningPercent: Number(overrides.saturationDiskFreeWarningPercent ?? process.env.KUKGIT_SATURATION_DISK_FREE_WARNING_PERCENT ?? 20),
+      diskFreeCriticalPercent: Number(overrides.saturationDiskFreeCriticalPercent ?? process.env.KUKGIT_SATURATION_DISK_FREE_CRITICAL_PERCENT ?? 10),
+      databaseWarningBytes: Number(overrides.saturationDatabaseWarningBytes ?? process.env.KUKGIT_SATURATION_DATABASE_WARNING_BYTES ?? 8 * 1024 * 1024 * 1024),
+      databaseCriticalBytes: Number(overrides.saturationDatabaseCriticalBytes ?? process.env.KUKGIT_SATURATION_DATABASE_CRITICAL_BYTES ?? 20 * 1024 * 1024 * 1024),
+      backupAgeWarningSeconds: Number(overrides.saturationBackupAgeWarningSeconds ?? process.env.KUKGIT_SATURATION_BACKUP_AGE_WARNING_SECONDS ?? 36 * 3600),
+      backupAgeCriticalSeconds: Number(overrides.saturationBackupAgeCriticalSeconds ?? process.env.KUKGIT_SATURATION_BACKUP_AGE_CRITICAL_SECONDS ?? 72 * 3600),
+    },
     maintenancePath: path.resolve(overrides.maintenancePath ?? process.env.KUKGIT_MAINTENANCE_PATH ?? path.join(dataDir, 'maintenance.json')),
     backupLockPath: path.resolve(overrides.backupLockPath ?? process.env.KUKGIT_BACKUP_LOCK_PATH ?? path.join(dataDir, 'backup.lock')),
     publicDir: path.join(root, 'public'),

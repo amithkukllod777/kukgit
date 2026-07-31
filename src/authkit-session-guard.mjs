@@ -4,6 +4,7 @@ import { hashToken, parseCookies } from './security.mjs';
 
 const PUBLIC_AUTH_ROUTES = new Set([
   '/api/health',
+  '/api/health/ready',
   '/api/auth/status',
   '/api/auth/login',
   '/api/auth/signup',

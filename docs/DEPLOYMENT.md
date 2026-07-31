@@ -262,6 +262,37 @@ npm run database -- postgresql-status
 Read [PostgreSQL Metadata Migration](POSTGRESQL_MIGRATION.md) and the safety
 boundary in [ROADMAP.md](ROADMAP.md).
 
+## Monitoring
+
+Two probes and one operator surface:
+
+```text
+GET /api/health           liveness  — is the process up
+GET /api/health/ready     readiness — can this instance serve (200 / 503, no detail)
+GET /api/instance-admin/health      saturation signals, operator-only
+```
+
+Point the load balancer at `/api/health/ready`. Point alerting at
+`/api/instance-admin/health`: every signal carries the thresholds it was judged
+against and a verdict of `ok`, `warning` or `critical`, with an overall `status`.
+Alert immediately on `critical` and on sustained `warning`; these are levels, not
+events.
+
+Thresholds are configuration (`KUKGIT_SATURATION_QUEUE_DEPTH_WARNING`,
+`..._QUEUE_AGE_CRITICAL_SECONDS`, `..._DISK_FREE_WARNING_PERCENT`,
+`..._BACKUP_AGE_CRITICAL_SECONDS` and the rest), so every deployment alerts on
+the same numbers.
+
+Two signals deserve attention:
+
+- `*.stuck_processing` is critical at a count of one. A row stuck in `processing`
+  was claimed by a worker that died, and nothing currently requeues it.
+- `backups.newest_age` reports an instance that has never been backed up as
+  critical, not as zero. A missing backup must never read as a fresh one.
+
+Read [Operations Boundary](OPERATIONS_BOUNDARY.md) for the full signal list,
+incident severities and the rollback procedure.
+
 ## Operational limits of this release
 
 Plan capacity with these in mind:

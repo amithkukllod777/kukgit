@@ -93,6 +93,11 @@ export function clientAddress(req, { trustProxy = false } = {}) {
 // Chooses the surface a request belongs to. Order matters: the most specific and
 // most abusable surfaces are matched first.
 export function surfaceForRequest(method, pathname) {
+  // Liveness and readiness are never limited. A load balancer polls them
+  // continuously from one address, and a `429` would tell it the instance is
+  // unhealthy — the limiter would take the instance out of rotation rather than
+  // protect it. Both return fixed, tiny payloads and touch no user data.
+  if (pathname === '/api/health' || pathname === '/api/health/ready') return null;
   if (/^\/git\//.test(pathname)) return 'git';
   if (/^\/api\/auth\/(login|signup|otp\/request|otp\/verify|google)$/.test(pathname)) return 'auth';
   if (method === 'POST' || method === 'PATCH' || method === 'PUT') {

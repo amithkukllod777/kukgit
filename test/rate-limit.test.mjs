@@ -87,9 +87,26 @@ test('surfaces are classified so the abusable paths get their own budget', () =>
 
   // Reads of an invitation or webhook list are ordinary API traffic.
   assert.equal(surfaceForRequest('GET', '/api/webhooks/kuklabs/demo'), 'api');
-  // Static assets and the health check are not limited at all.
+  // Static assets are not limited at all.
   assert.equal(surfaceForRequest('GET', '/'), null);
   assert.equal(surfaceForRequest('GET', '/styles.css'), null);
+
+  // Neither are the probes. A load balancer polls these continuously from one
+  // address, and a 429 would tell it the instance is unhealthy — the limiter
+  // would take the instance out of rotation rather than protect it.
+  assert.equal(surfaceForRequest('GET', '/api/health'), null);
+  assert.equal(surfaceForRequest('GET', '/api/health/ready'), null);
+});
+
+test('health probes are never throttled, however often they are polled', async (t) => {
+  // An allowance of one, then twenty probes: every one must still answer 200.
+  const port = await guardServer(t, configWith({ rateLimitApiPerMinute: 60, rateLimitApiBurst: 1 }));
+  for (const probe of ['/api/health', '/api/health/ready']) {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const response = await fetch(`http://127.0.0.1:${port}${probe}`);
+      assert.equal(response.status, 200, `${probe} probe ${attempt + 1} must not be throttled`);
+    }
+  }
 });
 
 test('X-Forwarded-For is ignored unless a trusted proxy is configured', () => {

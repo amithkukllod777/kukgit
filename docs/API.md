@@ -69,13 +69,21 @@ quote it in support requests so the audit trail can be correlated.
 
 ## Health
 
-`src/app.mjs`
+`src/app.mjs`, `src/operations-health.mjs`
 
 ```text
-GET /api/health
+GET /api/health                    Liveness: is the process up
+GET /api/health/ready              Readiness: can this instance serve
 ```
 
-Unauthenticated. Returns service name, version and uptime.
+`/api/health` is unauthenticated and returns service name, version and uptime.
+
+`/api/health/ready` is unauthenticated and returns `200 {"status":"ready"}` or
+`503 {"status":"not_ready"}` with **no further detail**. It checks that the
+database is reachable and that repository storage and the data volume are
+writable. A load balancer needs the status code; which subsystem is failing is
+operator information and is available only through
+`GET /api/instance-admin/health`.
 
 ## Authentication
 
@@ -528,7 +536,16 @@ POST /api/instance-admin/organizations/:slug/notes         Add a confirmed suppo
 GET  /api/instance-admin/users/:userId                     User diagnostics
 POST /api/instance-admin/email/:outboxId/retry             Retry a terminal email
 POST /api/instance-admin/webhooks/:deliveryId/retry        Retry a terminal webhook
+GET  /api/instance-admin/health                            Saturation signals and readiness
 ```
+
+`GET /api/instance-admin/health` returns every saturation signal with the
+thresholds it was judged against and a verdict of `ok`, `warning` or `critical`,
+plus an overall `status` and the list of degraded signal names. It carries counts,
+ages, sizes and percentages only — no user data — so it is safe to forward to a
+monitoring system. Thresholds come from `KUKGIT_SATURATION_*`. See
+[Operations Boundary](OPERATIONS_BOUNDARY.md) for the signal list and alerting
+rules.
 
 Authority comes from `KUKGIT_INSTANCE_ADMIN_EMAILS` and is independent of
 organization roles. The console never exposes passwords, OTPs, AuthKit tokens, PAT

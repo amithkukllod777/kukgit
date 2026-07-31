@@ -79,11 +79,19 @@ Exit gate: PostgreSQL must preserve AuthKit identity links, PATs, SSH keys, invi
 
 ### 3. Production operations boundary
 
-- [ ] define distributed background-job ownership for email, webhooks, notifications and future CI
-- [ ] define scalable object-storage migration for LFS, artifacts, packages and release assets
-- [ ] add health, capacity and saturation alerts for metadata, Git storage, LFS and delivery queues
-- [ ] publish incident-severity, rollback and customer-communication procedures
-- [ ] rehearse zero-downtime application rollout and fast rollback
+Designed in [OPERATIONS_BOUNDARY.md](OPERATIONS_BOUNDARY.md).
+
+- [x] define distributed background-job ownership for email, webhooks, notifications and future CI
+- [x] define scalable object-storage migration for LFS, artifacts, packages and release assets
+- [x] add health, capacity and saturation alerts for metadata, Git storage, LFS and delivery queues
+- [x] publish incident-severity, rollback and customer-communication procedures
+
+Implementation of the designed model:
+
+- [ ] `job_leases` table and lease-holding workers, so a second instance cannot double-fire
+- [ ] requeue rows stranded in `processing` by a worker that died
+- [ ] object-storage backend behind the Git LFS interface, with backup/restore updated in the same change
+- [ ] connection-draining rollout and a rehearsed rollback drill
 
 ## P1 — Private-alpha exit features
 
