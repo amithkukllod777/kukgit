@@ -71,6 +71,7 @@ import {
   migratePullRequestDiffs,
 } from './src/pull-request-diffs-safe.mjs';
 import { createRealtimeNotificationServer } from './src/realtime-notifications.mjs';
+import { KUKGIT_VERSION } from './src/version.mjs';
 import {
   createRepositoryAccessApiHandler,
   createRepositoryAccessGuard,
@@ -227,7 +228,7 @@ const server = http.createServer(identityDispatch);
 const realtimeNotifications = createRealtimeNotificationServer({ server, config, db });
 
 server.listen(config.port, config.host, () => {
-  console.log(`\nKukGit v0.1.0 is running at ${config.baseUrl}`);
+  console.log(`\nKukGit v${KUKGIT_VERSION} is running at ${config.baseUrl}`);
   console.log(`${gitVersion}; data: ${config.dataDir}`);
   console.log(`Authentication: ${config.authMode === 'authkit' ? `One Kuklabs Account via ${config.authkitBaseUrl}` : 'local development mode'}`);
   console.log(`Instance administrators: ${instanceAdminEmails(config).join(', ') || 'none configured'}`);

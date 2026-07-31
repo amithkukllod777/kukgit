@@ -29,7 +29,7 @@ import { migrateRepositoryAccess } from '../src/repository-access.mjs';
 import { archiveRepository, migrateRepositoryLifecycle, trashRepository } from '../src/repository-lifecycle.mjs';
 import { migrateWebhooks } from '../src/webhooks.mjs';
 
-function setup(t) {
+async function setup(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-backup-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
@@ -69,7 +69,7 @@ function setup(t) {
         (id, organization_id, slug, name, description, visibility, default_branch, created_by)
       VALUES (?, ?, ?, ?, '', 'private', 'main', ?)
     `).run(id, orgId, slug, slug, ownerId);
-    if (slug !== 'empty-repo') createDemoCommit(config, 'kuklabs', slug);
+    if (slug !== 'empty-repo') await createDemoCommit(config, 'kuklabs', slug);
     repositories.push({ id, slug });
   }
 
@@ -135,7 +135,7 @@ test('portable archive round-trips files and rejects unsafe paths', async (t) =>
 });
 
 test('creates, verifies and restores SQLite metadata plus active, trashed and empty repositories', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   const backup = await createVerifiedBackup(context.config, context.db);
   assert.equal(backup.verification.valid, true);
   assert.equal(backup.totals.repositories, 3);
@@ -175,7 +175,7 @@ test('creates, verifies and restores SQLite metadata plus active, trashed and em
 });
 
 test('detects archive corruption and refuses non-empty restore targets without partial writes', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   const backup = await createVerifiedBackup(context.config, context.db);
   const corrupt = path.join(context.config.backupsDir, 'corrupt-copy.kgbak');
   const bytes = fs.readFileSync(backup.path);
@@ -190,8 +190,8 @@ test('detects archive corruption and refuses non-empty restore targets without p
   assert.equal(fs.readFileSync(path.join(target, 'keep.txt'), 'utf8'), 'do not replace');
 });
 
-test('prunes only snapshots outside both minimum-count and age policy', (t) => {
-  const context = setup(t);
+test('prunes only snapshots outside both minimum-count and age policy', async (t) => {
+  const context = await setup(t);
   const records = [
     ['20260101T000000Z', '111111111111', '2026-01-01T00:00:00.000Z'],
     ['20260102T000000Z', '222222222222', '2026-01-02T00:00:00.000Z'],
@@ -212,7 +212,7 @@ test('prunes only snapshots outside both minimum-count and age policy', (t) => {
 });
 
 test('maintenance mode allows reads and backup creation path but blocks writes and Git pushes', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   const next = (_req, res) => { res.writeHead(204); res.end(); };
   const guard = createMaintenanceGuard({ config: context.config, next });
   const server = http.createServer(guard);
@@ -233,7 +233,7 @@ test('maintenance mode allows reads and backup creation path but blocks writes a
 });
 
 test('backup API is restricted to the configured instance administrator and blocks CSRF', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   const viewerId = uid('usr');
   context.db.prepare('INSERT INTO users (id, email, password_hash, display_name) VALUES (?, ?, ?, ?)')
     .run(viewerId, 'viewer@example.com', hashPassword('secure-viewer-password'), 'Viewer');

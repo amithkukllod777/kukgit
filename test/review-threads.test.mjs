@@ -22,7 +22,7 @@ import {
   upsertReviewThreadPolicy,
 } from '../src/review-threads.mjs';
 
-function setup(t) {
+async function setup(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-review-thread-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
@@ -50,9 +50,9 @@ function setup(t) {
       (id, organization_id, slug, name, description, visibility, default_branch, created_by)
     VALUES (?, ?, 'thread-demo', 'Thread Demo', '', 'private', 'main', ?)
   `).run(repositoryId, orgId, authorId);
-  createDemoCommit(config, 'kuklabs', 'thread-demo');
+  await createDemoCommit(config, 'kuklabs', 'thread-demo');
   createBranch(config, 'kuklabs', 'thread-demo', 'feature/thread-review', 'main');
-  commitFile(config, 'kuklabs', 'thread-demo', {
+  await commitFile(config, 'kuklabs', 'thread-demo', {
     branch: 'feature/thread-review',
     filePath: 'reviewed.js',
     content: 'export const reviewed = true;\n',
@@ -109,8 +109,8 @@ async function login(origin, email, password) {
   return response.headers.get('set-cookie').split(';')[0];
 }
 
-test('review threads support replies, resolution, reopening and outdated detection', (t) => {
-  const context = setup(t);
+test('review threads support replies, resolution, reopening and outdated detection', async (t) => {
+  const context = await setup(t);
   upsertReviewThreadPolicy(context.db, {
     repositoryId: context.repositoryId,
     branch: 'main',
@@ -169,7 +169,7 @@ test('review threads support replies, resolution, reopening and outdated detecti
   summary = reviewThreadSummary(context.db, context.config, context.repository, context.pull);
   assert.equal(summary.mergeAllowed, false);
 
-  commitFile(context.config, 'kuklabs', 'thread-demo', {
+  await commitFile(context.config, 'kuklabs', 'thread-demo', {
     branch: 'feature/thread-review',
     filePath: 'reviewed.js',
     content: 'export const reviewed = Object.freeze({ enabled: true });\n',
@@ -184,8 +184,8 @@ test('review threads support replies, resolution, reopening and outdated detecti
   assert.equal(summary.mergeAllowed, true);
 });
 
-test('review thread anchors must reference changed files and valid lines', (t) => {
-  const context = setup(t);
+test('review thread anchors must reference changed files and valid lines', async (t) => {
+  const context = await setup(t);
   assert.throws(
     () => createReviewThread(context.db, context.config, {
       repository: context.repository,
@@ -216,7 +216,7 @@ test('review thread anchors must reference changed files and valid lines', (t) =
 });
 
 test('review thread API enforces authentication, origin and repository permission', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   const app = createApp({ config: context.config, db: context.db });
   const reviewApi = createReviewThreadsApiHandler({ config: context.config, db: context.db });
   const server = http.createServer(async (req, res) => {

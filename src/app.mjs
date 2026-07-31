@@ -19,6 +19,7 @@ import {
 } from './git.mjs';
 import { handleGitHttp, isGitHttpPath } from './git-http.mjs';
 import { assertBranch, assertSlug, httpError, originAllowed, validateRemoteUrl } from './security.mjs';
+import { KUKGIT_VERSION } from './version.mjs';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -146,7 +147,7 @@ export function createApp({ config, db }) {
       if (!originAllowed(req, config.baseUrl)) throw httpError(403, 'Request origin is not allowed.', 'CSRF_BLOCKED');
 
       if (req.method === 'GET' && pathname === '/api/health') {
-        return sendJson(res, 200, { status: 'ok', service: 'kukgit', version: '0.1.0', uptimeSeconds: Math.floor(process.uptime()), requestId });
+        return sendJson(res, 200, { status: 'ok', service: 'kukgit', version: KUKGIT_VERSION, uptimeSeconds: Math.floor(process.uptime()), requestId });
       }
 
       if (req.method === 'POST' && pathname === '/api/auth/login') {
@@ -237,7 +238,7 @@ export function createApp({ config, db }) {
         const sourceUrl = validateRemoteUrl(body.sourceUrl);
         const org = requireOrg(db, user, orgSlug, 'maintainer');
         if (findRepo(db, orgSlug, slug)) throw httpError(409, 'A repository with this name already exists.');
-        importMirror(config, orgSlug, slug, sourceUrl);
+        await importMirror(config, orgSlug, slug, sourceUrl);
         const branches = listBranches(config, orgSlug, slug);
         const defaultBranch = branches.some((branch) => branch.name === 'main') ? 'main' : branches.some((branch) => branch.name === 'master') ? 'master' : branches[0]?.name || 'main';
         const repoId = uid('repo');
@@ -301,7 +302,7 @@ export function createApp({ config, db }) {
       if (req.method === 'POST' && params) {
         const { org, repo } = requireRepo(db, config, user, params.org, params.repo, 'developer');
         const body = await readJson(req, 2 * 1024 * 1024);
-        const result = commitFile(config, params.org, params.repo, {
+        const result = await commitFile(config, params.org, params.repo, {
           branch: body.branch || repo.default_branch,
           filePath: body.path,
           content: body.content,
@@ -383,7 +384,7 @@ export function createApp({ config, db }) {
         const pull = db.prepare('SELECT * FROM pull_requests WHERE repository_id = ? AND number = ?').get(repo.id, Number(params.number));
         if (!pull) throw httpError(404, 'Pull request not found.');
         if (pull.status !== 'open') throw httpError(409, 'Only open pull requests can be merged.');
-        const result = mergeBranches(config, params.org, params.repo, { baseBranch: pull.base_branch, headBranch: pull.head_branch, title: `Merge pull request #${pull.number}: ${pull.title}`, authorName: user.displayName, authorEmail: user.email });
+        const result = await mergeBranches(config, params.org, params.repo, { baseBranch: pull.base_branch, headBranch: pull.head_branch, title: `Merge pull request #${pull.number}: ${pull.title}`, authorName: user.displayName, authorEmail: user.email });
         db.prepare("UPDATE pull_requests SET status = 'merged', merged_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(pull.id);
         db.prepare('UPDATE repositories SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(repo.id);
         audit(db, { organizationId: org.id, userId: user.id, action: 'pull_request.merged', targetType: 'pull_request', targetId: pull.id, metadata: { repository: params.repo, number: pull.number, commit: result.sha } });

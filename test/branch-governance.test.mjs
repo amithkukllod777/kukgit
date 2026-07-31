@@ -18,7 +18,7 @@ import { openDatabase, seedCore, uid } from '../src/db.mjs';
 import { commitFile, createBareRepository, createBranch, createDemoCommit } from '../src/git.mjs';
 import { migrateRepositoryAccess } from '../src/repository-access.mjs';
 
-function setup(t) {
+async function setup(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-governance-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = {
@@ -46,9 +46,9 @@ function setup(t) {
       (id, organization_id, slug, name, description, visibility, default_branch, created_by)
     VALUES (?, ?, 'governance-demo', 'Governance Demo', '', 'private', 'main', ?)
   `).run(repositoryId, orgId, authorId);
-  createDemoCommit(config, 'kuklabs', 'governance-demo');
+  await createDemoCommit(config, 'kuklabs', 'governance-demo');
   createBranch(config, 'kuklabs', 'governance-demo', 'feature/review-policy', 'main');
-  commitFile(config, 'kuklabs', 'governance-demo', {
+  await commitFile(config, 'kuklabs', 'governance-demo', {
     branch: 'feature/review-policy',
     filePath: 'feature.txt',
     content: 'first version\n',
@@ -85,8 +85,8 @@ function setup(t) {
   return { config, db, repository, repositoryId, pull, author, reviewer };
 }
 
-test('protected branch blocks direct writes and requires a fresh approval', (t) => {
-  const context = setup(t);
+test('protected branch blocks direct writes and requires a fresh approval', async (t) => {
+  const context = await setup(t);
   const rule = upsertBranchProtectionRule(context.db, {
     repositoryId: context.repositoryId,
     branch: 'main',
@@ -126,7 +126,7 @@ test('protected branch blocks direct writes and requires a fresh approval', (t) 
   assert.equal(governance.approvalCount, 1);
   assert.equal(governance.mergeAllowed, true);
 
-  commitFile(context.config, 'kuklabs', 'governance-demo', {
+  await commitFile(context.config, 'kuklabs', 'governance-demo', {
     branch: 'feature/review-policy',
     filePath: 'feature.txt',
     content: 'second version\n',
@@ -152,8 +152,8 @@ test('protected branch blocks direct writes and requires a fresh approval', (t) 
   assert.match(governance.mergeBlockReasons.join(' '), /change request/i);
 });
 
-test('pre-receive hook rejects protected branch pushes and permits other branches', (t) => {
-  const context = setup(t);
+test('pre-receive hook rejects protected branch pushes and permits other branches', async (t) => {
+  const context = await setup(t);
   upsertBranchProtectionRule(context.db, {
     repositoryId: context.repositoryId,
     branch: 'main',

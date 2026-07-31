@@ -20,7 +20,7 @@ function git(args, cwd) {
   if (result.status !== 0) throw new Error(result.stderr || result.stdout || `git ${args.join(' ')} failed`);
 }
 
-function setup(t) {
+async function setup(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-pr-diff-api-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
@@ -47,7 +47,7 @@ function setup(t) {
       (id, organization_id, slug, name, description, visibility, default_branch, created_by)
     VALUES (?, ?, 'diff-api-demo', 'Diff API Demo', '', 'private', 'main', ?)
   `).run(repositoryId, orgId, ownerId);
-  createDemoCommit(config, 'kuklabs', 'diff-api-demo');
+  await createDemoCommit(config, 'kuklabs', 'diff-api-demo');
 
   const work = path.join(dataDir, 'work');
   git(['clone', repoDiskPath(config, 'kuklabs', 'diff-api-demo'), work]);
@@ -89,7 +89,7 @@ async function login(origin, email, password) {
 }
 
 test('diff API permits read access, requires Write for comments and blocks CSRF', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   const app = createApp({ config: context.config, db: context.db });
   const diffApi = createPullRequestDiffsApiHandler({ config: context.config, db: context.db });
   const server = http.createServer(async (req, res) => {

@@ -8,7 +8,7 @@ import { openDatabase, seedCore, uid } from '../src/db.mjs';
 import { analyzeRepository } from '../src/analysis.mjs';
 import { createBareRepository, createDemoCommit } from '../src/git.mjs';
 
-test('produces a deterministic repository health report', (t) => {
+test('produces a deterministic repository health report', async (t) => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-analysis-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({ dataDir, databasePath: path.join(dataDir, 'test.db'), repositoriesDir: path.join(dataDir, 'repos'), tempDir: path.join(dataDir, 'tmp'), nodeEnv: 'test', adminEmail: 'test@example.com', adminPassword: 'secure-test-password', adminName: 'Test User' });
@@ -19,7 +19,7 @@ test('produces a deterministic repository health report', (t) => {
   const org = db.prepare('SELECT id FROM organizations LIMIT 1').get();
   const repoId = uid('repo');
   createBareRepository(config, 'kuklabs', 'analysis-demo');
-  createDemoCommit(config, 'kuklabs', 'analysis-demo');
+  await createDemoCommit(config, 'kuklabs', 'analysis-demo');
   db.prepare(`INSERT INTO repositories (id, organization_id, slug, name, description, visibility, default_branch, created_by) VALUES (?, ?, 'analysis-demo', 'Analysis Demo', '', 'private', 'main', ?)`).run(repoId, org.id, user.id);
   const repo = db.prepare(`SELECT r.*, 'kuklabs' AS org_slug FROM repositories r WHERE id = ?`).get(repoId);
   const result = analyzeRepository(config, db, repo, 'main');

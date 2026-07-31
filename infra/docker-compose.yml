@@ -9,11 +9,45 @@ services:
       PORT: 8787
       HOST: 0.0.0.0
       KUKGIT_BASE_URL: ${KUKGIT_BASE_URL:-http://localhost:8787}
-      KUKGIT_ADMIN_EMAIL: ${KUKGIT_ADMIN_EMAIL}
-      KUKGIT_ADMIN_PASSWORD: ${KUKGIT_ADMIN_PASSWORD}
+      KUKGIT_COOKIE_SECURE: ${KUKGIT_COOKIE_SECURE:-true}
+
+      # Identity. NODE_ENV=production defaults to authkit and refuses to start in
+      # local mode, so these are required unless the local override below is set.
+      KUKGIT_AUTH_MODE: ${KUKGIT_AUTH_MODE:-authkit}
+      KUKGIT_AUTHKIT_BASE_URL: ${KUKGIT_AUTHKIT_BASE_URL:-}
+      KUKGIT_AUTHKIT_PRODUCT_ID: ${KUKGIT_AUTHKIT_PRODUCT_ID:-kukgit}
+      KUKGIT_AUTHKIT_ENCRYPTION_KEY: ${KUKGIT_AUTHKIT_ENCRYPTION_KEY:-}
+      KUKGIT_ALLOW_LOCAL_AUTH_IN_PRODUCTION: ${KUKGIT_ALLOW_LOCAL_AUTH_IN_PRODUCTION:-false}
+
+      # Instance operator allowlist. Falls back to KUKGIT_ADMIN_EMAIL when unset.
+      KUKGIT_INSTANCE_ADMIN_EMAILS: ${KUKGIT_INSTANCE_ADMIN_EMAILS:-}
+      KUKGIT_ADMIN_EMAIL: ${KUKGIT_ADMIN_EMAIL:-}
       KUKGIT_ADMIN_NAME: ${KUKGIT_ADMIN_NAME:-KukGit Administrator}
-      KUKGIT_DEV_GIT_TOKEN: ${KUKGIT_DEV_GIT_TOKEN}
-      KUKGIT_COOKIE_SECURE: ${KUKGIT_COOKIE_SECURE:-false}
+      # Only used when KUKGIT_AUTH_MODE=local.
+      KUKGIT_ADMIN_PASSWORD: ${KUKGIT_ADMIN_PASSWORD:-}
+
+      # Feature keys. Each feature stays unavailable until its key is set.
+      KUKGIT_WEBHOOK_ENCRYPTION_KEY: ${KUKGIT_WEBHOOK_ENCRYPTION_KEY:-}
+      KUKGIT_LFS_AUTH_KEY: ${KUKGIT_LFS_AUTH_KEY:-}
+
+      # Transactional email. Invitations and notifications stay queued without it.
+      KUKGIT_SMTP_HOST: ${KUKGIT_SMTP_HOST:-}
+      KUKGIT_SMTP_PORT: ${KUKGIT_SMTP_PORT:-587}
+      KUKGIT_SMTP_SECURE: ${KUKGIT_SMTP_SECURE:-false}
+      KUKGIT_SMTP_STARTTLS: ${KUKGIT_SMTP_STARTTLS:-true}
+      KUKGIT_SMTP_USER: ${KUKGIT_SMTP_USER:-}
+      KUKGIT_SMTP_PASSWORD: ${KUKGIT_SMTP_PASSWORD:-}
+      KUKGIT_EMAIL_FROM: ${KUKGIT_EMAIL_FROM:-}
+      KUKGIT_EMAIL_FROM_NAME: ${KUKGIT_EMAIL_FROM_NAME:-KukGit}
+
+      # Provider bounce/complaint callbacks. Off unless both are set.
+      KUKGIT_EMAIL_PROVIDER_EVENTS_ENABLED: ${KUKGIT_EMAIL_PROVIDER_EVENTS_ENABLED:-false}
+      KUKGIT_EMAIL_PROVIDER_WEBHOOK_SECRET: ${KUKGIT_EMAIL_PROVIDER_WEBHOOK_SECRET:-}
+
+      # SSH clone URLs shown in the web interface.
+      KUKGIT_SSH_HOST: ${KUKGIT_SSH_HOST:-}
+      KUKGIT_SSH_PORT: ${KUKGIT_SSH_PORT:-22}
+      KUKGIT_SSH_USER: ${KUKGIT_SSH_USER:-git}
     ports:
       - "8787:8787"
     volumes:
