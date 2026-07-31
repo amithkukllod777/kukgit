@@ -1,29 +1,43 @@
 # KukGit Engineering TODO
 
-Updated: 2026-07-28
+Updated: 2026-07-29
 
 This is the prioritized execution list for KukGit. The phase-level direction is in [ROADMAP.md](ROADMAP.md). GitHub issues and pull requests are authoritative for implementation status.
 
 ## Non-negotiable safety rules
 
 - Keep `main` deployable and protect live users from downtime.
-- Do not merge failing CI, non-mergeable stale branches or work that weakens an existing authorization contract.
+- Do not merge failing CI, zero-step CI, non-mergeable stale branches or work that weakens an existing authorization contract.
 - SQLite remains authoritative until the PostgreSQL cutover milestone is explicitly approved and verified.
 - PostgreSQL observers remain read-only and disabled by default.
 - Do not enable dual-write, automatic cutover or PostgreSQL restore using Stage 1–6 evidence alone.
+- Stage 7 write-service code does not authorize production PostgreSQL writes or cutover.
 - Do not move bare Git repository or Git LFS bytes as part of metadata-database migration.
 - Production identity remains One Kuklabs Account/AuthKit; never restore a product-specific production password backend.
 - No secrets, tokens, password material, raw provider payloads or sampled database rows in logs, evidence or UI.
 
 ## P0 — Current private-alpha critical path
 
+### 0. Restore trustworthy CI execution
+
+Current blocker: draft [PR #70](https://github.com/amithkukllod777/kukgit/pull/70) is mergeable, but GitHub-hosted jobs have failed before their first step and produced no executable logs or test evidence.
+
+- [ ] restore GitHub Actions hosted-runner provisioning for this repository/account
+- [ ] run normal doctor, syntax and complete Node test suite from the exact PR #70 head
+- [ ] run disposable PostgreSQL 16 integration tests from the exact PR #70 head
+- [ ] verify workflow permissions remain read-only except explicitly required test services
+- [ ] confirm no temporary diagnostic, write-enabled or runner-probe workflow remains
+- [ ] mark PR #70 ready and merge only after every required job executes and passes
+
+Merge gate: `mergeable: true` is insufficient; zero executed steps means **not safe to merge**.
+
 ### 1. PostgreSQL production data layer
 
 Parent: [#43 — PostgreSQL-compatible data layer and migration tooling](https://github.com/amithkukllod777/kukgit/issues/43)
 
-Active next stage: [#68 — driver-neutral write service and integration CI foundation](https://github.com/amithkukllod777/kukgit/issues/68)
+Active stage: [#68 — driver-neutral write service and integration CI foundation](https://github.com/amithkukllod777/kukgit/issues/68), implemented on draft [PR #70](https://github.com/amithkukllod777/kukgit/pull/70) but not delivered.
 
-Completed prerequisites:
+Completed prerequisites on `main`:
 
 - [x] Stage 1 portability inventory, deterministic manifests and protected exports
 - [x] Stage 2 translated schema and import plan
@@ -32,14 +46,20 @@ Completed prerequisites:
 - [x] Stage 5 read-only shadow parity verification
 - [x] Stage 6 driver-neutral selected reads and asynchronous observer
 
-Next work:
+Stage 7 implementation present on PR #70, awaiting clean CI:
 
-- [ ] inventory and classify all remaining synchronous metadata reads and writes
-- [ ] move remaining safe read paths behind driver-neutral services without changing caller contracts
-- [ ] design a driver-neutral write service with explicit transaction semantics
-- [ ] add PostgreSQL-backed integration CI using an isolated disposable database
-- [ ] define migration-history ownership and idempotent runtime schema upgrades
-- [ ] create dual-run evidence that cannot alter the authoritative response
+- [ ] validate privacy-safe inventory and classification of direct metadata writes
+- [ ] validate named driver-neutral write catalog and transaction/error contracts
+- [ ] validate checksummed migration-history ownership and idempotent upgrades
+- [ ] validate disposable PostgreSQL integration coverage for commit, rollback, constraints, cancellation and type parity
+- [ ] validate the first bounded `audit_logs.insert` slice with SQLite still authoritative
+- [ ] merge Stage 7 only after exact-head CI; then mark these items complete on `main`
+
+Later work after Stage 7 delivery:
+
+- [ ] migrate additional low-risk append-only writes behind the service one bounded slice at a time
+- [ ] preserve disabled-by-default rollout and exact caller contracts
+- [ ] create dual-run evidence that cannot alter authoritative responses
 - [ ] implement maintenance-window cutover command with exact source/target fingerprint approval
 - [ ] implement rollback marker, preserved SQLite archive and tested rollback window
 - [ ] make verified backup/restore metadata-backend aware before production cutover
@@ -138,12 +158,13 @@ Exit gate: PostgreSQL must preserve AuthKit identity links, PATs, SSH keys, invi
 - [x] real-time WebSocket notifications
 - [x] signed email provider events, bounce/complaint suppression and Admin recovery
 - [x] PostgreSQL migration Stages 1–6
-- [x] roadmap and issue/PR hygiene synchronized on 2026-07-28
+- [x] roadmap and prioritized TODO synchronized through 2026-07-29
 
 ## Triage rules
 
-1. P0 safety and recovery work outranks new product surface.
+1. P0 safety, CI restoration and recovery work outrank new product surface.
 2. Every new implementation must have an issue, acceptance criteria and explicit non-goals.
 3. Every PR must include tests and operational documentation when it changes production behavior.
 4. A green test suite is necessary but not sufficient; migration, identity, authorization and recovery contracts require targeted review.
 5. Obsolete or superseded PRs are closed rather than force-merged.
+6. A PR whose jobs never execute remains unvalidated regardless of mergeability or branch age.
