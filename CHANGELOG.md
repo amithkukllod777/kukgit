@@ -67,6 +67,18 @@
 
 ### Hosted CI
 
+- a run publishes a commit status a branch rule can require. The context is
+  derived from the workflow's file path and cannot be declared by the workflow —
+  a file that could name its own context could declare the one a branch rule
+  requires and report success without running anything. Nothing here decides a
+  merge: the required-status policy and the merge guard are unchanged, so adding
+  a workflow can only ever add a check that has to pass.
+- a cancelled run publishes `error`, not `failure`. `failure` says the code is
+  wrong; a cancellation says nobody found out, and reporting it as a failure
+  sends someone looking for a bug that is not there.
+- a Git push authenticated by a personal access token now resolves its actor, so
+  a run triggered by CI's ordinary path has someone to attribute its status to. A
+  run with no resolvable actor publishes nothing rather than borrowing a name.
 - workflow dispatch: a push or tag now starts runs. Workflow files are read at the
   commit being built rather than from a branch tip, so a change to a workflow
   cannot silently rewrite how already-pushed commits are built. Runs are created

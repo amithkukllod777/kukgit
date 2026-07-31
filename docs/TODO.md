@@ -113,7 +113,7 @@ Implementation of the designed model:
 - [x] workflow dispatch: push and tag events start runs — [WORKFLOW_DISPATCH.md](WORKFLOW_DISPATCH.md)
 - [ ] pull_request, schedule and manual dispatch
 - [ ] cache and artifact storage with quotas and retention
-- [ ] required-check integration without bypassing branch governance
+- [x] required-check integration without bypassing branch governance — [WORKFLOW_CHECKS.md](WORKFLOW_CHECKS.md)
 - [x] self-hosted runner agent and registration — [SELF_HOSTED_RUNNERS.md](SELF_HOSTED_RUNNERS.md)
 
 **Hosted** runners are Phase 2 work, not private-alpha exit — [ROADMAP.md](ROADMAP.md)

@@ -72,6 +72,11 @@ function setup(t) {
   run(['init', '--quiet', '--initial-branch=main', work], os.tmpdir());
   run(['config', 'user.email', 'test@example.com']);
   run(['config', 'user.name', 'Test']);
+  // A throwaway test repository must not inherit whatever signing the developer
+  // or CI host has configured globally; an unavailable signer would fail the
+  // test for a reason that has nothing to do with dispatch.
+  run(['config', 'commit.gpgsign', 'false']);
+  run(['config', 'tag.gpgsign', 'false']);
 
   const commit = (files, message = 'change') => {
     for (const [file, content] of Object.entries(files)) {

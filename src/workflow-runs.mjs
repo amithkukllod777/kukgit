@@ -2,6 +2,22 @@ import { audit, uid } from './db.mjs';
 import { hashToken, httpError, randomToken } from './security.mjs';
 import { resolveSecrets } from './secrets-vault.mjs';
 
+// Notified whenever a run's state changes, so a commit status can follow it.
+// A callback rather than a direct import: the scheduler should not depend on
+// how a run is reported, and a reporting failure must not be able to break
+// scheduling.
+let runObserver = null;
+
+export function observeRunChanges(callback) {
+  runObserver = typeof callback === 'function' ? callback : null;
+}
+
+function notifyRunChanged(runId) {
+  if (!runObserver) return;
+  try { runObserver(runId); }
+  catch (error) { console.error('KukGit run observer', error.message); }
+}
+
 export const RUN_STATES = new Set(['queued', 'running', 'success', 'failure', 'cancelled']);
 export const JOB_STATES = new Set(['pending', 'queued', 'running', 'success', 'failure', 'cancelled', 'skipped']);
 
@@ -263,6 +279,8 @@ export function createWorkflowRun(db, {
   });
   insert();
 
+  for (const superseded of cancelled) notifyRunChanged(superseded);
+  notifyRunChanged(runId);
   return { created: true, runId, concurrencyGroup: group, cancelledRuns: cancelled };
 }
 
@@ -390,6 +408,7 @@ export function claimNextJob(db, { runnerId, labels, organizationId, allowForkJo
 
   db.prepare("UPDATE workflow_runs SET status = 'running', started_at = COALESCE(started_at, CURRENT_TIMESTAMP) WHERE id = ? AND status = 'queued'")
     .run(claimed.runId);
+  notifyRunChanged(claimed.runId);
   return claimed;
 }
 
@@ -455,6 +474,7 @@ export function completeJob(db, jobId, { status, reason = null }) {
     WHERE id = ?
   `).run(status, reason, jobId);
   advanceRun(db, job.runId);
+  notifyRunChanged(job.runId);
   return getRun(db, job.runId);
 }
 
@@ -478,6 +498,7 @@ export function cancelRun(db, runId, reason = 'cancelled') {
   `).run(reason, runId);
   db.prepare("UPDATE workflow_runs SET status = 'cancelled', conclusion_reason = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?")
     .run(reason, runId);
+  notifyRunChanged(runId);
   return getRun(db, runId);
 }
 

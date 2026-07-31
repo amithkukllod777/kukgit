@@ -75,6 +75,8 @@ import { createRateLimitGuard } from './src/rate-limit.mjs';
 import { createSecretsApiHandler, migrateSecrets } from './src/secrets-vault.mjs';
 import { createRunnersApiHandler, migrateRunners } from './src/runners.mjs';
 import { createWorkflowDispatchCapture } from './src/workflow-dispatch.mjs';
+import { publishRunCheck } from './src/workflow-checks.mjs';
+import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
 import { migrateWorkflowRuns } from './src/workflow-runs.mjs';
 import { createRealtimeNotificationServer } from './src/realtime-notifications.mjs';
@@ -141,6 +143,9 @@ migrateSecrets(db);
 migrateWorkflowRuns(db);
 migrateWorkflowLogs(db);
 migrateRunners(db);
+// Every run-state change publishes a commit status, so a branch rule can require
+// a workflow the same way it requires any other check.
+observeRunChanges((runId) => publishRunCheck(db, config, runId));
 migrateRepositoryLifecycle(db);
 migrateSshKeys(db);
 migrateGitLfs(db);
