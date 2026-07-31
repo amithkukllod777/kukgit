@@ -53,6 +53,42 @@ export function loadConfig(overrides = {}) {
   const authkitEncryptionKey = overrides.authkitEncryptionKey ?? process.env.KUKGIT_AUTHKIT_ENCRYPTION_KEY ?? (isProduction ? '' : 'kukgit-development-authkit-encryption-key-change-me');
   const authkitTimeoutMs = boundedInteger(overrides.authkitTimeoutMs ?? process.env.KUKGIT_AUTHKIT_TIMEOUT_MS ?? 8000, 'KUKGIT_AUTHKIT_TIMEOUT_MS', 500, 30000);
   const authkitRefreshTtlDays = boundedInteger(overrides.authkitRefreshTtlDays ?? process.env.KUKGIT_AUTHKIT_REFRESH_TTL_DAYS ?? 60, 'KUKGIT_AUTHKIT_REFRESH_TTL_DAYS', 1, 365);
+  // Rate limiting. Defaults are deliberately generous enough for normal
+  // interactive use and tight enough that credential stuffing and invitation
+  // spam are not free. `burst` is the bucket capacity: the size of a momentary
+  // spike a caller may spend before being held to the sustained per-minute rate.
+  const rateLimitEnabled = booleanValue(
+    overrides.rateLimitEnabled ?? process.env.KUKGIT_RATE_LIMIT_ENABLED,
+    true,
+  );
+  const rateLimitTrustProxy = booleanValue(
+    overrides.rateLimitTrustProxy ?? process.env.KUKGIT_TRUST_PROXY,
+    false,
+  );
+  const rateLimit = (name, envKey, perMinuteDefault, burstDefault) => ({
+    perMinute: boundedInteger(
+      overrides[`${name}PerMinute`] ?? process.env[`KUKGIT_RATE_LIMIT_${envKey}_PER_MINUTE`] ?? perMinuteDefault,
+      `KUKGIT_RATE_LIMIT_${envKey}_PER_MINUTE`, 1, 100000,
+    ),
+    burst: boundedInteger(
+      overrides[`${name}Burst`] ?? process.env[`KUKGIT_RATE_LIMIT_${envKey}_BURST`] ?? burstDefault,
+      `KUKGIT_RATE_LIMIT_${envKey}_BURST`, 1, 100000,
+    ),
+  });
+  const rateLimits = {
+    // Password, OTP and Google exchange. Keyed by address for anonymous callers,
+    // so this is the brute-force and credential-stuffing control.
+    auth: rateLimit('rateLimitAuth', 'AUTH', 20, 10),
+    // General authenticated browser API.
+    api: rateLimit('rateLimitApi', 'API', 600, 120),
+    // Git smart HTTP. Clones are chatty, so this is the loosest surface.
+    git: rateLimit('rateLimitGit', 'GIT', 1200, 240),
+    // Invitation creation and resend — the surface with real email-spam cost.
+    invitation: rateLimit('rateLimitInvitation', 'INVITATION', 30, 10),
+    // Webhook create, ping and redeliver, which can be pointed at third parties.
+    webhook: rateLimit('rateLimitWebhook', 'WEBHOOK', 60, 20),
+  };
+
   const organizationOwnerLimit = positiveNumber(overrides.organizationOwnerLimit ?? process.env.KUKGIT_ORGANIZATION_OWNER_LIMIT ?? 5, 'KUKGIT_ORGANIZATION_OWNER_LIMIT');
   const realtimeHeartbeatMs = boundedInteger(overrides.realtimeHeartbeatMs ?? process.env.KUKGIT_REALTIME_HEARTBEAT_MS ?? 25000, 'KUKGIT_REALTIME_HEARTBEAT_MS', 1000, 120000);
   const realtimeAuthRevalidateMs = boundedInteger(overrides.realtimeAuthRevalidateMs ?? process.env.KUKGIT_REALTIME_AUTH_REVALIDATE_MS ?? 60000, 'KUKGIT_REALTIME_AUTH_REVALIDATE_MS', 1000, 600000);
@@ -162,6 +198,9 @@ export function loadConfig(overrides = {}) {
     nodeBinary: overrides.nodeBinary ?? process.env.KUKGIT_NODE_BINARY ?? process.execPath,
     sshCommandScript: overrides.sshCommandScript ?? process.env.KUKGIT_SSH_COMMAND_SCRIPT ?? path.join(root, 'scripts', 'ssh-command.mjs'),
     authorizedKeysPath: overrides.authorizedKeysPath ?? process.env.KUKGIT_AUTHORIZED_KEYS_PATH ?? path.join(dataDir, 'ssh', 'authorized_keys'),
+    rateLimitEnabled,
+    rateLimitTrustProxy,
+    rateLimits,
     aiEndpoint: overrides.aiEndpoint ?? process.env.KUKGIT_AI_ENDPOINT ?? '',
     aiApiKey: overrides.aiApiKey ?? process.env.KUKGIT_AI_API_KEY ?? '',
   };
