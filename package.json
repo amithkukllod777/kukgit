@@ -14,6 +14,7 @@
     "doctor": "node scripts/doctor.mjs && node scripts/doctor-database.mjs",
     "token": "node scripts/token.mjs",
     "backup": "node scripts/backup.mjs",
+    "rehearse": "node scripts/recovery-rehearsal.mjs",
     "database": "node scripts/database.mjs",
     "database:postgresql-import": "node scripts/postgresql-import.mjs",
     "database:postgresql-shadow": "node scripts/postgresql-shadow.mjs",

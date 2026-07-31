@@ -340,6 +340,25 @@ async function extractAndVerify(config, archivePath) {
   }
 }
 
+// Returns the verified manifest itself, which `verifyBackupArchive` deliberately
+// does not: its result is an API response body, and the manifest carries the full
+// per-repository ref listing. Recovery rehearsal needs those refs to prove the
+// restored repositories match the snapshot exactly rather than merely passing
+// fsck, so it reads them here instead of widening the API surface.
+export async function readBackupManifest(config, archivePath) {
+  const extracted = await extractAndVerify(config, archivePath);
+  try {
+    return {
+      manifest: extracted.manifest,
+      verifiedAt: extracted.verifiedAt,
+      verifiedRefs: extracted.verifiedRefs,
+      expandedBytes: extracted.expandedBytes,
+    };
+  } finally {
+    fs.rmSync(extracted.extractRoot, { recursive: true, force: true });
+  }
+}
+
 export async function verifyBackupArchive(config, archivePath) {
   const extracted = await extractAndVerify(config, archivePath);
   try {

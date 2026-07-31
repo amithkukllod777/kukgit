@@ -208,6 +208,22 @@ npm run backup -- restore --archive <file.kgbak> --target /srv/kukgit-restore --
 
 Read [Verified Backups and Disaster Recovery](BACKUPS_AND_RESTORE.md).
 
+## Recovery rehearsal
+
+Prove the backups on a schedule instead of during an incident:
+
+```bash
+npm run rehearse -- --operator "<name>" --evidence /srv/evidence/$(date -u +%Y-%m-%d).json
+```
+
+The drill restores into a throwaway directory and never touches the live
+instance. It exits non-zero if any automated check fails, so it is safe to run
+from cron with alerting on the exit code. Keep the evidence files — they carry
+the measured recovery time and data-loss window.
+
+Read [Production Recovery Rehearsal](RECOVERY_REHEARSAL.md) for the manual
+sign-off steps that a backup deliberately cannot cover.
+
 ## Metadata database
 
 KukGit runs on SQLite. The PostgreSQL program has delivered offline import and
