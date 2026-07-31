@@ -110,6 +110,8 @@ Implementation of the designed model:
 - [x] encrypted repository/organization secrets vault — [SECRETS_VAULT.md](SECRETS_VAULT.md)
 - [x] job authorization: dependency-aware scheduling, least-privilege job tokens, fork isolation — [WORKFLOW_RUNS.md](WORKFLOW_RUNS.md)
 - [x] cancellable build logs and live status — [BUILD_LOGS.md](BUILD_LOGS.md)
+- [x] workflow dispatch: push and tag events start runs — [WORKFLOW_DISPATCH.md](WORKFLOW_DISPATCH.md)
+- [ ] pull_request, schedule and manual dispatch
 - [ ] cache and artifact storage with quotas and retention
 - [ ] required-check integration without bypassing branch governance
 - [x] self-hosted runner agent and registration — [SELF_HOSTED_RUNNERS.md](SELF_HOSTED_RUNNERS.md)

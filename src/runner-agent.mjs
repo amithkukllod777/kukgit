@@ -79,6 +79,34 @@ export function stepEnvironment({ job, run, secrets, workspace, stepIndex }) {
 }
 
 /**
+ * Substitutes the repository-controlled fields a script is allowed to reference.
+ *
+ * The validator already refuses every other context inside `run:` — event
+ * content, fork branch names and secrets must go through `env:`. So this map is
+ * the complete set of things that can legitimately appear, and anything not in
+ * it is left exactly as written rather than guessed at: a script that reaches
+ * the runner with an unrecognised expression is a validator bug, and quietly
+ * substituting something would hide it.
+ */
+export function resolveRunScript(script, { job, run }) {
+  const values = new Map([
+    ['github.sha', run.commitSha],
+    ['github.ref', run.ref],
+    ['github.ref_name', String(run.ref ?? '').replace(/^refs\/(heads|tags)\//, '')],
+    ['github.ref_type', String(run.ref ?? '').startsWith('refs/tags/') ? 'tag' : 'branch'],
+    ['github.repository', run.repository],
+    ['github.repository_owner', String(run.repository ?? '').split('/')[0]],
+    ['github.workflow', run.workflow ?? ''],
+    ['github.job', job.key],
+    ['github.run_id', run.id],
+    ['github.event_name', run.event],
+    ['github.workspace', run.workspace ?? ''],
+  ]);
+  return String(script).replace(/\$\{\{\s*([A-Za-z0-9_.]+)\s*\}\}/g,
+    (whole, reference) => (values.has(reference) ? String(values.get(reference)) : whole));
+}
+
+/**
  * Writes a step's script to a file and executes it.
  *
  * The script is never assembled into a shell command string. `bash <file>` means
@@ -277,7 +305,7 @@ export async function executeJob(client, claimed, {
       fs.mkdirSync(cwd, { recursive: true });
 
       const result = await runStep({
-        script: step.run,
+        script: resolveRunScript(step.run, { job, run: { ...run, workspace: workspaceRoot } }),
         shell: step.shell || 'bash',
         cwd,
         env: stepEnvironment({ job, run, secrets, workspace: workspaceRoot, stepIndex: index }),
