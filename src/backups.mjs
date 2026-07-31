@@ -8,6 +8,7 @@ import { packPortableArchive, sha256File, unpackPortableArchive, validateArchive
 import { audit, uid } from './db.mjs';
 import { repoDiskPath } from './git.mjs';
 import { httpError, originAllowed } from './security.mjs';
+import { KUKGIT_VERSION } from './version.mjs';
 
 const BACKUP_FORMAT = 'kukgit-backup-v1';
 const BACKUP_INDEX_FORMAT = 'kukgit-backup-index-v1';
@@ -217,7 +218,7 @@ export async function createVerifiedBackup(config, db) {
       format: BACKUP_FORMAT,
       backupId,
       createdAt: createdAt.toISOString(),
-      application: { name: 'KukGit', version: '0.1.0' },
+      application: { name: 'KukGit', version: KUKGIT_VERSION },
       database: { path: databaseRelativePath, size: databaseFile.size, sha256: databaseFile.sha256, repositoryCount: databaseInfo.repositoryCount },
       configuration: { path: configRelativePath, size: configFile.size, sha256: configFile.sha256, secretValuesIncluded: false },
       repositories,

@@ -13,7 +13,7 @@ import { lfsObjectPath, migrateGitLfs } from '../src/git-lfs.mjs';
 import { migrateRepositoryAccess } from '../src/repository-access.mjs';
 import { migrateRepositoryLifecycle } from '../src/repository-lifecycle.mjs';
 
-function setup(t) {
+async function setup(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-lfs-backup-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
@@ -48,7 +48,7 @@ function setup(t) {
       (id, organization_id, slug, name, description, visibility, default_branch, created_by)
     VALUES (?, ?, 'lfs-backup', 'LFS Backup', '', 'private', 'main', ?)
   `).run(repositoryId, orgId, userId);
-  createDemoCommit(config, 'kuklabs', 'lfs-backup');
+  await createDemoCommit(config, 'kuklabs', 'lfs-backup');
   return { config, db, userId, repositoryId };
 }
 
@@ -70,7 +70,7 @@ function attachObject(context, content) {
 }
 
 test('verified backup archives and restores Git LFS objects with metadata', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   const content = Buffer.from('KukGit LFS disaster recovery payload\n');
   const object = attachObject(context, content);
 
@@ -84,7 +84,7 @@ test('verified backup archives and restores Git LFS objects with metadata', asyn
   assert.equal(verification.lfs.objectCount, 1);
   assert.equal(verification.lfs.totalBytes, content.length);
 
-  const target = path.join(path.dirname(context.config.dataDir), 'restored-lfs-data');
+  const target = path.join(context.config.dataDir, 'restored-lfs-data');
   const restored = await restoreBackupArchive(context.config, backup.path, target);
   assert.equal(restored.restored, true);
   assert.equal(restored.lfs.objectCount, 1);
@@ -103,7 +103,7 @@ test('verified backup archives and restores Git LFS objects with metadata', asyn
 });
 
 test('backup creation rejects missing or corrupt Git LFS object data', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   const content = Buffer.from('object that will be corrupted');
   const object = attachObject(context, content);
   fs.writeFileSync(object.destination, Buffer.from('different bytes'), { mode: 0o600 });

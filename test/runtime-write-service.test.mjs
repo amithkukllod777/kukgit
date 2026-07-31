@@ -84,7 +84,10 @@ test('audit writes preserve the existing synchronous API through the registered 
       target_type AS targetType, target_id AS targetId, metadata_json AS metadataJson
     FROM audit_logs WHERE id = ?
   `).get(auditId);
-  assert.deepEqual(row, {
+  // `node:sqlite` returns rows with a null prototype, which strict deep equality
+  // compares. Spreading gives an ordinary object so the assertion is about the
+  // columns rather than the row's prototype.
+  assert.deepEqual({ ...row }, {
     id: auditId,
     organizationId: orgId,
     userId,

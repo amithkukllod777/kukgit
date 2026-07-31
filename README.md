@@ -6,7 +6,7 @@ This repository contains the working KukGit foundation. It is not a visual mocku
 
 > Product direction: Git hosting + collaboration + AI review + CI/CD + package/container registries + cloud development and deployment.
 
-## What works in v0.1.0
+## What works in v0.2.0
 
 - One Kuklabs Account production authentication through central AuthKit
 - Stable central `kuklabs_user_id` mapped one-to-one to KukGit product profiles
@@ -43,7 +43,10 @@ This repository contains the working KukGit foundation. It is not a visual mocku
 - Read, Triage, Write, Maintain and Admin permission hierarchy
 - Effective permission calculation across organization role, direct grant and team grants
 - Durable per-user notification inbox, unread counts and delivery preferences
+- Real-time WebSocket notification delivery with user isolation and session revalidation
 - Dependency-free SMTP transport, durable email outbox, retries and delivery history
+- Signed provider delivery events, bounce/complaint suppression and Admin review
+- SMTP recipient-stage bounce classification as a second suppression signal
 - Pull-request, review, merge, status-check and operational notifications
 - Repository archive, organization transfer, recoverable Trash, restore and permanent purge
 - Exact-branch protection rules
@@ -275,7 +278,7 @@ npm run backup -- verify --archive <file.kgbak>
 npm run backup -- maintenance off
 ```
 
-Snapshots include SQLite metadata, Git bundles and all recorded Git LFS objects. Restore supports dry-run validation and writes only to a missing or empty target directory. Read [Verified Backups and Disaster Recovery](docs/BACKUPS_AND_DISASTER_RECOVERY.md).
+Snapshots include SQLite metadata, Git bundles and all recorded Git LFS objects. Restore supports dry-run validation and writes only to a missing or empty target directory. Read [Verified Backups and Disaster Recovery](docs/BACKUPS_AND_RESTORE.md).
 
 ## PostgreSQL migration readiness
 

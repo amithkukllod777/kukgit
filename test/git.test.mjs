@@ -12,11 +12,11 @@ function tempConfig() {
   return { dataDir, repositoriesDir: path.join(dataDir, 'repos'), tempDir: path.join(dataDir, 'tmp') };
 }
 
-test('creates, browses and updates a real bare Git repository', (t) => {
+test('creates, browses and updates a real bare Git repository', async (t) => {
   const config = tempConfig();
   t.after(() => fs.rmSync(config.dataDir, { recursive: true, force: true }));
   createBareRepository(config, 'kuklabs', 'demo-repo');
-  createDemoCommit(config, 'kuklabs', 'demo-repo');
+  await createDemoCommit(config, 'kuklabs', 'demo-repo');
   const branches = listBranches(config, 'kuklabs', 'demo-repo');
   assert.equal(branches[0].name, 'main');
   assert.equal(listCommits(config, 'kuklabs', 'demo-repo', 'main').length, 1);
@@ -24,7 +24,7 @@ test('creates, browses and updates a real bare Git repository', (t) => {
   assert.match(readBlob(config, 'kuklabs', 'demo-repo', 'main', 'README.md').content, /KukGit Demo/);
 
   createBranch(config, 'kuklabs', 'demo-repo', 'feature/test', 'main');
-  const commit = commitFile(config, 'kuklabs', 'demo-repo', {
+  const commit = await commitFile(config, 'kuklabs', 'demo-repo', {
     branch: 'feature/test', filePath: 'src/new.js', content: 'export const ready = true;\n', message: 'Add test file',
     authorName: 'Test User', authorEmail: 'test@example.com',
   });

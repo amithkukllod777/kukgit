@@ -8,6 +8,7 @@ This document records product phases and safety boundaries. The actionable engin
 
 - **Delivered** — merged to `main` with CI and documentation.
 - **Active** — approved work currently tracked by an open issue or pull request.
+- **Blocked** — implementation may exist, but a required safety or validation gate is unavailable.
 - **Planned** — sequenced after the current private-alpha exit work.
 - **Blocked by safety boundary** — must not be enabled before its listed prerequisites are verified.
 
@@ -81,7 +82,7 @@ Status: **Delivered**.
 
 ### PostgreSQL migration program
 
-Status: **Stages 1–6 delivered; Stage 7 active; production cutover not enabled**. Parent tracking issue: [#43](https://github.com/amithkukllod777/kukgit/issues/43). Active stage: [#68](https://github.com/amithkukllod777/kukgit/issues/68), draft PR [#70](https://github.com/amithkukllod777/kukgit/pull/70).
+Status: **Stages 1–6 delivered; Stage 7 active but validation-blocked; production cutover not enabled**. Parent tracking issue: [#43](https://github.com/amithkukllod777/kukgit/issues/43). Active stage: [#68](https://github.com/amithkukllod777/kukgit/issues/68), draft PR [#70](https://github.com/amithkukllod777/kukgit/pull/70).
 
 Delivered stages:
 
@@ -96,6 +97,11 @@ Active Stage 7 scope:
 
 7. **Driver-neutral write foundation and PostgreSQL integration CI** — privacy-safe write-surface inventory, named parameterized write catalog, explicit transaction/error/cancellation contract, checksummed migration history, production-default-off rollout flag, first append-only audit slice and disposable PostgreSQL compatibility tests.
 
+Stage 7 status:
+
+- Stage 7 remains **not delivered** because GitHub-hosted Actions jobs are failing before their first step and provide no executable CI evidence.
+- PR #70 must remain draft and unmerged until normal tests and the disposable PostgreSQL integration job execute successfully from the exact reviewed head.
+
 Safety boundary:
 
 - SQLite remains the authoritative runtime.
@@ -103,6 +109,7 @@ Safety boundary:
 - The Stage 7 runtime write service is disabled by default in production and, when enabled, still writes only to authoritative SQLite.
 - PostgreSQL writes exist only inside isolated compatibility tests and explicit migration tooling.
 - No dual-write, result substitution, automatic cutover or backend-aware restore is enabled.
+- No PostgreSQL write path may be treated as delivered without clean integration CI.
 - A verified shadow report or Stage 7 compatibility test does not authorize cutover.
 - Bare Git repositories and Git LFS object bytes remain outside the metadata migration.
 
@@ -110,8 +117,8 @@ Safety boundary:
 
 Status: **Active / planned**.
 
-1. Complete Stage 7 validation and then migrate additional bounded low-risk metadata writes behind the reviewed catalog.
-2. Keep disposable PostgreSQL integration CI mandatory for every migrated write slice.
+1. Restore GitHub Actions hosted-runner execution and complete exact-head CI for PR #70.
+2. Complete Stage 7 validation, then migrate additional bounded low-risk metadata writes behind the reviewed catalog, keeping disposable PostgreSQL integration CI mandatory for every slice.
 3. Build explicit maintenance-window cutover, rollback evidence and backend-aware backup/restore.
 4. Rehearse production recovery for AuthKit, metadata, Git repositories, LFS, SMTP/provider events and WebSockets.
 5. Define distributed-job and scalable object-storage boundaries without disrupting live Git traffic.
@@ -176,4 +183,4 @@ Status: **Planned**.
 
 ## Release rule
 
-A roadmap item is marked Delivered only after its implementation, security boundary, automated tests, operational documentation and clean CI are merged to `main`.
+A roadmap item is marked Delivered only after its implementation, security boundary, automated tests, operational documentation and clean CI are merged to `main`. Mergeability alone is not evidence of safety, and a branch with zero executed CI steps must never be promoted.

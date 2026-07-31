@@ -8,6 +8,15 @@ const MAX_WEBHOOK_BYTES = 256 * 1024;
 const MAX_ADMIN_BYTES = 64 * 1024;
 const EVENT_TYPES = new Set(['delivered', 'deferred', 'bounce', 'complaint']);
 
+// Enhanced status codes (RFC 3463) that identify the mailbox itself as invalid.
+const SMTP_HARD_ENHANCED = /^5\.(?:1\.(?:1|2|3|6|10)|2\.1|4\.4)$/;
+// Capacity and size failures. The address is real and the mailbox is only
+// temporarily unusable, so these must stay retryable.
+const SMTP_SOFT_ENHANCED = /^5\.(?:2\.2|2\.3|3\.1|3\.4)$/;
+// Basic codes that conventionally mean "no such mailbox" at RCPT TO. 552 is a
+// quota failure and 554 is widely used for policy blocks, so both are excluded.
+const SMTP_HARD_BASIC = new Set([550, 551, 553]);
+
 function tableExists(db, name) {
   return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?").get(name));
 }
@@ -415,4 +424,99 @@ export function createEmailProviderEventsApiHandler({ config, db }) {
       return sendJson(res, status, { error: { code: error.code || 'EMAIL_PROVIDER_ADMIN_FAILED', message: status >= 500 ? 'Email delivery administration failed.' : error.message } });
     }
   };
+}
+
+// Synchronous SMTP rejections, as a second suppression signal alongside provider
+// webhooks.
+//
+// The webhook path above covers providers that accept a message and report the
+// failure later. This path covers the failure we observe ourselves, during the
+// SMTP conversation. Both converge on the same `email_suppressions` table and the
+// same admin review workflow.
+
+function smtpEnhancedStatus(text) {
+  const match = String(text ?? '').match(/\b([245]\.\d{1,3}\.\d{1,3})\b/);
+  return match ? match[1] : null;
+}
+
+// Decides whether a delivery failure proves the recipient address is dead.
+//
+// Deliberately narrow. Mis-suppressing a valid address silently blackholes a real
+// user, which is far worse than retrying a dead one, so anything ambiguous
+// retries.
+export function classifySmtpRejection(error) {
+  const stage = error?.smtpStage ?? null;
+  const code = Number(error?.smtpCode) || null;
+  const enhanced = smtpEnhancedStatus(error?.message);
+  const undecided = { suppress: false, reason: null, code, enhanced, stage };
+
+  // Only the recipient handshake speaks about the recipient. A 5xx at MAIL FROM,
+  // AUTH or DATA describes our sender, our credentials or the message body.
+  if (stage !== 'recipient') return undecided;
+  if (!code || code < 500) return undecided;
+  if (enhanced && SMTP_SOFT_ENHANCED.test(enhanced)) return undecided;
+  if (enhanced && SMTP_HARD_ENHANCED.test(enhanced)) {
+    return { suppress: true, reason: 'hard_bounce', code, enhanced, stage };
+  }
+  // An enhanced code that is neither clearly hard nor soft — 5.7.x policy and
+  // reputation blocks, for example — is ambiguous. Leave the address alone.
+  if (enhanced) return undecided;
+  if (SMTP_HARD_BASIC.has(code)) {
+    return { suppress: true, reason: 'hard_bounce', code, enhanced, stage };
+  }
+  return undecided;
+}
+
+// Records a permanent SMTP rejection and suppresses the recipient.
+//
+// A synthetic `email_provider_events` row with provider `smtp` keeps one audit
+// trail for both signals and satisfies the `source_event_id` foreign key, so the
+// admin console shows SMTP-observed and provider-reported suppressions the same
+// way. The provider event ID is derived from the outbox ID, which makes the write
+// idempotent for a given message.
+export function recordSmtpRejection(db, { email, outboxId = null, error, occurredAt = new Date() }) {
+  migrateEmailProviderEvents(db);
+  const verdict = classifySmtpRejection(error);
+  if (!verdict.suppress) return { ...verdict, suppressed: false, cancelled: 0 };
+
+  const recipient = normalizeEmail(email);
+  const detail = String(error?.message ?? '').slice(0, 2000);
+  const eventId = uid('epe');
+  const providerEventId = `smtp:${outboxId ?? recipient}`;
+  try {
+    db.prepare(`
+      INSERT INTO email_provider_events
+        (id, provider_event_id, provider, event_type, recipient, outbox_id,
+         severity, reason_code, occurred_at, payload_sha256, payload_bytes)
+      VALUES (?, ?, 'smtp', 'bounce', ?, ?, 'permanent', ?, ?, ?, ?)
+    `).run(
+      eventId,
+      providerEventId,
+      recipient,
+      outboxId,
+      verdict.enhanced ?? (verdict.code === null ? null : String(verdict.code)),
+      occurredAt.toISOString(),
+      crypto.createHash('sha256').update(detail).digest('hex'),
+      Buffer.byteLength(detail),
+    );
+  } catch (insertError) {
+    // Already recorded for this message. Suppression below is idempotent, so fall
+    // through rather than losing the suppression.
+    if (!String(insertError.message).includes('UNIQUE')) throw insertError;
+  }
+
+  const existing = db.prepare('SELECT id FROM email_provider_events WHERE provider_event_id = ?').get(providerEventId);
+  const cancelled = suppress(db, {
+    email: recipient,
+    reason: verdict.reason,
+    eventId: existing?.id ?? eventId,
+    expiresAt: null,
+  });
+  audit(db, {
+    action: 'email.suppressed',
+    targetType: 'email_suppression',
+    targetId: recipient,
+    metadata: { reason: verdict.reason, source: 'smtp', responseCode: verdict.code, enhancedCode: verdict.enhanced },
+  });
+  return { ...verdict, suppressed: true, cancelled };
 }

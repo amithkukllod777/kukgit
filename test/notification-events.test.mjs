@@ -18,7 +18,7 @@ import {
 import { migrateRepositoryAccess } from '../src/repository-access.mjs';
 import { migrateWebhooks } from '../src/webhooks.mjs';
 
-function setup(t) {
+async function setup(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-notification-events-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
@@ -59,7 +59,7 @@ function setup(t) {
       (id, organization_id, slug, name, description, visibility, default_branch, created_by)
     VALUES (?, ?, 'notification-demo', 'Notification Demo', '', 'private', 'main', ?)
   `).run(repositoryId, orgId, ownerId);
-  createDemoCommit(config, 'kuklabs', 'notification-demo');
+  await createDemoCommit(config, 'kuklabs', 'notification-demo');
   createBranch(config, 'kuklabs', 'notification-demo', 'feature/alerts', 'main');
   const pullId = uid('pr');
   db.prepare(`
@@ -70,8 +70,8 @@ function setup(t) {
   return { config, db, ownerId, developerId, orgId, repositoryId, pullId };
 }
 
-test('pull request creation, review, merge and failed status reach intended recipients', (t) => {
-  const context = setup(t);
+test('pull request creation, review, merge and failed status reach intended recipients', async (t) => {
+  const context = await setup(t);
   const created = notifyPullRequestCreated(context.db, context.config, {
     orgSlug: 'kuklabs', repoSlug: 'notification-demo', number: 1, actorId: context.ownerId,
   });
@@ -107,8 +107,8 @@ test('pull request creation, review, merge and failed status reach intended reci
   assert.ok(ownerInbox.notifications.some((item) => /Pull request #1 merged/.test(item.title)));
 });
 
-test('terminal webhook failures create one deduplicated Admin operations alert', (t) => {
-  const context = setup(t);
+test('terminal webhook failures create one deduplicated Admin operations alert', async (t) => {
+  const context = await setup(t);
   const webhookId = uid('whk');
   const deliveryId = uid('whd');
   context.db.prepare(`

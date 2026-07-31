@@ -23,7 +23,7 @@ import {
 } from '../src/status-checks.mjs';
 import { createPersonalAccessToken } from '../src/tokens.mjs';
 
-function setup(t) {
+async function setup(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-status-check-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const config = loadConfig({
@@ -52,9 +52,9 @@ function setup(t) {
       (id, organization_id, slug, name, description, visibility, default_branch, created_by)
     VALUES (?, ?, 'status-demo', 'Status Demo', '', 'private', 'main', ?)
   `).run(repositoryId, orgId, ownerId);
-  createDemoCommit(config, 'kuklabs', 'status-demo');
+  await createDemoCommit(config, 'kuklabs', 'status-demo');
   createBranch(config, 'kuklabs', 'status-demo', 'feature/status-policy', 'main');
-  commitFile(config, 'kuklabs', 'status-demo', {
+  await commitFile(config, 'kuklabs', 'status-demo', {
     branch: 'feature/status-policy',
     filePath: 'status.txt',
     content: 'first version\n',
@@ -118,8 +118,8 @@ function startServer(config, db) {
   });
 }
 
-test('required checks use only the current head SHA and require every context to succeed', (t) => {
-  const context = setup(t);
+test('required checks use only the current head SHA and require every context to succeed', async (t) => {
+  const context = await setup(t);
   upsertRequiredStatusPolicy(context.db, {
     repositoryId: context.repositoryId,
     branch: 'main',
@@ -178,7 +178,7 @@ test('required checks use only the current head SHA and require every context to
   assert.equal(summary.successCount, 2);
   assert.equal(summary.mergeAllowed, true);
 
-  commitFile(context.config, 'kuklabs', 'status-demo', {
+  await commitFile(context.config, 'kuklabs', 'status-demo', {
     branch: 'feature/status-policy',
     filePath: 'status.txt',
     content: 'second version\n',
@@ -203,7 +203,7 @@ test('required checks use only the current head SHA and require every context to
 });
 
 test('PAT publishers are authorized by scope and repository permission while merge is server-enforced', async (t) => {
-  const context = setup(t);
+  const context = await setup(t);
   upsertRequiredStatusPolicy(context.db, {
     repositoryId: context.repositoryId,
     branch: 'main',

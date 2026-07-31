@@ -1,6 +1,7 @@
 import { currentUser, requireUser } from './auth.mjs';
 import { audit, uid } from './db.mjs';
 import { sendSmtpMessage, smtpConfigured } from './email-transport.mjs';
+import { recordSmtpRejection } from './email-provider-events.mjs';
 import { httpError, normalizeEmail, originAllowed } from './security.mjs';
 
 export const NOTIFICATION_CATEGORIES = Object.freeze([
@@ -393,6 +394,7 @@ export async function processEmailOutbox(db, config, {
   `).all(batch);
   let sent = 0;
   let failed = 0;
+  let suppressed = 0;
   for (const candidate of candidates) {
     const email = claimEmail(db, candidate.id);
     if (!email) continue;
@@ -417,6 +419,33 @@ export async function processEmailOutbox(db, config, {
       sent += 1;
     } catch (error) {
       const message = redactError(error);
+      // Record the attempt before suppression, so the failure that caused the
+      // suppression stays visible in delivery history.
+      db.prepare(`
+        INSERT INTO email_delivery_attempts
+          (id, outbox_id, attempt_number, status, response_code, error_message, started_at, completed_at)
+        VALUES (?, ?, ?, 'failure', ?, ?, ?, ?)
+      `).run(uid('eda'), email.id, email.attemptCount, Number(error?.smtpCode) || null, message, startedAt, new Date().toISOString());
+
+      // A permanent rejection at RCPT TO proves the mailbox does not exist.
+      // Suppressing here cancels this message and every queued one for the
+      // address; the outbox triggers then block any further claim.
+      const rejection = recordSmtpRejection(db, { email: email.toEmail, outboxId: email.id, error });
+      if (rejection.suppressed) {
+        // This message is mid-flight in 'processing', which the suppression's own
+        // cancel sweep skips (it targets 'pending' and 'failed'). Cancel it
+        // explicitly: once the address is suppressed the outbox trigger refuses
+        // any move back to pending/failed/processing, so leaving it claimed would
+        // strand the row permanently.
+        db.prepare(`
+          UPDATE email_outbox SET status = 'cancelled', last_error = ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(`Recipient suppressed after a permanent SMTP rejection: ${message}`.slice(0, 2000), email.id);
+        suppressed += 1;
+        continue;
+      }
+
       const terminal = email.attemptCount >= email.maxAttempts;
       const delay = retryDelaySeconds(email.attemptCount);
       db.prepare(`
@@ -425,15 +454,10 @@ export async function processEmailOutbox(db, config, {
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(message, terminal ? 1 : 0, delay, email.id);
-      db.prepare(`
-        INSERT INTO email_delivery_attempts
-          (id, outbox_id, attempt_number, status, response_code, error_message, started_at, completed_at)
-        VALUES (?, ?, ?, 'failure', ?, ?, ?, ?)
-      `).run(uid('eda'), email.id, email.attemptCount, Number(error?.smtpCode) || null, message, startedAt, new Date().toISOString());
       failed += 1;
     }
   }
-  return { configured: true, processed: sent + failed, sent, failed };
+  return { configured: true, processed: sent + failed + suppressed, sent, failed, suppressed };
 }
 
 export function retryOutboxEmail(db, id) {
