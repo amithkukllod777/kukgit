@@ -82,6 +82,10 @@ This repository contains the working KukGit foundation. It is not a visual mocku
 - No runtime npm dependencies
 - Automated tests for identity, onboarding, API, Git, LFS, backup/restore, collaboration, external access, governance, reviews, checks, webhooks, notifications, SMTP and security helpers
 
+## Getting to production
+
+What is finished, what is left, and which parts cannot be finished by writing code — a Linux host, a reachable AuthKit, six independent secret keys, an SMTP sender with SPF/DKIM/DMARC, off-instance backup storage. Read [Getting to Production](docs/GETTING_TO_PRODUCTION.md) before the first external user.
+
 ## Important scope boundary
 
 This is the **Private Alpha foundation**, not yet a GitHub/GitLab replacement. Production work still required includes hosted CI runners and workflow execution, the PostgreSQL runtime driver/import/cutover stages and distributed jobs, package/container registries, billing and usage metering, abuse controls, scalable object storage, broader administration, enterprise SSO/MFA policy controls and high-availability deployment.
