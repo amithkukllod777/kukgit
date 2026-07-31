@@ -522,6 +522,28 @@ SQLite metadata, Git bundles and all recorded LFS objects with SHA-256 checksums
 Restore is CLI-only (`npm run backup -- restore`) and writes only to a missing or
 empty target directory.
 
+## Secrets
+
+`src/secrets-vault.mjs`
+
+```text
+GET    /api/secrets/orgs/:org                  List organization secret names
+PUT    /api/secrets/orgs/:org/:name            Create or replace
+DELETE /api/secrets/orgs/:org/:name            Remove
+
+GET    /api/secrets/repos/:org/:repo           List repository names and inherited names
+PUT    /api/secrets/repos/:org/:repo/:name     Create or replace
+DELETE /api/secrets/repos/:org/:repo/:name     Remove
+```
+
+Organization secrets require organization Admin; repository secrets require
+repository Admin.
+
+**There is no read path.** No route returns a stored value — not to the caller who
+set it, not to an instance operator. `GET` of a single secret returns `404` by
+design. Listings carry names, a 12-character digest of the value and usage
+metadata only. Read [Secrets Vault](SECRETS_VAULT.md).
+
 ## Instance administration
 
 `src/instance-admin.mjs`

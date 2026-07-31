@@ -315,6 +315,8 @@ The rule that matters most: a value supplied by whoever triggered the workflow �
 
 Nothing executes yet — this is the format and its validator. Runners, scheduling, logs and artifacts remain open. Read [Workflow Format](docs/WORKFLOWS.md).
 
+Secrets live in an encrypted vault scoped to an organization or a single repository. AES-256-GCM, with the scope and name authenticated alongside the value, so a ciphertext copied between rows fails to decrypt rather than quietly becoming a different secret. **There is no read path** — no route returns a stored value, not even to the person who set it, because a secret that can be read back can be exfiltrated by anyone who reaches that route. Listings show names and a truncated digest, which is enough to confirm a rotation and far too little to recover a value. Read [Secrets Vault](docs/SECRETS_VAULT.md).
+
 ## Commands
 
 ```bash

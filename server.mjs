@@ -72,6 +72,7 @@ import {
 } from './src/pull-request-diffs-safe.mjs';
 import { createOperationsHealthApiHandler } from './src/operations-health.mjs';
 import { createRateLimitGuard } from './src/rate-limit.mjs';
+import { createSecretsApiHandler, migrateSecrets } from './src/secrets-vault.mjs';
 import { createRealtimeNotificationServer } from './src/realtime-notifications.mjs';
 import { KUKGIT_VERSION } from './src/version.mjs';
 import {
@@ -132,6 +133,7 @@ migrateReviewThreads(db);
 migratePullRequestDiffs(db);
 migrateStatusChecks(db);
 migrateWebhooks(db);
+migrateSecrets(db);
 migrateRepositoryLifecycle(db);
 migrateSshKeys(db);
 migrateGitLfs(db);
@@ -159,6 +161,7 @@ const instanceAdminApi = createInstanceAdminApiHandlerSafe({ config, db });
 // The WebSocket server is created after this chain, so the health handler reads it
 // through a getter rather than holding a null reference for the process lifetime.
 const operationsHealthApi = createOperationsHealthApiHandler({ config, db, realtime: () => realtimeNotifications });
+const secretsApi = createSecretsApiHandler({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
 const notificationsApi = createNotificationsApiHandler({ config, db });
 const externalDiscoveryApi = createExternalCollaboratorDiscoveryApiHandler({ config, db });
@@ -188,6 +191,7 @@ async function dispatch(req, res) {
   if (await authKitApi(req, res)) return;
   if (await emailProviderEventsApi(req, res)) return;
   if (await operationsHealthApi(req, res)) return;
+  if (await secretsApi(req, res)) return;
   if (await instanceAdminApi(req, res)) return;
   if (await tokenApi(req, res)) return;
   if (await notificationsApi(req, res)) return;

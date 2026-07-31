@@ -66,6 +66,14 @@
   automated evidence alone.
 ### Hosted CI
 
+- encrypted repository and organization secrets vault. AES-256-GCM with the scope
+  and name authenticated alongside the value, so a ciphertext copied between rows
+  or renamed fails to decrypt rather than silently becoming a different secret.
+  There is deliberately no read path: no route returns a stored value, and the
+  only code that decrypts one is not reachable over HTTP. Listings show names, a
+  truncated digest and usage metadata. A repository secret shadows an
+  organization secret of the same name; a repository listing reports the names it
+  inherits so an unexplained value in a build does not look like a bug.
 - workflow file format and validation (`.kukgit/workflows/*.yml`), parsed by a
   dependency-free YAML subset that refuses anchors, aliases, merge keys, tags,
   multiple documents and tab indentation rather than reinterpreting them, with

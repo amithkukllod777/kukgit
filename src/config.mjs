@@ -174,6 +174,10 @@ export function loadConfig(overrides = {}) {
       backupAgeWarningSeconds: Number(overrides.saturationBackupAgeWarningSeconds ?? process.env.KUKGIT_SATURATION_BACKUP_AGE_WARNING_SECONDS ?? 36 * 3600),
       backupAgeCriticalSeconds: Number(overrides.saturationBackupAgeCriticalSeconds ?? process.env.KUKGIT_SATURATION_BACKUP_AGE_CRITICAL_SECONDS ?? 72 * 3600),
     },
+    // The vault key is separate from every other application secret. Reusing the
+    // AuthKit, webhook or LFS key would mean one compromised key opens more than
+    // one kind of stored material.
+    secretsEncryptionKey: overrides.secretsEncryptionKey ?? process.env.KUKGIT_SECRETS_ENCRYPTION_KEY ?? (isProduction ? '' : 'kukgit-development-secrets-vault-key-change-me'),
     // Workflow policy. `allowedRunners` and `allowedActionOwners` are empty by
     // default, which means "no restriction" — an instance that offers hosted
     // runners is expected to set them, and an empty list is visible in the
