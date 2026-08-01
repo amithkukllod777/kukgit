@@ -559,6 +559,23 @@ all `self` — the token identifies exactly one job and there is no job id in th
 path to point elsewhere. Reader routes need repository read; cancelling needs
 write. Read [Build Logs](BUILD_LOGS.md).
 
+## Secret scanning
+
+`src/secret-scanning.mjs`
+
+```text
+GET   /api/repos/:org/:repo/secret-scanning?status=open|all   Findings and summary
+PATCH /api/repos/:org/:repo/secret-scanning/findings/:id      Resolve one finding
+```
+
+Reading needs repository **write**, not read: a finding names a file and a line
+where a credential is, and a private repository's read list is usually wider than
+the set of people who should be handed that map. Resolving needs **admin** and a
+same-origin request.
+
+No response, and no stored row, ever contains a credential — only a truncated
+fingerprint and a redacted preview. Read [Secret Scanning](SECRET_SCANNING.md).
+
 ## Workflow triggers
 
 `src/workflow-triggers.mjs`

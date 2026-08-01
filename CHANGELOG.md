@@ -19,6 +19,49 @@
 
 ### Added
 
+- Secret scanning (`src/secret-scanning.mjs`). Every push is scanned for
+  committed credentials and findings are recorded against the repository.
+  - **The secret is never stored.** A scanner's database is a list of where the
+    credentials are — a strictly better target than the repository itself,
+    because somebody has already done the searching. A finding holds a truncated
+    SHA-256 fingerprint and a redacted preview; a match of twelve characters or
+    fewer is redacted entirely, because showing four of eight is showing half the
+    secret. There is a test that serialises a finding and asserts the credential
+    is not in it.
+  - **A checksum decides it where a format has one.** A GitHub token carries a
+    CRC32 of its own payload, so "looks like a token" becomes "is one". That
+    matters more than adding detectors: a scanner that cries wolf is one an
+    author learns to ignore, and then it protects nobody.
+  - ten detectors, including KukGit's own token formats — a host that scans for
+    everybody else's credentials and not its own would be an odd thing to ship
+  - `sk_test_` is reported at low severity rather than not at all: a test key is
+    still a credential, it just cannot move money
+  - **every skip is returned**, not silently applied. A scanner that quietly
+    drops a file it could not read lets somebody believe a clean result means a
+    clean push.
+  - an `.env.example` is still reported, marked `likelyExample`, so a policy can
+    warn instead of block — a decision for the repository, not the scanner
+  - repeat sightings merge, so the count is credentials to rotate rather than
+    times somebody pushed; a resolved finding stays resolved, because a list that
+    can never be cleared is a list nobody reads
+  - reading findings needs repository **write**, not read: a finding is a map to
+    a credential for anyone who can also read the repository
+  - scanning runs **after** the push is accepted. A scanner failure is logged and
+    the push stands; turning a scanner problem into a rejected push would make it
+    the least reliable part of pushing code.
+  - verified end to end by pushing a file with four credentials and confirming
+    the findings, the severities, the example marking, and that grepping the
+    database for the real values finds nothing
+  - test fixtures are assembled at runtime rather than written as literals. The
+    first attempt to push this change was blocked by GitHub's own push
+    protection, which found the Stripe fixtures and was right to — it cannot know
+    they are synthetic. A test file full of token literals trips every scanner in
+    the ecosystem, this one included.
+  - **push protection — blocking a push — is deliberately not included**, and the
+    documentation says so. It needs a per-repository policy and an audited
+    bypass, and a bypass that is not recorded is a control that is not enforced.
+
+
 - Real-time notifications now cross instances (`src/notification-fanout.mjs`),
   the last open item in the P0 operations list. A notification created on one
   node reaches a socket held by another.
