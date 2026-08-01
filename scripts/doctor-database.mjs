@@ -62,6 +62,13 @@ try {
     console.log('✓ PostgreSQL runtime shadow: disabled');
   }
 
+  if (config.runtimeWriteServiceEnabled) {
+    if (selection.driver !== 'sqlite') throw new Error('Stage 7 runtime write service requires SQLite to remain authoritative.');
+    console.log('✓ Runtime write service: enabled for SQLite-authoritative managed writes; PostgreSQL writes remain CI-only');
+  } else {
+    console.log('✓ Runtime write service: disabled; direct SQLite write behavior remains active');
+  }
+
   if (selection.driver === 'sqlite') {
     console.log(`✓ Metadata database: SQLite runtime (${selection.driver})`);
     process.exit(0);

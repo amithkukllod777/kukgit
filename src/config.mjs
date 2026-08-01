@@ -95,6 +95,10 @@ export function loadConfig(overrides = {}) {
   };
 
   const organizationOwnerLimit = positiveNumber(overrides.organizationOwnerLimit ?? process.env.KUKGIT_ORGANIZATION_OWNER_LIMIT ?? 5, 'KUKGIT_ORGANIZATION_OWNER_LIMIT');
+  const runtimeWriteServiceEnabled = booleanValue(
+    overrides.runtimeWriteServiceEnabled ?? process.env.KUKGIT_RUNTIME_WRITE_SERVICE_ENABLED,
+    !isProduction,
+  );
   const realtimeHeartbeatMs = boundedInteger(overrides.realtimeHeartbeatMs ?? process.env.KUKGIT_REALTIME_HEARTBEAT_MS ?? 25000, 'KUKGIT_REALTIME_HEARTBEAT_MS', 1000, 120000);
   const realtimeAuthRevalidateMs = boundedInteger(overrides.realtimeAuthRevalidateMs ?? process.env.KUKGIT_REALTIME_AUTH_REVALIDATE_MS ?? 60000, 'KUKGIT_REALTIME_AUTH_REVALIDATE_MS', 1000, 600000);
   const realtimeMaxConnectionsPerUser = boundedInteger(overrides.realtimeMaxConnectionsPerUser ?? process.env.KUKGIT_REALTIME_MAX_CONNECTIONS_PER_USER ?? 10, 'KUKGIT_REALTIME_MAX_CONNECTIONS_PER_USER', 1, 50);
@@ -234,6 +238,7 @@ export function loadConfig(overrides = {}) {
     authkitTimeoutMs,
     authkitRefreshTtlDays,
     organizationOwnerLimit,
+    runtimeWriteServiceEnabled,
     realtimeHeartbeatMs,
     realtimeAuthRevalidateMs,
     realtimeMaxConnectionsPerUser,

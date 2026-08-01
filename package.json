@@ -18,6 +18,7 @@
     "runner": "node scripts/runner.mjs",
     "lfs:storage": "node scripts/lfs-storage.mjs",
     "database": "node scripts/database.mjs",
+    "database:runtime-write-surface": "node scripts/database.mjs runtime-write-surface",
     "database:postgresql-import": "node scripts/postgresql-import.mjs",
     "database:postgresql-shadow": "node scripts/postgresql-shadow.mjs",
     "ssh:authorized-keys": "node scripts/authorized-keys.mjs",
