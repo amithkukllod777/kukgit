@@ -245,6 +245,11 @@ export function runStep({
       setTimeout(() => child.kill('SIGKILL'), AGENT_DEFAULTS.shutdownGraceMs).unref?.();
     };
     signal?.addEventListener?.('abort', onAbort, { once: true });
+    // A signal that was *already* aborted fires no event, so listening alone
+    // misses it. Cancellation arriving between the caller's check and this line
+    // would otherwise let a cancelled job run one more step to completion — and
+    // for a deployment step, that is a deployment nobody asked for.
+    if (signal?.aborted) onAbort();
 
     child.stdout.on('data', (chunk) => onOutput?.({ stream: 'stdout', content: chunk.toString('utf8') }));
     child.stderr.on('data', (chunk) => onOutput?.({ stream: 'stderr', content: chunk.toString('utf8') }));

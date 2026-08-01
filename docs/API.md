@@ -559,6 +559,22 @@ all `self` — the token identifies exactly one job and there is no job id in th
 path to point elsewhere. Reader routes need repository read; cancelling needs
 write. Read [Build Logs](BUILD_LOGS.md).
 
+## Push protection
+
+`src/push-protection.mjs`
+
+```text
+GET  /api/repos/:org/:repo/push-protection             Policy (repository write)
+PUT  /api/repos/:org/:repo/push-protection             Change it (admin, same-origin)
+POST /api/repos/:org/:repo/push-protection/bypasses    Allow one finding (admin)
+GET  /api/repos/:org/:repo/push-protection/bypasses    Who allowed what, and why
+```
+
+Off until an administrator enables it per repository. A bypass names the
+**fingerprint** it covers, expires after 30 minutes, and requires a written
+reason — a bypass that is not recorded is a control that is not enforced. Read
+[Push Protection](PUSH_PROTECTION.md).
+
 ## Secret scanning
 
 `src/secret-scanning.mjs`
