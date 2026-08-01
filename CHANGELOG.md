@@ -17,7 +17,54 @@
   legacy-password scrub, so a change in dispatch order would have silently
   dropped three protections.
 
+### Fixed
+
+- A step whose signal was **already aborted** when `runStep` was called ran to
+  completion. The abort listener was attached but nothing checked
+  `signal.aborted`, and an already-aborted signal fires no event — so
+  cancellation landing in the window between the caller's check and the listener
+  being attached was simply lost. A cancelled job ran one more step, and for a
+  deployment step that is a deployment nobody asked for.
+  Found from the other end: the "one unreproduced test failure" recorded in the
+  TODO recurred, and this time the reporter output was captured. The test was
+  `an aborted step is stopped and reported as cancelled, not failed`, failing at
+  exactly thirty seconds — the step timeout — which is what an abort that never
+  arrived looks like. It was a real defect all along rather than a timing-
+  sensitive test, and the TODO watch item is closed.
+
 ### Added
+
+- Push protection (`src/push-protection.mjs`): a push that introduces a
+  credential is **refused** by the pre-receive hook, before the objects are
+  accepted.
+  - it has to be the push. Once a credential is in history it is compromised —
+    rewriting does not un-send bytes that reached a server, a clone, a CI cache
+    or a backup.
+  - **off until an administrator enables it** per repository. A control that
+    starts rejecting pushes the moment it ships is one that gets switched off
+    before anybody reads what it does.
+  - only the content the push introduces is scanned. Rejecting a push over a
+    credential that was already there is a problem the author usually cannot fix,
+    and that is how a control ends up disabled.
+  - the rejection message names the file, the line and the redacted preview, and
+    gives the exact route to allow it — actionable in the terminal, because that
+    is the only place the author is looking. It also says to rotate anyway: the
+    push was refused, but the credential was typed, committed and sent.
+  - a **bypass is keyed by fingerprint**, expires after 30 minutes, needs a
+    written reason and is recorded with who granted it and whether it was used. A
+    bypass covering "the next push" would let an unrelated credential ride along
+    with the one somebody reviewed.
+  - **fails closed.** If the scanner cannot run, the push is refused. An
+    administrator who turned this on asked for the strict behaviour, and a
+    control that opens on its own failure is not one.
+    `KUKGIT_SECRET_PUSH_PROTECTION_FAIL_OPEN=1` inverts it deliberately.
+  - the pre-receive hook is now installed on **every** repository, not only those
+    with a branch rule — otherwise a repository that enabled protection and had
+    no branch rule would have had no hook to enforce it with
+  - verified end to end: pushed a credential and confirmed the remote never
+    moved, granted a bypass and confirmed the same push then succeeded, added a
+    second credential and confirmed it was refused again
+
 
 - Secret scanning (`src/secret-scanning.mjs`). Every push is scanned for
   committed credentials and findings are recorded against the repository.

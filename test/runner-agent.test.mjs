@@ -125,6 +125,27 @@ test('an aborted step is stopped and reported as cancelled, not failed', async (
   assert.equal(result.reason, 'cancelled');
 });
 
+test('a step already cancelled before it starts does not run', async (t) => {
+  const cwd = workspace(t);
+  const controller = new AbortController();
+  // Aborted before `runStep` is even called. An already-aborted signal fires no
+  // event, so a listener alone never sees it — and this is not hypothetical:
+  // under load, cancellation lands in the window between the caller checking the
+  // signal and the step attaching to it. This test was written after that
+  // window made an unrelated test fail once, at thirty seconds, in CI-like load.
+  controller.abort();
+
+  const started = Date.now();
+  const result = await runStep({
+    script: 'sleep 30',
+    cwd, env: { PATH: process.env.PATH }, timeoutMs: 30_000, signal: controller.signal, onOutput: () => {},
+  });
+
+  assert.equal(result.cancelled, true);
+  assert.equal(result.reason, 'cancelled');
+  assert.ok(Date.now() - started < 15_000, 'it must not wait out the step timeout');
+});
+
 test('a step receives only the secrets it names', () => {
   const claimed = jobFixture([
     { type: 'run', run: 'deploy --token "$DEPLOY"', env: { DEPLOY: '${{ secrets.DEPLOY_TOKEN }}' } },

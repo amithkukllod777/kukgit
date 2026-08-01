@@ -472,7 +472,7 @@ export function createSecretScanningApiHandler({ config, db }) {
  * acknowledged by the time this runs; turning a scanner problem into a rejected
  * push would make the scanner the least reliable part of pushing code.
  */
-export function scanPushedContent(config, db, { repository, changes, spawnGit }) {
+export function scanPushedContent(config, db, { repository, changes, spawnGit, onFindings = null }) {
   const results = [];
   for (const change of changes) {
     if (change.type === 'tag' || !change.sha) continue;
@@ -489,6 +489,10 @@ export function scanPushedContent(config, db, { repository, changes, spawnGit })
         recordFindings(db, {
           repositoryId: repository.id, ref: change.ref, commitSha: change.sha, findings: scan.findings,
         });
+        // A push that landed with a bypass marks it used. The hook cannot: it
+        // opens the database read-only, because a pre-receive hook that writes
+        // can leave state behind for a push that is then rejected.
+        onFindings?.({ repositoryId: repository.id, fingerprints: scan.findings.map((finding) => finding.fingerprint) });
       }
       results.push({ ref: change.ref, ...scan, findings: scan.findings.length });
     } catch (error) {

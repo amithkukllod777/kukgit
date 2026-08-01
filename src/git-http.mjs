@@ -104,6 +104,13 @@ export function handleGitHttp(req, res, { config, db, pathname, queryString }) {
     KUKGIT_DATABASE_PATH: config.databasePath,
     KUKGIT_REPOSITORY_ID: repo.id,
     KUKGIT_AUTH_USER_ID: authenticated?.userId ?? '',
+    // The pre-receive hook needs these to run push protection: where the
+    // scanner lives, and enough to write a rejection message that names the
+    // route an administrator would use to allow a finding.
+    KUKGIT_SRC_DIR: new URL('.', import.meta.url).pathname,
+    KUKGIT_BASE_URL: config.baseUrl,
+    KUKGIT_ORG_SLUG: orgSlug,
+    KUKGIT_REPO_SLUG: repoSlug,
   };
 
   const child = spawnGitHttpBackend({ env });

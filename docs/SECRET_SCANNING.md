@@ -5,12 +5,11 @@ Finding credentials that were committed, without ever storing one.
 ## What it does today
 
 Every push is scanned — only the content that push introduced — and findings are
-recorded against the repository. The push is **not** blocked.
+recorded against the repository.
 
-That is a deliberate stopping point, not an oversight. Blocking a push is *push
-protection*, and it needs a bypass, an audit trail for the bypass, and a policy
-per repository. Shipping detection first means the credentials already in
-repositories become visible now, which is the part that helps immediately.
+**Push protection** additionally *rejects* a push that introduces a credential,
+and is off until an administrator turns it on per repository. See
+[PUSH_PROTECTION.md](PUSH_PROTECTION.md).
 
 ## Never storing the secret
 
@@ -112,9 +111,6 @@ outage would end with somebody disabling it.
 
 ## What is not done yet
 
-- **Push protection.** Nothing is blocked. Needs a per-repository policy, a
-  documented bypass and an audit record of every bypass — a bypass that is not
-  recorded is a control that is not enforced.
 - **History scanning.** Only new content is scanned. A credential committed
   before this shipped is found the next time the file containing it is touched,
   not before. A backfill command is the obvious next step.

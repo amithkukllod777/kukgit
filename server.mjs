@@ -83,6 +83,7 @@ import {
   migrateSecretScanning,
   scanPushedContent,
 } from './src/secret-scanning.mjs';
+import { createPushProtectionApiHandler, markBypassesUsed, migratePushProtection } from './src/push-protection.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
@@ -179,6 +180,7 @@ withSchemaLock(db, () => {
   migrateNotifications(db);
   migrateNotificationFanout(db);
   migrateSecretScanning(db);
+  migratePushProtection(db);
   migrateEmailProviderEvents(db);
 });
 
@@ -194,7 +196,14 @@ observeDispatch(({ repository, actorId, changes, git }) => {
   // Runs after the push has been accepted, so a scanner failure can never turn
   // into a rejected push. Blocking a push before it lands is push protection,
   // which is a separate control with its own bypass — see docs/SECRET_SCANNING.md.
-  if (changes?.length) scanPushedContent(config, db, { repository, changes, spawnGit: git });
+  if (changes?.length) {
+    scanPushedContent(config, db, {
+      repository,
+      changes,
+      spawnGit: git,
+      onFindings: ({ repositoryId, fingerprints }) => markBypassesUsed(db, repositoryId, fingerprints),
+    });
+  }
 });
 installExistingBranchProtectionHooks(config, db);
 
@@ -224,6 +233,7 @@ const secretsApi = createSecretsApiHandler({ config, db });
 const workflowStorageApi = createWorkflowStorageApiHandler({ config, db });
 const workflowTriggersApi = createWorkflowTriggersApiHandler({ config, db });
 const secretScanningApi = createSecretScanningApiHandler({ config, db });
+const pushProtectionApi = createPushProtectionApiHandler({ config, db });
 const workflowLogsApi = createWorkflowLogsApiHandler({ config, db });
 const runnersApi = createRunnersApiHandler({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
@@ -259,6 +269,7 @@ async function dispatch(req, res) {
   if (await workflowStorageApi(req, res)) return;
   if (await workflowTriggersApi(req, res)) return;
   if (await secretScanningApi(req, res)) return;
+  if (await pushProtectionApi(req, res)) return;
   if (await workflowLogsApi(req, res)) return;
   if (await runnersApi(req, res)) return;
   if (await instanceAdminApi(req, res)) return;

@@ -511,7 +511,34 @@ process.stdin.on('end', () => {
   } finally {
     db.close();
   }
-  process.exit(0);
+
+  // Push protection runs second. A repository with no policy configured pays
+  // one indexed lookup for it and nothing else.
+  const srcDir = process.env.KUKGIT_SRC_DIR;
+  if (!srcDir) process.exit(0);
+  import(srcDir + '/push-protection-hook.mjs')
+    .then((module) => module.runPushProtection({
+      databasePath,
+      repositoryId,
+      gitDir: process.env.GIT_DIR || '.',
+      updates: input,
+      baseUrl: process.env.KUKGIT_BASE_URL || '',
+      orgSlug: process.env.KUKGIT_ORG_SLUG || '',
+      repoSlug: process.env.KUKGIT_REPO_SLUG || '',
+    }))
+    .then((result) => {
+      if (result.message) console.error(result.message);
+      process.exit(result.allowed ? 0 : 1);
+    })
+    .catch((error) => {
+      // Reaching here means push protection itself is broken. Failing closed is
+      // the default: an administrator who turned this on asked for the strict
+      // behaviour, and a control that opens on its own failure is not a control.
+      // KUKGIT_SECRET_PUSH_PROTECTION_FAIL_OPEN=1 inverts it for operators who
+      // would rather keep pushing.
+      console.error('KukGit push protection could not run: ' + error.message);
+      process.exit(process.env.KUKGIT_SECRET_PUSH_PROTECTION_FAIL_OPEN === '1' ? 0 : 1);
+    });
 });
 `;
 }
@@ -526,12 +553,20 @@ export function installBranchProtectionHook(config, orgSlug, repoSlug) {
   return target;
 }
 
+/**
+ * Installs the pre-receive hook on every repository.
+ *
+ * Previously only repositories with a branch rule had one, because the hook only
+ * enforced branch rules. It now also enforces secret push protection, and a
+ * repository that turned that on and never had a branch rule would otherwise
+ * have no hook to enforce it with.
+ */
 export function installExistingBranchProtectionHooks(config, db) {
   const repositories = db.prepare(`
-    SELECT DISTINCT o.slug AS orgSlug, r.slug AS repoSlug
-    FROM branch_protection_rules b
-    JOIN repositories r ON r.id = b.repository_id
+    SELECT o.slug AS orgSlug, r.slug AS repoSlug
+    FROM repositories r
     JOIN organizations o ON o.id = r.organization_id
+    WHERE r.deleted_at IS NULL
   `).all();
   for (const repository of repositories) {
     try { installBranchProtectionHook(config, repository.orgSlug, repository.repoSlug); }
