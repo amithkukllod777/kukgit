@@ -17,6 +17,31 @@
   legacy-password scrub, so a change in dispatch order would have silently
   dropped three protections.
 
+### Fixed
+
+- Two instances starting at the same instant raced on schema migrations and one
+  exited with `duplicate column name`. Schema changes now run inside
+  `BEGIN IMMEDIATE`, so the second waits for SQLite's writer lock and then finds
+  every migration already applied — each one is `IF NOT EXISTS` or checks before
+  it alters. This was the last thing making a rolling deploy unsafe.
+  - `db.transaction` is **nesting-aware**. SQLite refuses `BEGIN` inside `BEGIN`,
+    and twelve modules already open a transaction inside their migration, so
+    wrapping them needed savepoints. An inner failure now unwinds only the inner
+    work; an outer failure discards everything.
+  - `PRAGMA busy_timeout` is set **first and on its own**. It was previously last
+    in a single multi-statement `exec`, which meant everything before it —
+    including `journal_mode = WAL` — ran with a timeout of zero.
+  - WAL mode is established with a **read-then-set** loop rather than a bare
+    `PRAGMA journal_mode = WAL`. Changing journal mode needs an exclusive lock
+    and does not wait for it the way an ordinary write does, so a second instance
+    starting during the first one's migration died before reaching any migration
+    at all. Reading the current mode takes only a shared lock, so on an existing
+    WAL database there is nothing to do, and on a new one whichever instance wins
+    sets it while the rest observe the result.
+  - verified by starting **three instances in the same instant** against one
+    volume: all three healthy, no schema errors, four runs. Mutation-checked by
+    reverting the fix, which brings the failure straight back.
+
 ### Changed
 
 - Every background worker now runs behind a named lease (`src/job-leases.mjs`),
