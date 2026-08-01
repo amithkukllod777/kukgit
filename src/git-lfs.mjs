@@ -6,12 +6,27 @@ import { audit, uid } from './db.mjs';
 import { authorizeGitCredential } from './git-http.mjs';
 import { permissionAtLeast, requireRepositoryAccess } from './repository-access.mjs';
 import { httpError, originAllowed } from './security.mjs';
+import { createObjectStorage, digestObject } from './object-storage.mjs';
 
 const LFS_MEDIA_TYPE = 'application/vnd.git-lfs+json';
 const MAX_BATCH_BYTES = 2 * 1024 * 1024;
 const MAX_BATCH_OBJECTS = 1000;
 const OID_PATTERN = /^[0-9a-f]{64}$/;
 const SIGNED_TOKEN_TTL_SECONDS = 300;
+
+// One storage handle per config. Building it per request would re-read the
+// credentials and re-derive the endpoint on every object.
+const storageByConfig = new WeakMap();
+
+export function lfsStorage(config) {
+  if (!storageByConfig.has(config)) {
+    // The key already begins with `objects/`, and it is the same string stored
+    // in `lfs_objects.storage_path`, so the on-disk layout an existing instance
+    // has is exactly preserved.
+    storageByConfig.set(config, createObjectStorage(config, { root: config.lfsDir, prefix: 'lfs' }));
+  }
+  return storageByConfig.get(config);
+}
 
 export function migrateGitLfs(db) {
   db.exec(`
@@ -410,12 +425,11 @@ async function hashAndStoreUpload(req, config, expectedSize, oid) {
     fs.rmSync(temporary, { force: true });
     throw httpError(422, 'Git LFS upload SHA-256 does not match its OID.', 'LFS_UPLOAD_HASH_MISMATCH');
   }
-  const destination = lfsObjectPath(config, oid);
-  fs.mkdirSync(path.dirname(destination), { recursive: true, mode: 0o700 });
-  if (fs.existsSync(destination)) fs.rmSync(temporary, { force: true });
-  else fs.renameSync(temporary, destination);
-  fs.chmodSync(destination, 0o600);
-  return { destination, size, oid };
+  // Only now does the object reach storage. Hashing first means a bucket never
+  // receives bytes that failed verification, which matters more when the store
+  // is remote and deleting is another network call that can fail.
+  const stored = await lfsStorage(config).putFile(objectRelativePath(oid), temporary);
+  return { key: objectRelativePath(oid), size, oid, deduplicated: stored.deduplicated };
 }
 
 async function handleUpload(req, res, { config, db, repository, oid }) {
@@ -447,7 +461,7 @@ async function handleUpload(req, res, { config, db, repository, oid }) {
     db.exec('COMMIT');
   } catch (error) {
     try { db.exec('ROLLBACK'); } catch {}
-    if (!objectRecord(db, oid)) fs.rmSync(stored.destination, { force: true });
+    if (!objectRecord(db, oid)) await lfsStorage(config).remove(stored.key).catch(() => {});
     throw error;
   }
   audit(db, {
@@ -464,14 +478,14 @@ async function handleUpload(req, res, { config, db, repository, oid }) {
 }
 
 async function verifyStoredObject(config, record) {
-  const filePath = lfsObjectPath(config, record.oid);
-  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return { valid: false, reason: 'missing' };
-  const stat = fs.statSync(filePath);
-  if (stat.size !== Number(record.size)) return { valid: false, reason: 'size' };
-  const hash = crypto.createHash('sha256');
-  for await (const chunk of fs.createReadStream(filePath)) hash.update(chunk);
-  const actual = hash.digest('hex');
-  return { valid: actual === record.oid, reason: actual === record.oid ? null : 'hash', actualOid: actual, size: stat.size };
+  const storage = lfsStorage(config);
+  const head = await storage.head(objectRelativePath(record.oid)).catch(() => null);
+  if (!head) return { valid: false, reason: 'missing' };
+  if (head.size !== Number(record.size)) return { valid: false, reason: 'size' };
+  // Read through and re-hash. A size that matches proves nothing about content,
+  // and the OID *is* the hash, so this is a check the format hands us for free.
+  const { digest, size } = await digestObject(storage, objectRelativePath(record.oid));
+  return { valid: digest === record.oid, reason: digest === record.oid ? null : 'hash', actualOid: digest, size };
 }
 
 async function handleVerify(req, res, { config, db, repository, oid }) {
@@ -511,13 +525,15 @@ function parseRange(header, size) {
   return { start, end };
 }
 
-function handleDownload(req, res, { config, db, repository, oid }) {
+async function handleDownload(req, res, { config, db, repository, oid }) {
   requireLfsAuthentication(db, config, req, repository, 'download', { allowPublic: true });
   const record = objectRecord(db, oid);
   if (!record || !associationExists(db, repository.id, oid)) throw httpError(404, 'Git LFS object is not available for this repository.', 'LFS_OBJECT_NOT_FOUND');
-  const filePath = lfsObjectPath(config, oid);
-  if (!fs.existsSync(filePath)) throw httpError(404, 'Git LFS object data is missing.', 'LFS_OBJECT_MISSING');
-  const stat = fs.statSync(filePath);
+  const storage = lfsStorage(config);
+  const key = objectRelativePath(oid);
+  const head = await storage.head(key);
+  if (!head) throw httpError(404, 'Git LFS object data is missing.', 'LFS_OBJECT_MISSING');
+  const stat = { size: head.size };
   if (stat.size !== Number(record.size)) throw httpError(422, 'Git LFS object size is corrupt.', 'LFS_OBJECT_CORRUPT');
   const range = parseRange(req.headers.range, stat.size);
   const start = range?.start ?? 0;
@@ -535,7 +551,8 @@ function handleDownload(req, res, { config, db, repository, oid }) {
   res.writeHead(range ? 206 : 200, headers);
   db.prepare('UPDATE lfs_objects SET last_accessed_at = CURRENT_TIMESTAMP WHERE oid = ?').run(oid);
   if (req.method === 'HEAD' || stat.size === 0) return void res.end();
-  fs.createReadStream(filePath, { start, end }).pipe(res);
+  const stream = await storage.createReadStream(key, { start, end });
+  stream.pipe(res);
 }
 
 function matchLfsPath(pathname) {
@@ -623,7 +640,7 @@ export function createGitLfsHandler({ config, db }) {
           const oid = normalizeOid(objectMatch[1]);
           if (objectMatch[2] === 'verify' && req.method === 'POST') return await handleVerify(req, res, { config, db, repository, oid });
           if (!objectMatch[2] && req.method === 'PUT') return await handleUpload(req, res, { config, db, repository, oid });
-          if (!objectMatch[2] && ['GET', 'HEAD'].includes(req.method)) return handleDownload(req, res, { config, db, repository, oid });
+          if (!objectMatch[2] && ['GET', 'HEAD'].includes(req.method)) return await handleDownload(req, res, { config, db, repository, oid });
         }
         throw httpError(404, 'Git LFS endpoint not found.', 'LFS_NOT_FOUND');
       }

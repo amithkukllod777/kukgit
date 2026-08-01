@@ -411,7 +411,10 @@ Plan capacity with these in mind:
   synchronous; each is a single fast command, but a very large repository can
   still stall a request briefly. There is no job queue yet, so a long import still
   occupies its request for the full duration.
-- **Local storage.** Repositories and LFS objects live on the instance volume.
+- **Local storage.** Repositories live on the instance volume. LFS objects can be
+  moved to an S3-compatible bucket — see [OBJECT_STORAGE.md](OBJECT_STORAGE.md) —
+  but only on an instance that starts that way; there is no migration for objects
+  already on a volume.
 - **Per-instance rate limits.** The limiter is in-process, so limits are enforced
   per instance rather than per cluster, and Git over SSH is not covered at all.
 

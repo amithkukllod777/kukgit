@@ -297,7 +297,9 @@ server.listen(config.port, config.host, () => {
   console.log(`Instance administrators: ${instanceAdminEmails(config).join(', ') || 'none configured'}`);
   console.log(`Organization ownership limit: ${config.organizationOwnerLimit}`);
   console.log(`Backups: ${config.backupsDir}; retention: ${config.backupRetentionCount} snapshots / ${config.backupRetentionDays} days`);
-  console.log(`Git LFS: ${config.lfsDir}; repository quota: ${config.lfsRepositoryQuotaBytes} bytes`);
+  console.log(config.objectStorage.driver === 's3'
+    ? `Git LFS: object storage ${config.objectStorage.bucket} (${config.objectStorage.region}); repository quota: ${config.lfsRepositoryQuotaBytes} bytes`
+    : `Git LFS: ${config.lfsDir}; repository quota: ${config.lfsRepositoryQuotaBytes} bytes`);
   console.log(`Email delivery: ${smtpConfigured(config) ? `${config.smtpHost}:${config.smtpPort}` : 'disabled until SMTP is configured'}`);
   console.log(`Email provider events: /api/email-provider/events; soft-bounce threshold ${config.emailSoftBounceThreshold}/${config.emailSoftBounceWindowDays} days`);
   console.log(`Real-time notifications: WebSocket ${realtimeNotifications.path}`);

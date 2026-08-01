@@ -52,6 +52,55 @@
 
 ### Added
 
+- Object storage behind the Git LFS interface (`src/object-storage.mjs`), closing
+  the third of the four P0 operations items. LFS objects can now live in an
+  S3-compatible bucket instead of the instance volume, which is what stops one
+  disk from being the ceiling on how much a customer can store.
+  - **Filesystem stays the default.** Switching an instance whose objects are
+    already on a volume to a bucket would make every existing object unreadable,
+    so moving them is a migration rather than a configuration change. That
+    migration does not exist yet and the documentation says so.
+  - AWS Signature Version 4 written out rather than taken from an SDK — KukGit
+    ships with no runtime dependencies, and an SDK for this would be the largest
+    thing in the product for one signing algorithm. The published AWS test vector
+    is in the test suite, because signing is the one part that cannot be checked
+    by round-tripping against our own code.
+  - uploads sign `UNSIGNED-PAYLOAD`: the body is streamed from a file, and
+    computing a body hash means buffering a possibly multi-gigabyte object first
+  - configuration is validated **at startup**. An instance that starts happily and
+    then fails on the first `git push` of a large file has already told its users
+    it is working.
+  - a rejected credential is a `502 STORAGE_UNAUTHORIZED`, never a `404` — "the
+    object is gone" and "we cannot authenticate" must not look alike to whoever is
+    debugging it. The S3 error body carries a request id and the bucket name, so
+    it goes to the operator log and never into a user-facing message.
+  - keys are validated identically for both backends, because a key is a
+    filesystem path on one and a URL path on the other
+  - LFS keys are unchanged (`objects/<aa>/<bb>/<oid>`), the same string already
+    in `lfs_objects.storage_path`, so an existing layout is exactly preserved
+  - `npm run doctor` and the startup banner report which backend is active, never
+    the credential
+  - verified end to end: a real instance configured for object storage, against a
+    bucket that refuses any request without a well-formed SigV4 header. Upload,
+    verify, download and range read all succeeded, and **zero files** were written
+    to the volume.
+
+### Changed
+
+- A backup taken with object storage enabled **verifies** every LFS object by
+  reading it out of the bucket and re-hashing it, but does not copy it into the
+  archive. Copying a multi-terabyte bucket into every snapshot is not a backup
+  strategy, and an operator who believes a 40 GB archive contains their 4 TB of
+  objects has a recovery plan that fails the first time it is needed.
+  - the manifest records `lfs.selfContained: false` and an `lfs.store` descriptor
+    naming the bucket, region and endpoint — with **no credential**, since an
+    archive that can be read would otherwise hand over the object store
+  - archives written before object storage existed have no `selfContained` field
+    and are treated as self-contained, which every one of them is
+  - archive verification refuses an archive that claims to be self-contained but
+    is missing an object, so the two states cannot be confused
+
+
 
 - Scheduled, manual and pull-request-`closed` dispatch (`src/workflow-triggers.mjs`),
   the last open item in the P1 CI list.

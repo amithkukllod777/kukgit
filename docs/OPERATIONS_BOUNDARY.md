@@ -225,5 +225,6 @@ Tracked as P0.3 in [TODO.md](TODO.md):
 - [x] requeue of rows stranded in `processing`
 - [ ] migrations safe to run from two instances starting at the same instant
 - [ ] shared fan-out channel for real-time notifications across instances
-- [ ] object-storage backend behind the Git LFS interface
+- [x] object-storage backend behind the Git LFS interface
+- [ ] migration command for an instance whose objects are already on a volume
 - [ ] connection-draining rollout and a rehearsed rollback drill
