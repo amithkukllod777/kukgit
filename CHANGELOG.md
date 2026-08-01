@@ -52,6 +52,38 @@
 
 ### Added
 
+- `npm run lfs:storage` — moves an existing instance's Git LFS objects from the
+  volume into a bucket, which is what makes object storage usable by an instance
+  that did not start with it.
+  Four commands rather than one, because each answers a different question and
+  only the last destroys anything: `plan`, `copy`, `verify`, `reclaim --confirm`.
+  - **`copy` deletes nothing.** A migration that removes its own source has no
+    rollback: the moment anything is wrong with the bucket — a wrong region, a
+    lifecycle rule, a credential that expires — the objects are simply gone.
+  - **`plan` refuses to hide what is already broken.** Objects the database lists
+    that are missing from the volume, or that no longer match their own digest,
+    are reported rather than copied. Neither is caused by migrating, but a
+    corrupt object is a restore-from-backup decision and copying it would move
+    the corruption into the bucket. `copy` will not run while one exists.
+  - **every object is verified in the bucket after it is written**, by reading it
+    back and re-hashing. A `PUT` that returned `200` is a claim; the digest is
+    the proof. An object that arrives wrong is removed rather than left in place,
+    so the next run retries cleanly instead of skipping something that looks
+    plausible.
+  - **resumable by construction** — an object is addressed by its digest, so a
+    second run finds the bucket already holding exactly those bytes
+  - **a partial `verify` cannot clear a cutover**: the objects it skipped are
+    exactly the ones nobody has looked at
+  - **`reclaim` re-verifies each object immediately before deleting its local
+    copy.** Trusting the earlier verification would mean deleting on the strength
+    of a result from before a lifecycle rule or an accidental delete could have
+    happened. Anything it cannot confirm is kept and reported.
+  - verified end to end against a running instance: uploaded objects to a
+    filesystem instance, pointed it at a bucket, ran plan/copy/verify, restarted
+    it and confirmed it served the objects from the bucket with the volume copies
+    still intact, then reclaimed and confirmed it still served them
+
+
 - Object storage behind the Git LFS interface (`src/object-storage.mjs`), closing
   the third of the four P0 operations items. LFS objects can now live in an
   S3-compatible bucket instead of the instance volume, which is what stops one
