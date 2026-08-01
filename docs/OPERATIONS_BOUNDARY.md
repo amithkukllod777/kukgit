@@ -194,24 +194,64 @@ Before any deploy that could need rolling back: take a verified backup and recor
 the version being replaced. Rollback that requires a restore is an incident, so
 declare it as one.
 
-## Zero-downtime rollout
+## Rollout without dropping requests
 
-With a single instance there is a brief gap while the process restarts. That is
-the honest position for this release; do not describe it as zero-downtime.
+The process now drains on `SIGTERM`, in the order a load balancer can follow:
 
-The current procedure:
+1. **Readiness starts failing.** Nothing else changes — the instance keeps
+   serving everything it is given. Liveness deliberately stays `200`: a failing
+   liveness probe means "restart me", and this process is already leaving.
+2. **Wait** (`KUKGIT_DRAIN_READINESS_DELAY_MS`, default 8s). The load balancer
+   needs a few probe intervals to take this instance out of rotation. **This step
+   is what makes the rollout invisible.** Skipping it closes the socket while
+   traffic is still being sent to it, and the user sees a 502 for a deploy that
+   was supposed to be seamless.
+3. **Stop accepting new connections**, and drop keep-alive connections that are
+   between requests — an idle keep-alive holds the server open while carrying no
+   work at all.
+4. **Wait for in-flight work**, API first (`KUKGIT_DRAIN_REQUEST_MS`, 30s) and
+   then Git (`KUKGIT_DRAIN_GIT_MS`, 5 minutes). Git gets its own, much longer
+   budget: a clone of a large repository legitimately takes minutes, and killing
+   it at thirty seconds wastes every byte already sent. Giving *every* request
+   that budget would instead make an ordinary rollout take five minutes.
+5. **Close whatever is left.** A process that will not exit is worse than one
+   connection that ends badly.
 
-1. Verified backup.
-2. Maintenance mode on — writes are refused with a clear message rather than
-   failing halfway.
-3. Deploy, run `npm run doctor`, start.
-4. Confirm `GET /api/health/ready` returns 200.
-5. Maintenance mode off.
+Background workers are stopped *after* the drain, not before: a request still
+being served may queue an email or a webhook, and stopping the worker first
+would strand it.
 
-Actual zero-downtime rollout requires the job-ownership model above, plus a
-proxy that drains connections. Until both exist, the rehearsal to run on a
-schedule is the *rollback* one: deploy a version, roll it back, and confirm the
-instance is serviceable — not a blue/green cutover that cannot be performed.
+The readiness delay must exceed the load balancer's probe interval. That is the
+one number to check against the environment rather than accept as a default.
+
+### The drill
+
+```bash
+npm run drill
+```
+
+Starts a disposable instance, puts requests in flight, sends `SIGTERM`, and
+checks the sequence actually happens: readiness fails *while still serving*, the
+in-flight requests complete rather than being cut off, the listener closes only
+after that, and a replacement instance starts against the same volume and
+serves.
+
+It is a rehearsal, not a test of the deployment tooling. What it proves is that
+the process behaves the way a load balancer needs it to — which is the part that
+is easy to break and impossible to notice until a deploy drops requests.
+
+Run it before a release, and after any change to startup or shutdown.
+
+### What this still is not
+
+Blue/green. One instance restarting still has a gap between the old process
+exiting and the new one listening. What has changed is that the gap no longer
+contains *cut-off requests* — the old process stops receiving traffic before it
+stops answering. Two instances behind a proxy remove the gap entirely, and every
+prerequisite for running two now exists except shared real-time fan-out.
+
+Before a rollout, still: take a verified backup, and run `npm run doctor` on the
+new build before starting it.
 
 ## Open work
 
@@ -226,4 +266,4 @@ Tracked as P0.3 in [TODO.md](TODO.md):
 - [ ] shared fan-out channel for real-time notifications across instances
 - [x] object-storage backend behind the Git LFS interface
 - [x] migration command for an instance whose objects are already on a volume
-- [ ] connection-draining rollout and a rehearsed rollback drill
+- [x] connection-draining rollout and a rehearsed rollback drill (`npm run drill`)

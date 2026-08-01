@@ -76,6 +76,7 @@ import { createSecretsApiHandler, migrateSecrets } from './src/secrets-vault.mjs
 import { createRunnersApiHandler, migrateRunners } from './src/runners.mjs';
 import { createWorkflowDispatchCapture, observeDispatch } from './src/workflow-dispatch.mjs';
 import { migrateJobLeases } from './src/job-leases.mjs';
+import { createDrainState, createRequestTracker, drainAndClose } from './src/graceful-shutdown.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
@@ -201,7 +202,10 @@ const emailProviderEventsApi = createEmailProviderEventsApiHandler({ config, db 
 const instanceAdminApi = createInstanceAdminApiHandlerSafe({ config, db });
 // The WebSocket server is created after this chain, so the health handler reads it
 // through a getter rather than holding a null reference for the process lifetime.
-const operationsHealthApi = createOperationsHealthApiHandler({ config, db, realtime: () => realtimeNotifications });
+const drainState = createDrainState();
+const operationsHealthApi = createOperationsHealthApiHandler({
+  config, db, realtime: () => realtimeNotifications, draining: () => drainState.isDraining(),
+});
 const secretsApi = createSecretsApiHandler({ config, db });
 // Registered before the logs handler, which claims the same two path prefixes
 // and answers unknown routes under them with a 404.
@@ -297,7 +301,10 @@ const stopStorageRetentionWorker = startStorageRetentionWorker(db, config);
 const stopScheduleWorker = startScheduleWorker(db, config);
 const stopOperationalNotificationWorker = startOperationalNotificationWorker(db, config);
 const stopExternalAccessReviewWorker = startExternalAccessReviewWorker(db, config);
-const server = http.createServer(identityDispatch);
+// Counts in-flight requests so a shutdown can wait for them. Outermost, so it
+// sees every request including the ones a guard rejects.
+const trackedDispatch = createRequestTracker({ next: identityDispatch });
+const server = http.createServer(trackedDispatch);
 const realtimeNotifications = createRealtimeNotificationServer({ server, config, db });
 
 server.listen(config.port, config.host, () => {
@@ -340,7 +347,22 @@ let shuttingDown = false;
 async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`\n${signal} received. Shutting down KukGit...`);
+  console.log(`\n${signal} received. Draining KukGit...`);
+
+  // Readiness fails first and the listener closes only after a delay, so the
+  // load balancer removes this instance before its socket goes away. Workers are
+  // stopped *after* the drain: a request still being served may queue an email
+  // or a webhook, and stopping the worker first would strand it.
+  const drain = await drainAndClose(server, {
+    tracker: trackedDispatch,
+    drainState,
+    readinessDelayMs: config.drain.readinessDelayMs,
+    requestDrainMs: config.drain.requestDrainMs,
+    gitDrainMs: config.drain.gitDrainMs,
+    onStep: ({ step, inFlight }) => console.log(`  ${step}${inFlight ? ` (api ${inFlight.api}, git ${inFlight.git})` : ''}`),
+  });
+  console.log(`  drained in ${drain.durationMs}ms${drain.apiDrained && drain.gitDrained ? '' : ' — some connections were cut short'}`);
+
   const hardStop = setTimeout(() => process.exit(1), 10000);
   hardStop.unref();
   stopWebhookWorker();
@@ -352,7 +374,6 @@ async function shutdown(signal) {
   stopExternalAccessReviewWorker();
   realtimeNotifications.stop();
   rateLimitDispatch.stop();
-  await new Promise((resolve) => server.close(resolve));
   try { await runtimeReadService.stop({ drainMs: 5000 }); } catch {}
   unregisterRuntimeReadService(db, runtimeReadService);
   try { db.close(); } catch {}

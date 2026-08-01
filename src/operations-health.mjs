@@ -276,12 +276,17 @@ export function readinessProbe(config, db) {
   return { ready: checks.every((check) => check.ready), checks };
 }
 
-export function createOperationsHealthApiHandler({ config, db, realtime = null }) {
+export function createOperationsHealthApiHandler({ config, db, realtime = null, draining = null }) {
   return async function operationsHealthApi(req, res) {
     const url = new URL(req.url, config.baseUrl);
     if (req.method !== 'GET') return false;
 
     if (url.pathname === '/api/health/ready') {
+      // An instance that is shutting down reports not-ready while it is still
+      // serving, so the load balancer stops sending it work *before* the socket
+      // closes. Liveness deliberately keeps answering 200: a failing liveness
+      // probe means "restart me", and this process is already leaving.
+      if (draining?.()) return sendJson(res, 503, { status: 'draining' });
       const probe = readinessProbe(config, db);
       return sendJson(res, probe.ready ? 200 : 503, { status: probe.ready ? 'ready' : 'not_ready' });
     }

@@ -196,6 +196,14 @@ export function loadConfig(overrides = {}) {
     // Saturation alerting thresholds. They live here rather than in the
     // monitoring system so every deployment alerts on the same numbers, and so a
     // rehearsal or a support session can read the same values the alerts use.
+    // Rollout draining. See docs/OPERATIONS_BOUNDARY.md — the readiness delay is
+    // the one that must exceed the load balancer's probe interval, or the socket
+    // closes while traffic is still being sent to it.
+    drain: {
+      readinessDelayMs: Number(overrides.drainReadinessDelayMs ?? process.env.KUKGIT_DRAIN_READINESS_DELAY_MS ?? 8000),
+      requestDrainMs: Number(overrides.drainRequestMs ?? process.env.KUKGIT_DRAIN_REQUEST_MS ?? 30000),
+      gitDrainMs: Number(overrides.drainGitMs ?? process.env.KUKGIT_DRAIN_GIT_MS ?? 300000),
+    },
     saturation: {
       queueDepthWarning: Number(overrides.saturationQueueDepthWarning ?? process.env.KUKGIT_SATURATION_QUEUE_DEPTH_WARNING ?? 100),
       queueDepthCritical: Number(overrides.saturationQueueDepthCritical ?? process.env.KUKGIT_SATURATION_QUEUE_DEPTH_CRITICAL ?? 1000),

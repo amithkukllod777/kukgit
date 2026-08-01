@@ -17,6 +17,31 @@
   legacy-password scrub, so a change in dispatch order would have silently
   dropped three protections.
 
+### Added
+
+- Connection draining on `SIGTERM`, and `npm run drill` to rehearse it —
+  the last open item in the P0 operations list.
+  - **Readiness fails first, and the listener closes only after a delay.** The
+    load balancer needs a few probe intervals to take the instance out of
+    rotation; closing the socket before it has is what turns an invisible deploy
+    into a burst of 502s. Liveness deliberately keeps answering `200` — a failing
+    liveness probe means "restart me", and the process is already leaving.
+  - **Git transfers get their own, much longer budget** (5 minutes) than API
+    requests (30 seconds). A clone of a large repository legitimately takes
+    minutes and killing it wastes every byte already sent; giving every request
+    that budget would make an ordinary rollout take five minutes.
+  - in-flight requests are counted on `close` as well as `finish`, so a client
+    that disconnects mid-response cannot leave the counter above zero and make
+    every later shutdown wait out its full budget
+  - background workers are stopped **after** the drain. A request still being
+    served may queue an email or a webhook, and stopping the worker first would
+    strand it.
+  - `npm run drill` starts a disposable instance, puts requests in flight, sends
+    `SIGTERM`, and checks the sequence actually happens — readiness failing while
+    still serving, in-flight requests completing, the listener closing only after
+    that, and a replacement instance serving the same volume. Mutation-checked:
+    removing the readiness-draining branch makes the drill fail.
+
 ### Fixed
 
 - Two instances starting at the same instant raced on schema migrations and one

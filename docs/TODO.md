@@ -124,7 +124,7 @@ Implementation of the designed model:
 - [ ] shared fan-out channel so real-time notifications reach sockets on another instance
 - [x] object-storage backend behind the Git LFS interface, with backup/restore updated in the same change — [OBJECT_STORAGE.md](OBJECT_STORAGE.md)
 - [x] migration command to move an existing instance's LFS objects from a volume into a bucket — `npm run lfs:storage`
-- [ ] connection-draining rollout and a rehearsed rollback drill
+- [x] connection-draining rollout and a rehearsed rollback drill — `npm run drill`
 
 ## P1 — Private-alpha exit features
 

@@ -398,6 +398,24 @@ fetch.
 - Read the public deployment warning at the end of this document. It still
   applies.
 
+## Rollout
+
+The process drains on `SIGTERM`: readiness fails, the load balancer removes the
+instance, in-flight requests finish, and only then does the listener close.
+
+```bash
+KUKGIT_DRAIN_READINESS_DELAY_MS=8000    # must exceed the load balancer probe interval
+KUKGIT_DRAIN_REQUEST_MS=30000           # in-flight API requests
+KUKGIT_DRAIN_GIT_MS=300000              # in-flight clones and LFS transfers
+```
+
+The readiness delay is the one to check against your environment rather than
+accept as a default — if it is shorter than the probe interval, traffic is still
+arriving when the socket closes.
+
+`npm run drill` rehearses the sequence against a disposable instance. Run it
+before a release and after any change to startup or shutdown.
+
 ## Operational limits of this release
 
 Plan capacity with these in mind:
