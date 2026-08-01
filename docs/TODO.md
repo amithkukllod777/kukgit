@@ -182,7 +182,10 @@ not the boundary being trusted. Those items stay in scope here.
       (HTTP surfaces done; Git over SSH and cross-instance shared state remain open)
 - [ ] repository and account abuse-report workflow
 - [ ] malware and dangerous-file handling policy for LFS/artifacts/packages
-- [ ] secret scanning and push protection foundation
+- [x] secret scanning foundation — [SECRET_SCANNING.md](SECRET_SCANNING.md)
+- [ ] push protection: block a push that introduces a credential, with a
+      per-repository policy and an audited bypass
+- [ ] history backfill scan for credentials committed before scanning existed
 - [ ] dependency, license and SBOM scanning design
 
 ## P2 — Public beta

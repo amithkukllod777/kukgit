@@ -399,7 +399,19 @@ export function createWorkflowDispatchCapture({ config, db, next }) {
         // default branch, and pull requests that closed — observe from here
         // rather than importing this module back, which would make the two
         // depend on each other in both directions.
-        dispatchObserver?.({ repository, changes, actorId });
+        dispatchObserver?.({
+          repository,
+          changes,
+          actorId,
+          // A helper rather than the raw paths: the observer may want file
+          // contents at the pushed commit, and only this module knows where the
+          // repository is on disk.
+          git: (args, { raw = false } = {}) => {
+            const result = git(repoDiskPath(config, repository.orgSlug, repository.repoSlug), args, { allowFailure: true });
+            if (result.status !== 0) throw new Error(`git ${args[0]} failed`);
+            return raw ? result.stdout : result.stdout.trim().split('\n').filter(Boolean);
+          },
+        });
       } catch (error) {
         // A dispatch failure must never turn a successful push into an error the
         // client sees; the push happened and has already been acknowledged.

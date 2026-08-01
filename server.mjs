@@ -78,6 +78,11 @@ import { createWorkflowDispatchCapture, observeDispatch } from './src/workflow-d
 import { migrateJobLeases } from './src/job-leases.mjs';
 import { createDrainState, createRequestTracker, drainAndClose } from './src/graceful-shutdown.mjs';
 import { migrateNotificationFanout } from './src/notification-fanout.mjs';
+import {
+  createSecretScanningApiHandler,
+  migrateSecretScanning,
+  scanPushedContent,
+} from './src/secret-scanning.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
@@ -173,6 +178,7 @@ withSchemaLock(db, () => {
   if (config.authMode === 'authkit') ensureAuthKitCoreOrganization(db);
   migrateNotifications(db);
   migrateNotificationFanout(db);
+  migrateSecretScanning(db);
   migrateEmailProviderEvents(db);
 });
 
@@ -182,9 +188,13 @@ observeRunChanges((runId) => publishRunCheck(db, config, runId));
 // Schedules are re-read whenever a request could have changed the default
 // branch, and a pull request that closed gets the `closed` run it is owed. Both
 // are asked as questions about state, so neither depends on catching an event.
-observeDispatch(({ repository, actorId }) => {
+observeDispatch(({ repository, actorId, changes, git }) => {
   syncSchedules(db, config, { repository });
   dispatchClosedPullRequests(db, config, { repository, actorId });
+  // Runs after the push has been accepted, so a scanner failure can never turn
+  // into a rejected push. Blocking a push before it lands is push protection,
+  // which is a separate control with its own bypass — see docs/SECRET_SCANNING.md.
+  if (changes?.length) scanPushedContent(config, db, { repository, changes, spawnGit: git });
 });
 installExistingBranchProtectionHooks(config, db);
 
@@ -213,6 +223,7 @@ const secretsApi = createSecretsApiHandler({ config, db });
 // and answers unknown routes under them with a 404.
 const workflowStorageApi = createWorkflowStorageApiHandler({ config, db });
 const workflowTriggersApi = createWorkflowTriggersApiHandler({ config, db });
+const secretScanningApi = createSecretScanningApiHandler({ config, db });
 const workflowLogsApi = createWorkflowLogsApiHandler({ config, db });
 const runnersApi = createRunnersApiHandler({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
@@ -247,6 +258,7 @@ async function dispatch(req, res) {
   if (await secretsApi(req, res)) return;
   if (await workflowStorageApi(req, res)) return;
   if (await workflowTriggersApi(req, res)) return;
+  if (await secretScanningApi(req, res)) return;
   if (await workflowLogsApi(req, res)) return;
   if (await runnersApi(req, res)) return;
   if (await instanceAdminApi(req, res)) return;
