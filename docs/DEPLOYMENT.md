@@ -407,9 +407,10 @@ Plan capacity with these in mind:
   retention each run behind a named lease, so two instances against one volume
   own one job each rather than both doing all of them. Real-time WebSockets are
   still per process, which is what keeps this a single-node release.
-- **Concurrent startup migrations race.** Two instances starting at the same
-  instant can both run `ALTER TABLE … ADD COLUMN` and one will exit. Start
-  instances sequentially.
+- **Startup migrations are serialised.** Two instances starting at the same
+  instant no longer race: schema changes run under SQLite's writer lock, and the
+  second waits and then finds everything applied. Starting sequentially is still
+  the calmer rollout, but it is no longer a correctness requirement.
 - **Per-process WebSockets.** The real-time registry is not shared between
   instances, so a notification reaches only sockets held by the instance that
   created it.

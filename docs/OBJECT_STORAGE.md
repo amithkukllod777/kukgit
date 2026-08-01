@@ -44,9 +44,9 @@ AWS itself.
 ## Signing
 
 Requests are signed with AWS Signature Version 4, written out in
-`src/object-storage.mjs` rather than taken from an SDK — KukGit ships with no
-runtime dependencies, and an SDK for this would be the largest thing in the
-product for one signing algorithm.
+`src/object-storage.mjs` rather than taken from an SDK. An SDK for this would be
+the largest thing in the product for one signing algorithm, and KukGit carries a
+single npm dependency as it is.
 
 The two parts that are easy to get wrong are canonicalisation and the
 signed-header list, and both are visible in one function rather than three layers

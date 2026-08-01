@@ -26,7 +26,7 @@ import {
 } from './src/collaboration-notifications-safe.mjs';
 import { createCollaborationApiHandler, migrateCollaboration } from './src/collaboration.mjs';
 import { loadConfig } from './src/config.mjs';
-import { openDatabase, seedCore } from './src/db.mjs';
+import { openDatabase, seedCore, withSchemaLock } from './src/db.mjs';
 import { smtpConfigured } from './src/email-transport.mjs';
 import { migrateEmailProviderEvents } from './src/email-provider-events.mjs';
 import { createEmailProviderEventsApiHandler } from './src/email-provider-events-safe.mjs';
@@ -136,25 +136,43 @@ fs.mkdirSync(config.backupsDir, { recursive: true });
 fs.mkdirSync(config.lfsDir, { recursive: true, mode: 0o700 });
 const gitVersion = ensureGitAvailable();
 const db = openDatabase(config);
-migrateAuthKitIdentity(db);
-migrateCollaboration(db);
-migrateOrganizationOnboarding(db);
-migrateRepositoryAccess(db);
-migrateRepositoryInvitations(db);
-migrateExternalAccessReviews(db);
-migrateExternalAccessExpiryGuard(db);
-migrateBranchGovernance(db);
-migrateReviewThreads(db);
-migratePullRequestDiffs(db);
-migrateStatusChecks(db);
-migrateWebhooks(db);
-migrateSecrets(db);
-migrateWorkflowRuns(db);
-migrateWorkflowLogs(db);
-migrateJobLeases(db);
-migrateWorkflowStorage(db);
-migrateWorkflowTriggers(db);
-migrateRunners(db);
+// Seeding writes rows rather than schema, but it happens under the same lock:
+// two instances both seeding would both try to create the founder account.
+let seeded = { seeded: false };
+// Every schema change runs with the writer lock held, so two instances starting
+// at the same instant cannot both run `ALTER TABLE … ADD COLUMN` and leave one
+// of them dead with `duplicate column name`. The second simply waits and then
+// finds everything already applied.
+withSchemaLock(db, () => {
+  migrateAuthKitIdentity(db);
+  migrateCollaboration(db);
+  migrateOrganizationOnboarding(db);
+  migrateRepositoryAccess(db);
+  migrateRepositoryInvitations(db);
+  migrateExternalAccessReviews(db);
+  migrateExternalAccessExpiryGuard(db);
+  migrateBranchGovernance(db);
+  migrateReviewThreads(db);
+  migratePullRequestDiffs(db);
+  migrateStatusChecks(db);
+  migrateWebhooks(db);
+  migrateSecrets(db);
+  migrateWorkflowRuns(db);
+  migrateWorkflowLogs(db);
+  migrateJobLeases(db);
+  migrateWorkflowStorage(db);
+  migrateWorkflowTriggers(db);
+  migrateRunners(db);
+  migrateRepositoryLifecycle(db);
+  migrateSshKeys(db);
+  migrateGitLfs(db);
+  migrateInstanceAdminSafe(db);
+  seeded = config.authMode === 'local' ? seedCore(db, config) : { seeded: false };
+  if (config.authMode === 'authkit') ensureAuthKitCoreOrganization(db);
+  migrateNotifications(db);
+  migrateEmailProviderEvents(db);
+});
+
 // Every run-state change publishes a commit status, so a branch rule can require
 // a workflow the same way it requires any other check.
 observeRunChanges((runId) => publishRunCheck(db, config, runId));
@@ -165,14 +183,6 @@ observeDispatch(({ repository, actorId }) => {
   syncSchedules(db, config, { repository });
   dispatchClosedPullRequests(db, config, { repository, actorId });
 });
-migrateRepositoryLifecycle(db);
-migrateSshKeys(db);
-migrateGitLfs(db);
-migrateInstanceAdminSafe(db);
-const seeded = config.authMode === 'local' ? seedCore(db, config) : { seeded: false };
-if (config.authMode === 'authkit') ensureAuthKitCoreOrganization(db);
-migrateNotifications(db);
-migrateEmailProviderEvents(db);
 installExistingBranchProtectionHooks(config, db);
 
 const postgresqlRuntimeObserver = createPostgresqlRuntimeObserver({ config });

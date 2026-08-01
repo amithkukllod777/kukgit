@@ -38,11 +38,10 @@ Two things, and neither is fixed by a lease:
   notification created on instance A does not reach a socket held by instance B.
   The inbox stays durable either way — the socket is an accelerator, never the
   delivery guarantee — but multi-node real-time needs a shared channel.
-- **Concurrent startup migrations.** Two instances starting at the same instant
-  race on `ALTER TABLE … ADD COLUMN` and one crashes with `duplicate column
-  name`. Found by starting two instances simultaneously during the lease
-  verification. A rolling deploy that starts instances sequentially avoids it;
-  making migrations safe to run concurrently is separate work, tracked below.
+Concurrent startup migrations used to be the second, and are now fixed: schema
+changes run inside `BEGIN IMMEDIATE`, so a second instance waits for the writer
+lock and then finds every migration already applied. Verified by starting three
+instances in the same instant against one volume, four times over.
 
 ## Background job ownership
 
@@ -223,7 +222,7 @@ Tracked as P0.3 in [TODO.md](TODO.md):
 - [x] incident-severity, rollback and communication procedures
 - [x] `job_leases` table and lease-holding workers
 - [x] requeue of rows stranded in `processing`
-- [ ] migrations safe to run from two instances starting at the same instant
+- [x] migrations safe to run from two instances starting at the same instant
 - [ ] shared fan-out channel for real-time notifications across instances
 - [x] object-storage backend behind the Git LFS interface
 - [x] migration command for an instance whose objects are already on a volume

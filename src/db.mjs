@@ -13,8 +13,23 @@ import {
   runtimeWriteServiceFor,
 } from './runtime-write-service.mjs';
 
+/**
+ * Adds `db.transaction`, nesting-aware.
+ *
+ * SQLite refuses `BEGIN` inside `BEGIN`, so a transaction opened while one is
+ * already running uses a savepoint instead. Without this, any code that wanted
+ * to run several already-transactional operations as one unit would fail at
+ * runtime — which is exactly what wrapping the schema migrations needs to do.
+ *
+ * The depth counter is per connection, and a connection is used from one thread,
+ * so it cannot drift.
+ */
 function installTransactionHelper(db) {
   if (typeof db.transaction === 'function') return;
+  let depth = 0;
+  Object.defineProperty(db, 'transactionDepth', {
+    configurable: false, enumerable: false, get: () => depth,
+  });
   Object.defineProperty(db, 'transaction', {
     configurable: false,
     enumerable: false,
@@ -22,22 +37,96 @@ function installTransactionHelper(db) {
     value(work) {
       if (typeof work !== 'function') throw new TypeError('Transaction work must be a function.');
       return (...args) => {
-        db.exec('BEGIN IMMEDIATE');
+        const nested = depth > 0;
+        const savepoint = nested ? `kukgit_sp_${depth}` : null;
+        if (nested) db.exec(`SAVEPOINT ${savepoint}`);
+        else db.exec('BEGIN IMMEDIATE');
+        depth += 1;
         try {
           const result = work(...args);
           if (result && typeof result.then === 'function') {
-            db.exec('ROLLBACK');
+            // Rolled back before the error is thrown, because an async callback
+            // would otherwise leave the transaction open for whatever ran next.
+            depth -= 1;
+            if (nested) db.exec(`ROLLBACK TO ${savepoint}`); else db.exec('ROLLBACK');
+            if (nested) db.exec(`RELEASE ${savepoint}`);
             throw new TypeError('SQLite transaction callbacks must be synchronous.');
           }
-          db.exec('COMMIT');
+          depth -= 1;
+          if (nested) db.exec(`RELEASE ${savepoint}`); else db.exec('COMMIT');
           return result;
         } catch (error) {
-          try { db.exec('ROLLBACK'); } catch {}
+          if (depth > 0) depth -= 1;
+          try {
+            if (nested) { db.exec(`ROLLBACK TO ${savepoint}`); db.exec(`RELEASE ${savepoint}`); }
+            else db.exec('ROLLBACK');
+          } catch { /* the connection is already unwinding */ }
           throw error;
         }
       };
     },
   });
+}
+
+// Long enough that a second instance waits for the first to finish migrating
+// rather than exiting. Migrations are DDL on a small schema, so a real one takes
+// well under a second; the margin is for a cold volume and a large WAL.
+const MIGRATION_LOCK_TIMEOUT_MS = 60_000;
+
+/**
+ * Runs schema changes with every other instance locked out.
+ *
+ * `BEGIN IMMEDIATE` takes SQLite's writer lock for the whole block, so a second
+ * instance starting at the same moment waits and then finds every migration
+ * already applied — each one is `IF NOT EXISTS` or checks before it alters.
+ *
+ * Without this, two instances starting together both run `ALTER TABLE … ADD
+ * COLUMN` and one exits with `duplicate column name`. That is not hypothetical:
+ * it happened the first time two instances were started simultaneously to test
+ * the job leases, and a rolling deploy is exactly when it would happen again.
+ *
+ * The timeout is raised only for the lock. Leaving it raised would make every
+ * later contended write wait a minute before reporting a problem.
+ */
+/**
+ * Puts the database in WAL mode, tolerating another instance doing it first.
+ *
+ * Switching journal mode needs an exclusive lock and does not wait for it the
+ * way an ordinary write does, so a second instance starting while the first is
+ * migrating gets `database is locked` and exits — which is precisely the
+ * simultaneous start this is all about.
+ *
+ * Reading the current mode takes only a shared lock, so the answer to "does this
+ * even need changing" is always available. On an existing database that is
+ * already WAL there is nothing to do at all; on a new one, whichever instance
+ * wins sets it and the rest observe the result.
+ */
+function enableWalMode(db, { attempts = 20, waitMs = 250 } = {}) {
+  const currentMode = () => String(db.prepare('PRAGMA journal_mode').get().journal_mode ?? '').toLowerCase();
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (currentMode() === 'wal') return;
+    try {
+      db.exec('PRAGMA journal_mode = WAL');
+      if (currentMode() === 'wal') return;
+    } catch {
+      // Somebody else holds the exclusive lock. They are either setting it to
+      // WAL themselves or about to release, so the next loop re-reads rather
+      // than assuming which.
+    }
+    // A short synchronous wait. This runs once at startup before the server
+    // listens, so blocking here delays nothing a user can see.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
+  }
+  throw new Error('Could not put the metadata database into WAL mode; another instance may be stuck holding an exclusive lock.');
+}
+
+export function withSchemaLock(db, work) {
+  db.exec(`PRAGMA busy_timeout = ${MIGRATION_LOCK_TIMEOUT_MS}`);
+  try {
+    return db.transaction(work)();
+  } finally {
+    db.exec('PRAGMA busy_timeout = 5000');
+  }
 }
 
 export function openDatabase(config) {
@@ -50,8 +139,17 @@ export function openDatabase(config) {
   fs.mkdirSync(path.dirname(config.databasePath), { recursive: true });
   const db = new DatabaseSync(config.databasePath);
   installTransactionHelper(db);
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
-  migrate(db);
+  // `busy_timeout` is set first and on its own. It was previously last in a
+  // single statement, which meant `journal_mode = WAL` ran with a timeout of
+  // zero — so a second instance starting while the first held the writer lock
+  // died with `database is locked` before it reached any migration.
+  // `busy_timeout` is set first and on its own. It was previously last in a
+  // single statement, which meant everything before it ran with a timeout of
+  // zero.
+  db.exec(`PRAGMA busy_timeout = ${MIGRATION_LOCK_TIMEOUT_MS}`);
+  enableWalMode(db);
+  db.exec('PRAGMA foreign_keys = ON');
+  withSchemaLock(db, () => migrate(db));
   if (config.runtimeWriteServiceEnabled) {
     ensureSqliteRuntimeWriteMigrations(db);
     registerRuntimeWriteService(db, createRuntimeWriteService({ sqlite: db }));
