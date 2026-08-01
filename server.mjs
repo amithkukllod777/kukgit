@@ -74,12 +74,19 @@ import { createOperationsHealthApiHandler } from './src/operations-health.mjs';
 import { createRateLimitGuard } from './src/rate-limit.mjs';
 import { createSecretsApiHandler, migrateSecrets } from './src/secrets-vault.mjs';
 import { createRunnersApiHandler, migrateRunners } from './src/runners.mjs';
-import { createWorkflowDispatchCapture } from './src/workflow-dispatch.mjs';
+import { createWorkflowDispatchCapture, observeDispatch } from './src/workflow-dispatch.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
 import { migrateWorkflowRuns } from './src/workflow-runs.mjs';
 import { createWorkflowStorageApiHandler, migrateWorkflowStorage, startStorageRetentionWorker } from './src/workflow-storage.mjs';
+import {
+  createWorkflowTriggersApiHandler,
+  dispatchClosedPullRequests,
+  migrateWorkflowTriggers,
+  startScheduleWorker,
+  syncSchedules,
+} from './src/workflow-triggers.mjs';
 import { createRealtimeNotificationServer } from './src/realtime-notifications.mjs';
 import { KUKGIT_VERSION } from './src/version.mjs';
 import {
@@ -144,10 +151,18 @@ migrateSecrets(db);
 migrateWorkflowRuns(db);
 migrateWorkflowLogs(db);
 migrateWorkflowStorage(db);
+migrateWorkflowTriggers(db);
 migrateRunners(db);
 // Every run-state change publishes a commit status, so a branch rule can require
 // a workflow the same way it requires any other check.
 observeRunChanges((runId) => publishRunCheck(db, config, runId));
+// Schedules are re-read whenever a request could have changed the default
+// branch, and a pull request that closed gets the `closed` run it is owed. Both
+// are asked as questions about state, so neither depends on catching an event.
+observeDispatch(({ repository, actorId }) => {
+  syncSchedules(db, config, { repository });
+  dispatchClosedPullRequests(db, config, { repository, actorId });
+});
 migrateRepositoryLifecycle(db);
 migrateSshKeys(db);
 migrateGitLfs(db);
@@ -179,6 +194,7 @@ const secretsApi = createSecretsApiHandler({ config, db });
 // Registered before the logs handler, which claims the same two path prefixes
 // and answers unknown routes under them with a 404.
 const workflowStorageApi = createWorkflowStorageApiHandler({ config, db });
+const workflowTriggersApi = createWorkflowTriggersApiHandler({ config, db });
 const workflowLogsApi = createWorkflowLogsApiHandler({ config, db });
 const runnersApi = createRunnersApiHandler({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
@@ -212,6 +228,7 @@ async function dispatch(req, res) {
   if (await operationsHealthApi(req, res)) return;
   if (await secretsApi(req, res)) return;
   if (await workflowStorageApi(req, res)) return;
+  if (await workflowTriggersApi(req, res)) return;
   if (await workflowLogsApi(req, res)) return;
   if (await runnersApi(req, res)) return;
   if (await instanceAdminApi(req, res)) return;
@@ -261,6 +278,7 @@ const stopWebhookWorker = startWebhookWorker(db, config);
 const stopNotificationWorker = startNotificationWorker(db, config);
 const stopStalledJobWorker = startStalledJobWorker(db);
 const stopStorageRetentionWorker = startStorageRetentionWorker(db, config);
+const stopScheduleWorker = startScheduleWorker(db, config);
 const stopOperationalNotificationWorker = startOperationalNotificationWorker(db, config);
 const stopExternalAccessReviewWorker = startExternalAccessReviewWorker(db, config);
 const server = http.createServer(identityDispatch);
@@ -311,6 +329,7 @@ async function shutdown(signal) {
   stopNotificationWorker();
   stopStalledJobWorker();
   stopStorageRetentionWorker();
+  stopScheduleWorker();
   stopOperationalNotificationWorker();
   stopExternalAccessReviewWorker();
   realtimeNotifications.stop();

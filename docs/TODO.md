@@ -112,7 +112,7 @@ Implementation of the designed model:
 - [x] cancellable build logs and live status — [BUILD_LOGS.md](BUILD_LOGS.md)
 - [x] workflow dispatch: push and tag events start runs — [WORKFLOW_DISPATCH.md](WORKFLOW_DISPATCH.md)
 - [x] pull_request dispatch — [WORKFLOW_DISPATCH.md](WORKFLOW_DISPATCH.md)
-- [ ] schedule, manual and pull_request `closed` dispatch
+- [x] schedule, manual and pull_request `closed` dispatch — [WORKFLOW_TRIGGERS.md](WORKFLOW_TRIGGERS.md)
 - [x] cache and artifact storage with quotas and retention — [ARTIFACTS_AND_CACHE.md](ARTIFACTS_AND_CACHE.md)
 - [x] runner-side `kukgit/cache` and `kukgit/upload-artifact` steps that use it — [ARTIFACTS_AND_CACHE.md](ARTIFACTS_AND_CACHE.md)
 - [x] required-check integration without bypassing branch governance — [WORKFLOW_CHECKS.md](WORKFLOW_CHECKS.md)
