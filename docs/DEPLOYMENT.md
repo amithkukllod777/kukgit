@@ -9,7 +9,15 @@ Applies to KukGit v0.2.0.
 - OpenSSH server, only if Git over SSH is offered
 - A persistent volume for `data/`
 
-There are no runtime npm dependencies to install.
+One npm dependency: `pg`, the PostgreSQL client, which arrives with 14 packages
+(all MIT or ISC). It is loaded **lazily** and only when the PostgreSQL driver is
+switched on, which is off by default — an instance in its default configuration
+starts and serves with `node_modules` removed entirely. `npm ci --ignore-scripts`
+still installs it, so this is a dependency to review and to keep patched, not one
+the running product needs.
+
+Nothing else. The UI, the HTTP server, the metadata store and the workflow engine
+have no dependencies at all.
 
 ## Local development
 

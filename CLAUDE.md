@@ -43,7 +43,7 @@ npm start
 - Node.js built-in HTTP server
 - Node SQLite for MVP metadata
 - Git CLI and bare repository storage
-- dependency-free web UI
+- dependency-free web UI; `pg` is the only declared npm dependency, lazily loaded and off by default
 - Node test runner
 
 ## Next target

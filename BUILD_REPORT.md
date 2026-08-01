@@ -21,8 +21,10 @@ WebSocket delivery and bounce/complaint suppression, verified backups, the
 instance-admin console, and PostgreSQL migration Stages 1-6 (read-only; SQLite
 remains authoritative).
 
-Built without cloning a competing Git platform repository and with no runtime npm
-dependencies.
+Built without cloning a competing Git platform repository. One npm dependency:
+`pg`, added with the PostgreSQL write service, imported lazily and only when that
+driver is enabled — the default configuration runs with none loaded. Everything
+else, including the UI, the HTTP server and the workflow engine, has none.
 
 ### Verification completed
 
@@ -96,7 +98,7 @@ A working KukGit Foundation MVP was built from the ground up without cloning a c
 
 #### Engineering
 
-- zero runtime npm dependencies
+- one npm dependency (`pg`), lazily loaded and off by default; nothing else
 - Node.js and Git only
 - Docker and Nginx templates
 - security and deployment documentation

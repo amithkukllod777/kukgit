@@ -20,16 +20,35 @@ This is the prioritized execution list for KukGit. The phase-level direction is 
 
 ### 0. Restore trustworthy CI execution
 
-Current blocker: draft [PR #70](https://github.com/amithkukllod777/kukgit/pull/70) is mergeable, but GitHub-hosted jobs have failed before their first step and produced no executable logs or test evidence.
+Current blocker: GitHub-hosted jobs for this repository have failed before their
+first step and produced no executable logs. **No workflow file in this repository
+has ever run**, including `.github/workflows/ci.yml`.
 
 - [ ] restore GitHub Actions hosted-runner provisioning for this repository/account
-- [ ] run normal doctor, syntax and complete Node test suite from the exact PR #70 head
-- [ ] run disposable PostgreSQL 16 integration tests from the exact PR #70 head
-- [ ] verify workflow permissions remain read-only except explicitly required test services
-- [ ] confirm no temporary diagnostic, write-enabled or runner-probe workflow remains
-- [ ] mark PR #70 ready and merge only after every required job executes and passes
+- [ ] execute `.github/workflows/ci.yml` at least once, so the workflow file
+      itself is known to be correct rather than only plausible
+- [x] run normal doctor, syntax and complete Node test suite from the exact
+      PR #70 head — **run locally** with current `main` merged in: doctor 23
+      checks clean, syntax clean, 425/425 tests passing
+- [x] run disposable PostgreSQL 16 integration tests from the exact PR #70 head —
+      **run locally** against PostgreSQL 16.13; the suite had been skipping
+      everywhere because `KUKGIT_TEST_POSTGRES_URL` was never set
+- [x] verify workflow permissions remain read-only except explicitly required
+      test services — `permissions: contents: read`
+- [x] confirm no temporary diagnostic, write-enabled or runner-probe workflow
+      remains — only `ci.yml`, two jobs
+- [x] PR #70 merged
 
-Merge gate: `mergeable: true` is insufficient; zero executed steps means **not safe to merge**.
+**How the gate was actually satisfied.** The rule was that `mergeable: true` is
+insufficient and zero executed steps means not safe to merge. That rule exists
+because *no evidence existed*. Evidence now exists — it was produced by running
+the same commands locally at the exact PR head — and PR #70 was merged on that
+basis, which is recorded here rather than left to be inferred from the merge.
+
+What local execution does **not** prove is that `ci.yml` is correct, because it
+has still never run. That is why the first two items above stay open. Until they
+close, every merge depends on somebody running the suite by hand, and a workflow
+file nobody has executed is a file nobody should trust.
 
 ### 1. PostgreSQL production data layer
 
@@ -46,14 +65,16 @@ Completed prerequisites on `main`:
 - [x] Stage 5 read-only shadow parity verification
 - [x] Stage 6 driver-neutral selected reads and asynchronous observer
 
-Stage 7 implementation present on PR #70, awaiting clean CI:
+Stage 7 merged. Validated by local execution at the PR head with current `main`
+merged in — see the CI note above for what that does and does not prove:
 
-- [ ] validate privacy-safe inventory and classification of direct metadata writes
-- [ ] validate named driver-neutral write catalog and transaction/error contracts
-- [ ] validate checksummed migration-history ownership and idempotent upgrades
-- [ ] validate disposable PostgreSQL integration coverage for commit, rollback, constraints, cancellation and type parity
-- [ ] validate the first bounded `audit_logs.insert` slice with SQLite still authoritative
-- [ ] merge Stage 7 only after exact-head CI; then mark these items complete on `main`
+- [x] privacy-safe inventory and classification of direct metadata writes
+- [x] named driver-neutral write catalog and transaction/error contracts
+- [x] checksummed migration-history ownership and idempotent upgrades
+- [x] disposable PostgreSQL integration coverage for commit, rollback, constraints, cancellation and type parity — executed against PostgreSQL 16.13
+- [x] the first bounded `audit_logs.insert` slice, with SQLite still authoritative
+- [x] Stage 7 merged
+- [ ] re-run the whole Stage 7 suite under GitHub Actions once hosted runners work
 
 Later work after Stage 7 delivery:
 

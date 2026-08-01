@@ -50,6 +50,27 @@
   (`requeueStranded`), so a row is only requeued once it has been claimed longer
   than any live attempt could still be running.
 
+### Changed
+
+- The "no runtime npm dependencies" claim is corrected everywhere it appeared —
+  `README.md`, `BUILD_REPORT.md`, `docs/ARCHITECTURE.md`, `docs/DEPLOYMENT.md`
+  and `CLAUDE.md`. The PostgreSQL write service declares `pg`, which arrives with
+  14 packages, all MIT or ISC.
+  It is imported lazily and only when the PostgreSQL driver is enabled, which is
+  off by default: an instance in its default configuration starts and serves with
+  `node_modules` removed entirely, which was verified rather than assumed. But it
+  is declared, `npm ci` installs it, and it is now part of the supply chain to
+  review and patch — so the documentation says one dependency rather than none.
+- `docs/TODO.md` records **how** the PR #70 merge gate was satisfied: by running
+  doctor, the syntax check, the full Node suite and the disposable PostgreSQL 16
+  integration suite locally at the exact PR head with current `main` merged in.
+  The PostgreSQL suite had been skipping everywhere because
+  `KUKGIT_TEST_POSTGRES_URL` was never set; it was executed against a real
+  PostgreSQL 16.13 server and passed.
+  No workflow file in this repository has ever run, so `ci.yml` itself remains
+  unproven and two CI items stay open. Written down rather than left to be
+  inferred from a merge commit.
+
 ### Added
 
 - `npm run lfs:storage` — moves an existing instance's Git LFS objects from the

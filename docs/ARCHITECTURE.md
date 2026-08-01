@@ -19,7 +19,15 @@ Browser
           └── Git CLI + bare repositories on disk
 ```
 
-The v0.1.0 foundation intentionally has no runtime npm dependencies. This reduces setup risk and proves the core product workflows before service extraction.
+The foundation intentionally carries almost no runtime npm dependencies. This
+reduces setup risk and proves the core product workflows before service
+extraction.
+
+The single exception is `pg`, added with the PostgreSQL write service. It is
+imported lazily and only when that driver is enabled, so an instance in its
+default configuration runs with no dependency loaded at all — but it is declared,
+installed and therefore part of the supply chain to review and patch. Anything
+proposed after it should have to argue against that same bar.
 
 ## Production target
 
