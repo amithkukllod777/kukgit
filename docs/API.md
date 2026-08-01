@@ -559,6 +559,21 @@ all `self` — the token identifies exactly one job and there is no job id in th
 path to point elsewhere. Reader routes need repository read; cancelling needs
 write. Read [Build Logs](BUILD_LOGS.md).
 
+## Workflow triggers
+
+`src/workflow-triggers.mjs`
+
+```text
+POST /api/repos/:org/:repo/workflow-dispatch    Start one workflow by hand
+GET  /api/repos/:org/:repo/workflow-schedules   Registered schedules and next fire time
+```
+
+Manual dispatch needs repository write and a same-origin request — starting a
+workflow runs the repository's own code with its own secrets. The workflow must
+exist at the resolved commit and declare `manual`, and inputs must be declared in
+the file. Schedules are read from the default branch only. Read
+[Workflow Triggers](WORKFLOW_TRIGGERS.md).
+
 ## Build artifacts and cache
 
 `src/workflow-storage.mjs`

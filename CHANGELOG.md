@@ -19,6 +19,46 @@
 
 ### Added
 
+- Scheduled, manual and pull-request-`closed` dispatch (`src/workflow-triggers.mjs`),
+  the last open item in the P1 CI list.
+  - **Schedules are read from the default branch only.** Honouring one on any ref
+    would let anyone who can push a branch install recurring work on the instance
+    that outlives their branch. They are re-read whenever a request could have
+    changed a ref, so adding or deleting a schedule is an ordinary commit.
+  - cron is evaluated in **UTC**. A schedule read in a local zone would run twice
+    on one day each year and not at all on another, with nothing in the workflow
+    file to explain it. A restricted day-of-month with a restricted day-of-week is
+    a union, which is cron's own rule — read as an intersection, `0 0 1 * 1` would
+    mean "never" instead of "the 1st, and every Monday".
+  - **missed ticks are not backfilled.** An instance down overnight owes one run
+    per schedule, not one per minute it was asleep.
+  - a scheduled run has no actor. Attributing it to whoever last touched the file
+    would put their name on work they did not start.
+  - new `job_leases` table. Every instance runs the sweep; one statement decides
+    who holds the lease, so two instances that both read "expired" cannot both
+    conclude they won and fire every schedule twice. The lease expires on its own,
+    so losing an instance does not stop schedules.
+  - manual dispatch (`POST /api/repos/:org/:repo/workflow-dispatch`) needs
+    repository **write** and a same-origin request — starting a workflow runs the
+    repository's own code with its own secrets on a runner the organization owns.
+    It is the only trigger that names its workflow and ref, so both are checked:
+    the ref is resolved through Git, and the workflow must exist at that commit
+    and declare `manual`. Inputs must be declared in the file; the audit event
+    records input names only.
+  - `pull_request` `closed` is asked as a question about state — which closed
+    pull requests have no `closed` run — rather than by reacting to a close
+    event, which can arrive through a merge, an API call, a branch deletion or a
+    lifecycle sweep. New nullable `workflow_runs.event_action` column makes that
+    question answerable; without it a `closed` run and the `opened` run at the
+    same commit are the same row.
+  - `dispatchWorkflows` gained an `only` filter. Schedules are recorded per
+    workflow, so firing every workflow at the commit would start each of them
+    once per schedule row due in the same minute.
+  - verified against a running instance: a push registered the schedule, the
+    worker took the lease and fired it a minute later, manual dispatch created a
+    run through the full chain, and a workflow that does not declare `manual` was
+    refused
+
 - Built-in `kukgit/cache@v1` and `kukgit/upload-artifact@v1` steps, so a workflow
   can actually reach the artifact and cache storage added alongside them. Both
   are implemented by the runner agent — nothing is fetched, so there is no

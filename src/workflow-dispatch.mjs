@@ -145,8 +145,12 @@ function recordInvalidWorkflow(db, config, { repository, file, event, actorId, m
  * typo in a deployment workflow does not silently disable the test workflow
  * beside it.
  */
-export function dispatchWorkflows(db, config, { repository, event, actorId = null, fork = false }) {
-  const files = readWorkflowFiles(config, repository, event.sha);
+export function dispatchWorkflows(db, config, { repository, event, actorId = null, fork = false, only = null }) {
+  // `only` narrows dispatch to one file. A schedule is recorded per workflow, so
+  // firing every workflow at the commit would start each of them once per
+  // schedule row that happened to be due in the same minute.
+  const files = readWorkflowFiles(config, repository, event.sha)
+    .filter((file) => !only || file.path === only);
   const started = [];
   const failed = [];
   const skipped = [];
@@ -352,6 +356,19 @@ function pushTarget(pathname, method) {
  * for a push that was then rejected by branch protection, and the request must
  * not be made slower by reading workflow files.
  */
+let dispatchObserver = null;
+
+/**
+ * Registers a callback for everything that follows a ref-changing request.
+ *
+ * One observer, replaced rather than accumulated: two registrations would mean a
+ * second one silently shadowing or duplicating the first, and there is exactly
+ * one caller.
+ */
+export function observeDispatch(observer) {
+  dispatchObserver = typeof observer === 'function' ? observer : null;
+}
+
 export function createWorkflowDispatchCapture({ config, db, next }) {
   return async function workflowDispatchCapture(req, res) {
     const url = new URL(req.url, config.baseUrl);
@@ -378,6 +395,11 @@ export function createWorkflowDispatchCapture({ config, db, next }) {
         cancelRunsForDeletedRefs(db, { repository, before, after });
         if (changes.length) dispatchForRefChanges(db, config, { repository, changes, actorId });
         reconcilePullRequestRuns(db, config, { repository, actorId });
+        // Triggers that are not about a ref moving — schedules declared on the
+        // default branch, and pull requests that closed — observe from here
+        // rather than importing this module back, which would make the two
+        // depend on each other in both directions.
+        dispatchObserver?.({ repository, changes, actorId });
       } catch (error) {
         // A dispatch failure must never turn a successful push into an error the
         // client sees; the push happened and has already been acknowledged.
