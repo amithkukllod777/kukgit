@@ -19,6 +19,35 @@
 
 ### Added
 
+- Real-time notifications now cross instances (`src/notification-fanout.mjs`),
+  the last open item in the P0 operations list. A notification created on one
+  node reaches a socket held by another.
+  - the trigger on `notifications` is **permanent, not `TEMP`**. A `TEMP` trigger
+    only fires for writes made on the connection that created it, which is
+    exactly why this never worked across instances.
+  - it is plain SQL with no custom function, so a backup, a script or
+    `npm run seed` can still write a notification. A trigger calling a function
+    only the server registers would turn those into crashes.
+  - **one delivery path, not two.** The instance that wrote the row reads it back
+    from the same log as everybody else. A local fast path plus a remote one
+    would be two behaviours to keep in sync, and the local one is the one that
+    gets tested.
+  - the cursor starts at the newest row and lives in memory only. A client
+    fetches its inbox on connect, so persisting the cursor would make every
+    restart a burst of stale badges.
+  - a failing poll is logged and retried, never thrown. The inbox is the delivery
+    guarantee and the socket is an accelerator, so the worst outcome is a badge
+    that updates on reload.
+  - bursts are bounded at 500 rows per tick; rows are pruned by age without a
+    lease, because deleting by age is idempotent and a lease would mean one
+    instance's failure stops the table growing
+  - `instance.realtime.fanout` reports each instance's cursor, so an instance
+    that is stuck is visible rather than silent
+  - verified with two instances on one volume: a socket opened on instance B
+    received the event for a notification written through instance A's
+    connection
+
+
 - Connection draining on `SIGTERM`, and `npm run drill` to rehearse it —
   the last open item in the P0 operations list.
   - **Readiness fails first, and the listener closes only after a delay.** The
