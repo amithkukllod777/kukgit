@@ -83,9 +83,11 @@ test('a healthy instance reports every saturation signal with its thresholds', (
   assert.equal(findSignal(health, 'email.backlog_depth').state, 'ok');
   assert.equal(findSignal(health, 'email.backlog_depth').value, 0);
 
-  // Every worker is still an in-process interval, and the health output says so
-  // rather than leaving an operator to discover it during an incident.
-  assert.equal(health.instance.singleNode, true);
+  // Which jobs this instance owns. Workers run behind named leases, so an
+  // operator reading one instance's health has to be able to tell which half of
+  // the work it is not responsible for.
+  assert.ok(health.instance.id);
+  assert.deepEqual(health.instance.leases, [], 'no worker has ticked in this test');
 });
 
 test('an instance that has never been backed up is critical, not quietly fine', (t) => {

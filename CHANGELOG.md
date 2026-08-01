@@ -17,7 +17,41 @@
   legacy-password scrub, so a change in dispatch order would have silently
   dropped three protections.
 
+### Changed
+
+- Every background worker now runs behind a named lease (`src/job-leases.mjs`),
+  closing the two open P0 items in the operations boundary. Two instances against
+  the same volume previously double-fired all of them: two copies of each email,
+  two webhook deliveries, two expiry sweeps.
+  - one statement decides ownership, so two instances that both read "expired" at
+    the same moment cannot both conclude they won. Acquiring and renewing are the
+    same call, so a tick *is* the heartbeat and there is no separate heartbeat
+    path that could stop while the work carries on.
+  - leases are per **job**, not per instance: email can run on one node while
+    webhooks run on another. `acquired_at` survives a renewal, so an operator can
+    see how long a node has held a job rather than only when it last checked in.
+  - a lease that cannot be read is **not** permission to run. Failing open would
+    turn a database blip into every instance working at once, which is the one
+    thing the lease exists to prevent.
+  - the webhook worker re-checks the lease between deliveries. An instance that
+    loses it part-way through a batch would otherwise keep sending alongside the
+    instance that took over, and every remaining delivery would arrive twice.
+  - a clean shutdown releases its leases, so a rolling restart hands work over
+    immediately instead of waiting out the expiry.
+  - `GET /api/instance-admin/health` now reports `instance.leases` — which node
+    owns which job — replacing the `singleNode: true` marker that is no longer
+    true.
+
+### Fixed
+
+- Webhook migration reset **every** `processing` delivery. On a second instance's
+  startup that resurrected a delivery the first was mid-send on, and the endpoint
+  received it twice. Stranded rows are now reclaimed by **age** instead
+  (`requeueStranded`), so a row is only requeued once it has been claimed longer
+  than any live attempt could still be running.
+
 ### Added
+
 
 - Scheduled, manual and pull-request-`closed` dispatch (`src/workflow-triggers.mjs`),
   the last open item in the P1 CI list.

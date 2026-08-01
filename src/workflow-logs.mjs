@@ -4,6 +4,7 @@ import { requireRepositoryAccess } from './repository-access.mjs';
 import { maskSecrets, resolveSecrets } from './secrets-vault.mjs';
 import { httpError, originAllowed } from './security.mjs';
 import { authorizeJobToken, cancelRun, completeJob, getRun, listRunJobs } from './workflow-runs.mjs';
+import { leaseGate } from './job-leases.mjs';
 
 export const LOG_LIMITS = {
   maxBytesPerJob: 8 * 1024 * 1024,
@@ -236,9 +237,17 @@ export function reapStalledJobs(db, { timeoutSeconds = LOG_LIMITS.heartbeatTimeo
  * correctness backstop, not a latency-sensitive path, and checking every second
  * would only add load to the same instance the runners are reporting to.
  */
-export function startStalledJobWorker(db, { intervalMs = 60_000, timeoutSeconds = LOG_LIMITS.heartbeatTimeoutSeconds } = {}) {
+export function startStalledJobWorker(db, {
+  intervalMs = 60_000,
+  timeoutSeconds = LOG_LIMITS.heartbeatTimeoutSeconds,
+  gate = leaseGate(db, 'stalled-jobs'),
+} = {}) {
   const tick = () => {
     try {
+      // Reaping twice is harmless, but the reap writes a job outcome and a log
+      // line, so two instances would write the same explanation twice into the
+      // log a person is reading.
+      if (!gate()) return;
       reapStalledJobs(db, { timeoutSeconds });
     } catch (error) {
       console.error('KukGit stalled job worker', error);
@@ -246,7 +255,7 @@ export function startStalledJobWorker(db, { intervalMs = 60_000, timeoutSeconds 
   };
   const timer = setInterval(tick, intervalMs);
   timer.unref?.();
-  return () => clearInterval(timer);
+  return () => { clearInterval(timer); gate.release?.(); };
 }
 
 function sendJson(res, status, payload, headers = {}) {

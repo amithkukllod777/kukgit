@@ -1,4 +1,5 @@
 import { createNotification, migrateNotifications } from './notifications.mjs';
+import { leaseGate } from './job-leases.mjs';
 
 function adminUser(db, config) {
   return db.prepare('SELECT id, email, display_name AS displayName FROM users WHERE email = ?')
@@ -153,11 +154,14 @@ export function createOperationsNotificationCapture({ config, db, next }) {
   };
 }
 
-export function startOperationalNotificationWorker(db, config) {
+export function startOperationalNotificationWorker(db, config, { gate = leaseGate(db, 'operational-alerts') } = {}) {
   let stopped = false;
   let running = false;
   async function tick() {
     if (stopped || running) return;
+    // Alerts become email. One instance owns them, or an operator is paged once
+    // per instance for the same condition.
+    if (!gate()) return;
     running = true;
     try { scheduleWebhookFailureAlerts(db, config); }
     catch (error) { console.error(`[notifications] operational worker: ${redact(error?.message || error)}`); }

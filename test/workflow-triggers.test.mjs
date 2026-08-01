@@ -15,16 +15,14 @@ import { migrateRepositoryLifecycle } from '../src/repository-lifecycle.mjs';
 import { migrateSecrets } from '../src/secrets-vault.mjs';
 import { migrateWorkflowLogs } from '../src/workflow-logs.mjs';
 import { getRun, migrateWorkflowRuns } from '../src/workflow-runs.mjs';
+import { acquireLease, leaseHolder, releaseLease } from '../src/job-leases.mjs';
 import {
-  acquireLease,
   createWorkflowTriggersApiHandler,
   dispatchClosedPullRequests,
   dispatchDueSchedules,
   dispatchManualRun,
-  leaseHolder,
   migrateWorkflowTriggers,
   nextCronOccurrence,
-  releaseLease,
   syncSchedules,
 } from '../src/workflow-triggers.mjs';
 

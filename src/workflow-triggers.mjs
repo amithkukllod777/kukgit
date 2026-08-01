@@ -7,6 +7,7 @@ import { validateWorkflowFile } from './workflow-schema.mjs';
 import { createWorkflowRun } from './workflow-runs.mjs';
 import { dispatchWorkflows, readWorkflowFiles } from './workflow-dispatch.mjs';
 import { repoDiskPath } from './git.mjs';
+import { leaseGate, migrateJobLeases } from './job-leases.mjs';
 
 // Same shape as the dispatcher's own helper: `--git-dir` and an argument
 // vector, so a ref name out of a request never reaches a shell.
@@ -20,7 +21,6 @@ function git(gitDir, args, { allowFailure = false } = {}) {
 }
 
 export const TRIGGER_LIMITS = {
-  leaseSeconds: 90,
   scheduleIntervalMs: 60_000,
   maxSchedulesPerSweep: 50,
   maxInputBytes: 4096,
@@ -28,13 +28,8 @@ export const TRIGGER_LIMITS = {
 };
 
 export function migrateWorkflowTriggers(db) {
+  migrateJobLeases(db);
   db.exec(`
-    CREATE TABLE IF NOT EXISTS job_leases (
-      name TEXT PRIMARY KEY,
-      owner TEXT NOT NULL,
-      acquired_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      expires_at TEXT NOT NULL
-    );
     CREATE TABLE IF NOT EXISTS workflow_schedules (
       id TEXT PRIMARY KEY,
       repository_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
@@ -56,33 +51,6 @@ export function migrateWorkflowTriggers(db) {
   if (!columns.includes('event_action')) {
     db.exec('ALTER TABLE workflow_runs ADD COLUMN event_action TEXT');
   }
-}
-
-/**
- * Takes a named lease, or reports that somebody else holds it.
- *
- * One statement decides it. Two instances that read "expired" at the same
- * moment both try to write, and the `WHERE` clause means exactly one row is
- * changed — a read-then-write would let both conclude they had won and fire
- * every scheduled workflow twice.
- */
-export function acquireLease(db, name, { owner, ttlSeconds = TRIGGER_LIMITS.leaseSeconds, now = new Date() } = {}) {
-  const expiresAt = new Date(now.getTime() + ttlSeconds * 1000).toISOString();
-  const nowIso = now.toISOString();
-  const taken = db.prepare(`
-    INSERT INTO job_leases (name, owner, acquired_at, expires_at) VALUES (?, ?, ?, ?)
-    ON CONFLICT(name) DO UPDATE SET owner = excluded.owner, acquired_at = excluded.acquired_at, expires_at = excluded.expires_at
-    WHERE job_leases.expires_at <= ? OR job_leases.owner = ?
-  `).run(name, owner, nowIso, expiresAt, nowIso, owner);
-  return taken.changes > 0;
-}
-
-export function releaseLease(db, name, owner) {
-  return db.prepare('DELETE FROM job_leases WHERE name = ? AND owner = ?').run(name, owner).changes > 0;
-}
-
-export function leaseHolder(db, name) {
-  return db.prepare('SELECT name, owner, acquired_at AS acquiredAt, expires_at AS expiresAt FROM job_leases WHERE name = ?').get(name) ?? null;
 }
 
 function cronField(field, min, max) {
@@ -188,14 +156,14 @@ export function syncSchedules(db, config, { repository, sha = null, now = new Da
     // from a file nobody can read any more would be work with no definition.
     try { workflow = validateWorkflowFile(file.source, { config, path: file.path }); } catch { continue; }
     for (const cron of workflow.on?.schedule?.cron ?? []) {
-      wanted.set(`${file.path} ${cron}`, { path: file.path, cron });
+      wanted.set(`${file.path}::${cron}`, { path: file.path, cron });
     }
   }
 
   const existing = db.prepare('SELECT id, workflow_path AS workflowPath, cron FROM workflow_schedules WHERE repository_id = ?')
     .all(repository.id);
   for (const row of existing) {
-    if (!wanted.has(`${row.workflowPath} ${row.cron}`)) {
+    if (!wanted.has(`${row.workflowPath}::${row.cron}`)) {
       db.prepare('DELETE FROM workflow_schedules WHERE id = ?').run(row.id);
     }
   }
@@ -280,11 +248,11 @@ export function dispatchDueSchedules(db, config, { now = new Date(), limit = TRI
  */
 export function startScheduleWorker(db, config, {
   intervalMs = TRIGGER_LIMITS.scheduleIntervalMs,
-  owner = `${process.pid}@${uid('inst')}`,
+  gate = leaseGate(db, 'workflow-schedule'),
 } = {}) {
   const tick = () => {
     try {
-      if (!acquireLease(db, 'workflow-schedule', { owner })) return;
+      if (!gate()) return;
       dispatchDueSchedules(db, config, {});
     } catch (error) {
       console.error('KukGit schedule worker', error.message);
@@ -292,10 +260,7 @@ export function startScheduleWorker(db, config, {
   };
   const timer = setInterval(tick, intervalMs);
   timer.unref?.();
-  return () => {
-    clearInterval(timer);
-    try { releaseLease(db, 'workflow-schedule', owner); } catch { /* shutting down */ }
-  };
+  return () => { clearInterval(timer); gate.release?.(); };
 }
 
 function normalizeInputs(raw, declared) {

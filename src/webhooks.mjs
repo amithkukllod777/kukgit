@@ -7,6 +7,7 @@ import { currentUser, requireUser } from './auth.mjs';
 import { audit, uid } from './db.mjs';
 import { requireRepositoryAccess } from './repository-access.mjs';
 import { assertSlug, httpError, originAllowed } from './security.mjs';
+import { leaseGate, requeueStranded } from './job-leases.mjs';
 
 export const WEBHOOK_EVENTS = Object.freeze(['push', 'issues', 'pull_request', 'review', 'status', 'repository', 'ping']);
 const EVENT_SET = new Set(WEBHOOK_EVENTS);
@@ -56,10 +57,6 @@ export function migrateWebhooks(db) {
     CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_hook
       ON webhook_deliveries(webhook_id, created_at DESC);
   `);
-  db.prepare(`
-    UPDATE webhook_deliveries SET status = 'pending', next_attempt_at = CURRENT_TIMESTAMP
-    WHERE status = 'processing'
-  `).run();
 }
 
 function sendJson(res, status, payload) {
@@ -529,13 +526,28 @@ export async function processNextWebhookDelivery(db, config) {
   return processWebhookDelivery(db, config, row.id);
 }
 
-export function startWebhookWorker(db, config, { intervalMs = 2000 } = {}) {
+/**
+ * Delivers queued webhooks on whichever instance holds the `webhooks` lease.
+ *
+ * The gate is checked again between deliveries. A batch runs up to ten, and an
+ * instance that loses the lease part-way through would otherwise keep sending
+ * alongside the instance that took over — every remaining delivery in the batch
+ * arriving twice at somebody's endpoint.
+ */
+export function startWebhookWorker(db, config, { intervalMs = 2000, gate = leaseGate(db, 'webhooks') } = {}) {
   let active = false;
   const run = async () => {
     if (active) return;
+    if (!gate()) return;
     active = true;
     try {
+      // Rows a worker claimed and never finished, reclaimed by age. Resetting
+      // every `processing` row — which this did at startup — resurrects work
+      // another instance is performing right now, and the visible result is a
+      // delivery that arrives twice.
+      requeueStranded(db, { table: 'webhook_deliveries', extraSet: "next_attempt_at = CURRENT_TIMESTAMP" });
       for (let index = 0; index < 10; index += 1) {
+        if (!gate.holds()) break;
         const processed = await processNextWebhookDelivery(db, config);
         if (!processed) break;
       }
@@ -548,7 +560,7 @@ export function startWebhookWorker(db, config, { intervalMs = 2000 } = {}) {
   const timer = setInterval(run, intervalMs);
   timer.unref?.();
   queueMicrotask(run);
-  return () => clearInterval(timer);
+  return () => { clearInterval(timer); gate.release?.(); };
 }
 
 function webhookPayload(db, repository) {

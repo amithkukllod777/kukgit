@@ -3,6 +3,7 @@ import { audit, uid } from './db.mjs';
 import { sendSmtpMessage, smtpConfigured } from './email-transport.mjs';
 import { recordSmtpRejection } from './email-provider-events.mjs';
 import { httpError, normalizeEmail, originAllowed } from './security.mjs';
+import { leaseGate } from './job-leases.mjs';
 
 export const NOTIFICATION_CATEGORIES = Object.freeze([
   'organization',
@@ -528,13 +529,21 @@ export function scheduleTokenExpiryNotifications(db, config, now = new Date()) {
   return { candidates: rows.length, created };
 }
 
-export function startNotificationWorker(db, config, { sendEmail = sendSmtpMessage } = {}) {
+/**
+ * Sends queued email on whichever instance holds the `email` lease.
+ *
+ * Without it, two instances against the same volume send every message twice —
+ * and an email, unlike a webhook, has no delivery id a recipient can use to
+ * recognise the duplicate.
+ */
+export function startNotificationWorker(db, config, { sendEmail = sendSmtpMessage, gate = leaseGate(db, 'email') } = {}) {
   let stopped = false;
   let running = false;
   let lastTokenSweep = 0;
   const intervalMs = Math.max(5000, Math.min(Number(config.emailWorkerIntervalMs) || 30000, 60 * 60 * 1000));
   async function tick() {
     if (stopped || running) return;
+    if (!gate()) return;
     running = true;
     try {
       if (Date.now() - lastTokenSweep > 6 * 60 * 60 * 1000) {
@@ -554,6 +563,7 @@ export function startNotificationWorker(db, config, { sendEmail = sendSmtpMessag
   return () => {
     stopped = true;
     clearInterval(timer);
+    gate.release?.();
   };
 }
 

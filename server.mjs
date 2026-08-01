@@ -75,6 +75,7 @@ import { createRateLimitGuard } from './src/rate-limit.mjs';
 import { createSecretsApiHandler, migrateSecrets } from './src/secrets-vault.mjs';
 import { createRunnersApiHandler, migrateRunners } from './src/runners.mjs';
 import { createWorkflowDispatchCapture, observeDispatch } from './src/workflow-dispatch.mjs';
+import { migrateJobLeases } from './src/job-leases.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
@@ -150,6 +151,7 @@ migrateWebhooks(db);
 migrateSecrets(db);
 migrateWorkflowRuns(db);
 migrateWorkflowLogs(db);
+migrateJobLeases(db);
 migrateWorkflowStorage(db);
 migrateWorkflowTriggers(db);
 migrateRunners(db);
@@ -274,6 +276,10 @@ const centralSessionDispatch = createAuthKitCentralSessionGuard({ config, db, ne
 // flood cannot force one AuthKit network round trip per request.
 const rateLimitDispatch = createRateLimitGuard({ config, next: centralSessionDispatch });
 const identityDispatch = createAuthKitIdentityMiddleware({ config, db, next: rateLimitDispatch });
+// Every background worker runs behind a named lease, so two instances against
+// the same volume own one job each rather than both doing all of them. Leases
+// are per job, not per instance: email can run on one node while webhooks run
+// on another.
 const stopWebhookWorker = startWebhookWorker(db, config);
 const stopNotificationWorker = startNotificationWorker(db, config);
 const stopStalledJobWorker = startStalledJobWorker(db);
