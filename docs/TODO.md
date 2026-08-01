@@ -126,6 +126,18 @@ Implementation of the designed model:
 - [x] migration command to move an existing instance's LFS objects from a volume into a bucket — `npm run lfs:storage`
 - [x] connection-draining rollout and a rehearsed rollback drill — `npm run drill`
 
+### Watch: one unreproduced test failure
+
+A full-suite run immediately after merging the real-time fan-out reported one
+failure. Six consecutive runs since have been clean, and the failing test was not
+captured. Two leftover end-to-end server processes were competing for CPU at the
+time, which is the most likely cause — several tests assert on timings in the
+tens of milliseconds.
+
+Recorded rather than dismissed, because a test that fails once and is never
+spoken of again is how a flake becomes normal. If it recurs, capture the reporter
+output before re-running: the name of the test is the whole diagnosis.
+
 ## P1 — Private-alpha exit features
 
 ### Hosted CI and workflows
