@@ -10,26 +10,39 @@ authoritative and PostgreSQL remains observation-only.
 ## Where the release actually stands
 
 Every background worker is an in-process `setInterval` on the node serving
-traffic:
+traffic, and each one now runs behind a **named lease**:
 
-| Worker | Module | Interval |
-| --- | --- | --- |
-| Email outbox | `src/notifications.mjs` | 30s |
-| Webhook delivery | `src/webhooks.mjs` | configurable |
-| Operational notifications | `src/operations-notifications.mjs` | 5m |
-| External access reviews | `src/external-access-reviews.mjs` | daily |
-| WebSocket heartbeat | `src/realtime-notifications.mjs` | 25s |
+| Worker | Module | Interval | Lease |
+| --- | --- | --- | --- |
+| Email outbox | `src/notifications.mjs` | 30s | `email` |
+| Webhook delivery | `src/webhooks.mjs` | configurable | `webhooks` |
+| Operational notifications | `src/operations-notifications.mjs` | 5m | `operational-alerts` |
+| External access reviews | `src/external-access-reviews.mjs` | daily | `external-access-reviews` |
+| Workflow schedules | `src/workflow-triggers.mjs` | 60s | `workflow-schedule` |
+| Stalled build reaper | `src/workflow-logs.mjs` | 60s | `stalled-jobs` |
+| CI storage retention | `src/workflow-storage.mjs` | hourly | `storage-retention` |
+| WebSocket heartbeat | `src/realtime-notifications.mjs` | 25s | none — per-process by design |
 
-This is a correct and simple design for one node. It has one hard property:
-**two instances against the same volume double-fire every worker.** Two copies of
-each email, two webhook deliveries, two expiry sweeps. There is no lease, no
-lock, and no partitioning.
+Two instances against the same volume therefore own one job each rather than both
+doing all of them. Verified by running two instances against one volume: each job
+had exactly one owner, and killing the owner moved its jobs to the survivor.
 
-So the deployment constraint is not a preference. Until the ownership model below
-is implemented, KukGit runs as exactly one application instance.
+`GET /api/instance-admin/health` reports `instance.leases`, so which node owns
+which job is visible from the running system rather than only from documentation.
 
-`GET /api/instance-admin/health` reports `instance.singleNode: true` so this is
-visible from the running system, not only from documentation.
+### What is still single-instance
+
+Two things, and neither is fixed by a lease:
+
+- **Real-time WebSocket fan-out.** The socket registry is per process, so a
+  notification created on instance A does not reach a socket held by instance B.
+  The inbox stays durable either way — the socket is an accelerator, never the
+  delivery guarantee — but multi-node real-time needs a shared channel.
+- **Concurrent startup migrations.** Two instances starting at the same instant
+  race on `ALTER TABLE … ADD COLUMN` and one crashes with `duplicate column
+  name`. Found by starting two instances simultaneously during the lease
+  verification. A rolling deploy that starts instances sequentially avoids it;
+  making migrations safe to run concurrently is separate work, tracked below.
 
 ## Background job ownership
 
@@ -208,7 +221,9 @@ Tracked as P0.3 in [TODO.md](TODO.md):
 - [x] health, capacity and saturation signals with configurable thresholds
 - [x] readiness distinct from liveness
 - [x] incident-severity, rollback and communication procedures
-- [ ] `job_leases` table and lease-holding workers
-- [ ] requeue of rows stranded in `processing`
+- [x] `job_leases` table and lease-holding workers
+- [x] requeue of rows stranded in `processing`
+- [ ] migrations safe to run from two instances starting at the same instant
+- [ ] shared fan-out channel for real-time notifications across instances
 - [ ] object-storage backend behind the Git LFS interface
 - [ ] connection-draining rollout and a rehearsed rollback drill

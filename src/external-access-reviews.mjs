@@ -7,6 +7,7 @@ import {
   requireRepositoryAccess,
 } from './repository-access.mjs';
 import { httpError, originAllowed } from './security.mjs';
+import { leaseGate } from './job-leases.mjs';
 
 const MAX_BODY_BYTES = 64 * 1024;
 const ACCESS_DAYS = new Set([7, 30, 90, 180, 365]);
@@ -409,17 +410,20 @@ export function sweepExternalAccessNotifications(db, config) {
   return { scanned: rows.length, queued };
 }
 
-export function startExternalAccessReviewWorker(db, config) {
+export function startExternalAccessReviewWorker(db, config, { gate = leaseGate(db, 'external-access-reviews') } = {}) {
   let stopped = false;
   const run = () => {
     if (stopped) return;
+    // The sweep queues reminder email. Two instances sweeping would queue each
+    // reminder twice, and the recipient would be told twice.
+    if (!gate()) return;
     try { sweepExternalAccessNotifications(db, config); }
     catch (error) { console.error('[external-access] reminder sweep failed', error); }
   };
   const timer = setInterval(run, REVIEW_INTERVAL_MS);
   timer.unref?.();
   setImmediate(run);
-  return () => { stopped = true; clearInterval(timer); };
+  return () => { stopped = true; clearInterval(timer); gate.release?.(); };
 }
 
 export function createExternalAccessReviewsApiHandler({ config, db }) {

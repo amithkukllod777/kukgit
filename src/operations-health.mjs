@@ -6,6 +6,7 @@ import { listBackupSnapshots } from './backups.mjs';
 import { uid } from './db.mjs';
 
 import { KUKGIT_VERSION } from './version.mjs';
+import { instanceId, listLeases } from './job-leases.mjs';
 
 export const OPERATIONS_HEALTH_FORMAT = 'kukgit-operations-health-v1';
 
@@ -226,10 +227,20 @@ export function collectOperationalHealth(config, db, { realtime = null } = {}) {
     service: 'kukgit',
     version: KUKGIT_VERSION,
     uptimeSeconds: Math.floor(process.uptime()),
-    // Every worker is an in-process interval on this node. Until that changes,
-    // a second instance against the same volume double-fires all of them, so the
-    // instance identity belongs in the health output.
-    instance: { pid: process.pid, singleNode: true },
+    // Which background jobs this instance actually owns. Workers run behind
+    // named leases, so "is this node doing the email" is a real question with a
+    // different answer per node, and an operator reading one instance's health
+    // needs to know which half of the work it is not responsible for.
+    instance: {
+      pid: process.pid,
+      id: instanceId(),
+      leases: listLeases(db).map((lease) => ({
+        job: lease.job,
+        heldHere: lease.owner === instanceId(),
+        heartbeatAt: lease.heartbeatAt,
+        expiresAt: lease.expiresAt,
+      })),
+    },
     signals,
     degraded: signals.filter((entry) => entry.state !== 'ok').map((entry) => entry.name),
     generatedAt: new Date().toISOString(),

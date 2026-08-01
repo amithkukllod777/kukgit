@@ -97,8 +97,10 @@ Designed in [OPERATIONS_BOUNDARY.md](OPERATIONS_BOUNDARY.md).
 
 Implementation of the designed model:
 
-- [ ] `job_leases` table and lease-holding workers, so a second instance cannot double-fire
-- [ ] requeue rows stranded in `processing` by a worker that died
+- [x] `job_leases` table and lease-holding workers, so a second instance cannot double-fire — [OPERATIONS_BOUNDARY.md](OPERATIONS_BOUNDARY.md)
+- [x] requeue rows stranded in `processing` by a worker that died
+- [ ] migrations safe to run from two instances starting at the same instant — two simultaneous starts race on `ALTER TABLE ADD COLUMN`
+- [ ] shared fan-out channel so real-time notifications reach sockets on another instance
 - [ ] object-storage backend behind the Git LFS interface, with backup/restore updated in the same change
 - [ ] connection-draining rollout and a rehearsed rollback drill
 

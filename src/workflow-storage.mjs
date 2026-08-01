@@ -6,6 +6,7 @@ import { httpError, originAllowed } from './security.mjs';
 import { requireUser } from './auth.mjs';
 import { requireRepositoryAccess } from './repository-access.mjs';
 import { authorizeJobToken, getRun } from './workflow-runs.mjs';
+import { leaseGate } from './job-leases.mjs';
 
 export const STORAGE_LIMITS = {
   // Uploads are buffered in memory before they are hashed, so the per-object
@@ -379,14 +380,19 @@ export function storageUsage(db, repositoryId) {
  * Hourly: retention is measured in days, so a sweep that runs more often only
  * adds load to the instance the runners are already reporting to.
  */
-export function startStorageRetentionWorker(db, config, { intervalMs = 3600_000 } = {}) {
+export function startStorageRetentionWorker(db, config, { intervalMs = 3600_000, gate = leaseGate(db, 'storage-retention') } = {}) {
   const tick = () => {
-    try { expireArtifacts(db, config); }
+    try {
+      // Deleting an expired artifact is idempotent, but two instances sweeping
+      // means two full table scans and two blob sweeps an hour for one result.
+      if (!gate()) return;
+      expireArtifacts(db, config);
+    }
     catch (error) { console.error('KukGit storage retention worker', error.message); }
   };
   const timer = setInterval(tick, intervalMs);
   timer.unref?.();
-  return () => clearInterval(timer);
+  return () => { clearInterval(timer); gate.release?.(); };
 }
 
 function sendJson(res, status, payload, headers = {}) {
