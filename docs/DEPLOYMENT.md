@@ -326,13 +326,82 @@ Two signals deserve attention:
 Read [Operations Boundary](OPERATIONS_BOUNDARY.md) for the full signal list,
 incident severities and the rollback procedure.
 
+## Choosing a host
+
+KukGit is not a serverless workload and will not run on one. It needs, all at
+once:
+
+- a **persistent block volume** — SQLite, bare Git repositories, LFS objects and
+  CI blobs are all files, and an ephemeral filesystem loses the product
+- the **Git CLI** and permission to spawn it
+- **port 22**, if Git over SSH is offered
+- **long-lived WebSocket connections** held in process memory
+
+That rules out Vercel, Netlify, Cloudflare Workers and anything with an ephemeral
+disk. What it needs is an ordinary virtual machine with a volume attached.
+
+### Sizing for a private alpha
+
+| | |
+| --- | --- |
+| Application instance | 4 vCPU, 8–16 GB RAM |
+| Volume | 100 GB to start, on a resizable block device |
+| Runner | a **separate** machine, 4 vCPU, 8 GB RAM |
+
+Git is CPU-bound on pack operations and memory-hungry on large clones, so
+headroom on the application instance is more useful than a bigger volume that is
+mostly empty.
+
+### The runner must not be the application instance
+
+This is the one placement decision that is a security boundary rather than a
+preference. A self-hosted runner has **no sandbox**: a job runs as the runner's
+user, on the runner's machine. A runner on the application instance means any
+workflow in any repository can read the SQLite database, the secrets vault key
+and every LFS object on disk — see
+[SELF_HOSTED_RUNNERS.md](SELF_HOSTED_RUNNERS.md).
+
+Put runners on their own machines, and give them no credential beyond their
+registration token.
+
+### Provider
+
+Any provider that rents a VM with a block volume works, and nothing in KukGit is
+tied to one — moving hosts is `rsync` plus a restore, which the recovery
+rehearsal already exercises.
+
+Cost per GB of storage and per TB of egress is what actually differs, and Git
+hosting is storage- and egress-heavy. Compare on those two lines rather than on
+vCPU price.
+
+Pick the provider your customers' compliance requirements allow, in the region
+nearest the people who will clone from it. Latency to a Git host is felt on every
+fetch.
+
+### Before it is reachable from the internet
+
+- Move the machine's own administrative SSH to a port other than 22, because
+  KukGit wants 22 for `git@host:org/repo.git`. See
+  [`infra/sshd_config.kukgit`](../infra/sshd_config.kukgit).
+- Terminate TLS in front of it — `infra/nginx.conf` is configured for the large
+  request bodies Git push and LFS upload need, with proxy buffering off.
+- Send backups **off the machine and off the provider**. A snapshot stored beside
+  the volume it protects is not a backup of the provider.
+- Read the public deployment warning at the end of this document. It still
+  applies.
+
 ## Operational limits of this release
 
 Plan capacity with these in mind:
 
-- **Single node.** Sessions, the email outbox, webhook deliveries, notifications and
-  access-review campaigns run on in-process `setInterval` workers. Two instances
-  against one volume double-fire them.
+- **Background jobs are leased, real-time is not.** The email outbox, webhook
+  deliveries, notifications, access-review campaigns, workflow schedules and CI
+  retention each run behind a named lease, so two instances against one volume
+  own one job each rather than both doing all of them. Real-time WebSockets are
+  still per process, which is what keeps this a single-node release.
+- **Concurrent startup migrations race.** Two instances starting at the same
+  instant can both run `ALTER TABLE … ADD COLUMN` and one will exit. Start
+  instances sequentially.
 - **Per-process WebSockets.** The real-time registry is not shared between
   instances, so a notification reaches only sockets held by the instance that
   created it.
@@ -345,7 +414,6 @@ Plan capacity with these in mind:
 - **Local storage.** Repositories and LFS objects live on the instance volume.
 - **Per-instance rate limits.** The limiter is in-process, so limits are enforced
   per instance rather than per cluster, and Git over SSH is not covered at all.
-- **No rate limiting.** No per-user, per-token or per-IP limits exist on any surface.
 
 ## Public deployment warning
 
