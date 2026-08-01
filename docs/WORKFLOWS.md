@@ -204,6 +204,44 @@ are rejected: a moving reference means the code a build runs can change without
 this file changing, which would make reviewing it meaningless. Pin to a tag or a
 commit.
 
+### Built-in actions
+
+Two `uses:` references are implemented by the runner agent itself. Nothing is
+fetched, so there is no third-party code to review — the agent already on the
+machine is what runs.
+
+```yaml
+- uses: kukgit/cache@v1
+  with:
+    key: npm-${{ github.sha }}     # required
+    path: node_modules            # required, workspace-relative
+    restore-keys: |               # optional, newline or comma separated
+      npm-
+
+- uses: kukgit/upload-artifact@v1
+  with:
+    name: test-reports            # required
+    path: reports                 # required, workspace-relative
+    retention-days: 7             # optional
+    if-no-files-found: warn       # optional: warn (default), error, ignore
+```
+
+Their inputs are checked strictly in both directions: a missing required input
+and an unrecognised one are both errors. An unrecognised input on a real action
+is a typo the build ignores; on a built-in it would silently change nothing
+about what is cached or uploaded, and nobody would find out until an artifact
+expired early.
+
+A `${{ secrets.* }}` reference is refused in any of these inputs. They become
+stored metadata — a cache key, an artifact name — readable by anyone who can
+read the repository.
+
+Only these two exact references are claimed. `kukgit/checkout@v1.2.0` is an
+ordinary action reference like any other; reserving the whole owner would break
+any real action published under it.
+
+Read [Artifacts and Cache](ARTIFACTS_AND_CACHE.md) for what happens to the bytes.
+
 ### Environment variables
 
 Names must match `^[A-Za-z_][A-Za-z0-9_]*$`. The prefixes `GITHUB_`, `KUKGIT_`,

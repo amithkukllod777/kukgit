@@ -19,6 +19,39 @@
 
 ### Added
 
+- Built-in `kukgit/cache@v1` and `kukgit/upload-artifact@v1` steps, so a workflow
+  can actually reach the artifact and cache storage added alongside them. Both
+  are implemented by the runner agent — nothing is fetched, so there is no
+  third-party code on the machine to pin or review.
+  - the cache step restores where it appears and **saves after the job**, which
+    is what makes a cache a cache: the content it holds does not exist when the
+    step runs. The save is skipped on an exact key hit (those are already the
+    bytes we would write) and skipped when the job failed (a cache written from
+    a broken build is one every later build restores).
+  - a cache service that is unreachable never fails a build. Turning a slow build
+    into a broken one would be the wrong trade for an optimisation.
+  - paths are resolved and *then* checked against the workspace root, so
+    `a/../../etc` and a symlinked parent are caught by the same comparison. A
+    path that escaped would let a workflow archive the runner's own files —
+    including its registration token.
+  - `tar` is invoked with an argument vector, never a command string, and content
+    is packed relative to a `-C` directory so nothing from a workflow can look
+    like an option. A cache is unpacked into staging and copied in only once tar
+    has succeeded, so a half-extracted archive never reaches a workspace.
+  - inputs are validated strictly in both directions: a missing required input
+    and an unrecognised one are both errors. An unrecognised input on a real
+    action is a typo the build ignores; on a built-in it would silently change
+    nothing about what is cached, and nobody would find out.
+  - `${{ secrets.* }}` is refused in these inputs (`WORKFLOW_SECRET_IN_METADATA`)
+    — they become a cache key or an artifact name, stored metadata readable by
+    anyone with repository read
+  - only the two exact references are claimed, not the `kukgit` owner. Reserving
+    an owner would break any real action published under it.
+  - verified end to end against a running instance: pushed a workflow, watched
+    the first build miss the cache and upload an artifact, then pushed again and
+    watched the second build restore the first build's cache by prefix and store
+    a new one under its own key
+
 - Build artifact and cache storage (`src/workflow-storage.mjs`), closing the P1
   CI item "cache and artifact storage with quotas and retention". Content is
   addressed by SHA-256 and shared: the same dependency cache written by every

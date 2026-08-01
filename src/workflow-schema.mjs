@@ -298,6 +298,29 @@ function normalizeWorkingDirectory(value, path) {
   return text;
 }
 
+/**
+ * Actions the runner implements itself.
+ *
+ * These are not fetched, so there is no third-party code to pin or review — the
+ * agent already on the machine is what runs. They are described here so a
+ * workflow that misspells an input is told at validation time rather than
+ * discovering it halfway through a build.
+ */
+export const BUILTIN_ACTIONS = {
+  cache: {
+    version: 'v1',
+    required: ['key', 'path'],
+    optional: ['restore-keys'],
+  },
+  'upload-artifact': {
+    version: 'v1',
+    required: ['name', 'path'],
+    optional: ['retention-days', 'if-no-files-found'],
+  },
+};
+
+const BUILTIN_OWNER = 'kukgit';
+
 function normalizeUses(value, path, { allowedActionOwners }) {
   const text = requireString(value, path, { max: 300 });
   if (text.startsWith('./') || text.startsWith('docker://')) {
@@ -312,10 +335,58 @@ function normalizeUses(value, path, { allowedActionOwners }) {
   if (['main', 'master', 'latest', 'HEAD'].includes(ref)) {
     throw invalid(`'@${ref}' is a moving reference. Pin the action to a tag or commit so the code a build runs cannot change without this file changing.`, 'WORKFLOW_USES_UNPINNED', path);
   }
+
+  // Only the exact built-in references are claimed, not the whole `kukgit`
+  // namespace. Reserving an owner would break any real action published under
+  // it, and the two names below are the only ones the agent implements.
+  const builtin = owner.toLowerCase() === BUILTIN_OWNER && !subpath ? BUILTIN_ACTIONS[name.toLowerCase()] : null;
+  if (builtin) {
+    if (ref !== builtin.version) {
+      throw invalid(`built-in action '${name}' is at '@${builtin.version}' on this instance.`, 'WORKFLOW_USES_INVALID', path);
+    }
+    // The owner allow-list governs code fetched from elsewhere. A built-in is
+    // the agent itself, so an instance that permits no external owners still
+    // gets caching and artifacts.
+    return { raw: text, owner, name: name.toLowerCase(), subpath: null, ref, builtin: name.toLowerCase() };
+  }
+
   if (allowedActionOwners?.length && !allowedActionOwners.includes(owner.toLowerCase())) {
     throw invalid(`actions from '${owner}' are not permitted on this instance. Permitted owners: ${allowedActionOwners.join(', ')}.`, 'WORKFLOW_USES_NOT_PERMITTED', path);
   }
-  return { raw: text, owner, name, subpath: subpath ? subpath.slice(1) : null, ref };
+  return { raw: text, owner, name, subpath: subpath ? subpath.slice(1) : null, ref, builtin: null };
+}
+
+/**
+ * Checks a built-in action's inputs.
+ *
+ * Strict on both sides: a missing required input and an unrecognised one are
+ * both errors. An unrecognised input on a real action is a typo the build would
+ * ignore; on a built-in it would silently change nothing about what is cached or
+ * uploaded, which is worse — a workflow that thinks it set `retention-days`
+ * would keep the default and nobody would find out until an artifact expired.
+ */
+function assertBuiltinInputs(step, path) {
+  const spec = BUILTIN_ACTIONS[step.uses.builtin];
+  const allowed = new Set([...spec.required, ...spec.optional]);
+  for (const name of Object.keys(step.with)) {
+    if (!allowed.has(name)) {
+      throw invalid(`'${name}' is not an input of ${step.uses.raw}. Inputs: ${[...allowed].sort().join(', ')}.`, 'WORKFLOW_INVALID', `${path}.with.${name}`);
+    }
+  }
+  for (const name of spec.required) {
+    if (!step.with[name]) throw invalid(`${step.uses.raw} requires '${name}'.`, 'WORKFLOW_INVALID', `${path}.with`);
+  }
+  for (const [name, text] of Object.entries(step.with)) {
+    for (const reference of workflowExpressions(text, `${path}.with.${name}`)) {
+      // A secret in a cache key or an artifact name would be written to the
+      // database as ordinary metadata, where it is readable by anyone who can
+      // read the repository. Other actions may take a secret as an input; these
+      // two turn their inputs into stored identifiers.
+      if (reference.root === 'secrets') {
+        throw invalid(`a secret may not be used in '${name}' — this input becomes stored metadata that anyone with repository read can see.`, 'WORKFLOW_SECRET_IN_METADATA', `${path}.with.${name}`);
+      }
+    }
+  }
 }
 
 const STEP_KEYS = new Set([
@@ -383,6 +454,7 @@ function normalizeStep(raw, path, index, options, seenStepIds) {
       step.with[name] = text;
     }
   }
+  if (step.uses.builtin) assertBuiltinInputs(step, path);
   return step;
 }
 

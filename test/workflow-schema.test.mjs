@@ -322,3 +322,57 @@ test('normalizeWorkflow rejects a document that is not a mapping', () => {
   assert.throws(() => normalizeWorkflow(['a'], config), (error) => error.code === 'WORKFLOW_INVALID');
   assert.throws(() => normalizeWorkflow(null, config), (error) => error.code === 'WORKFLOW_INVALID');
 });
+
+test('the built-in cache and artifact actions are recognised and their inputs checked', () => {
+  const workflow = accept(withStep([
+    '- uses: kukgit/cache@v1',
+    '  with:',
+    '    key: npm-${{ github.sha }}',
+    '    path: node_modules',
+    '    restore-keys: npm-',
+  ].join('\n')));
+  const [step] = workflow.jobs[0].steps;
+  assert.equal(step.uses.builtin, 'cache');
+  assert.equal(step.with.key, 'npm-${{ github.sha }}');
+
+  // Strict on both sides. An unrecognised input on a real action is a typo the
+  // build ignores; on a built-in it would silently change nothing about what is
+  // cached, and nobody would find out.
+  const rejects = (yaml, code) => {
+    let thrown = null;
+    try { validateWorkflowFile(withStep(yaml), { config }); } catch (error) { thrown = error; }
+    assert.ok(thrown, `expected ${code}`);
+    assert.equal(thrown.code, code, thrown.message);
+    return thrown;
+  };
+
+  rejects('- uses: kukgit/cache@v1\n  with: {key: a, path: b, paths: c}', 'WORKFLOW_INVALID');
+  rejects('- uses: kukgit/cache@v1\n  with: {key: a}', 'WORKFLOW_INVALID');
+  rejects('- uses: kukgit/cache@v2\n  with: {key: a, path: b}', 'WORKFLOW_USES_INVALID');
+  rejects('- uses: kukgit/upload-artifact@v1\n  with: {path: dist}', 'WORKFLOW_INVALID');
+
+  // A secret in one of these inputs would be written to the database as
+  // ordinary metadata, readable by anyone who can read the repository.
+  rejects('- uses: kukgit/cache@v1\n  with: {key: "${{ secrets.NPM_TOKEN }}", path: b}', 'WORKFLOW_SECRET_IN_METADATA');
+  rejects('- uses: kukgit/upload-artifact@v1\n  with: {name: "${{ secrets.NAME }}", path: dist}', 'WORKFLOW_SECRET_IN_METADATA');
+});
+
+test('only the exact built-in references are claimed, not the whole owner', () => {
+  // Reserving an owner would break any real action published under it.
+  const workflow = accept(withStep('- uses: kukgit/checkout@v2'));
+  assert.equal(workflow.jobs[0].steps[0].uses.builtin, null);
+  assert.equal(workflow.jobs[0].steps[0].uses.owner, 'kukgit');
+
+  // A built-in stays available even where no external owner is permitted,
+  // because it is the agent itself rather than code fetched from elsewhere.
+  const restricted = { ...config, workflow: { ...config.workflow, allowedActionOwners: ['trusted'] } };
+  const allowed = validateWorkflowFile(
+    withStep('- uses: kukgit/cache@v1\n  with: {key: a, path: b}'),
+    { config: restricted },
+  );
+  assert.equal(allowed.jobs[0].steps[0].uses.builtin, 'cache');
+  assert.throws(
+    () => validateWorkflowFile(withStep('- uses: kukgit/checkout@v2'), { config: restricted }),
+    (error) => error.code === 'WORKFLOW_USES_NOT_PERMITTED',
+  );
+});
