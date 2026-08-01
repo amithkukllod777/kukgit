@@ -226,5 +226,5 @@ Tracked as P0.3 in [TODO.md](TODO.md):
 - [ ] migrations safe to run from two instances starting at the same instant
 - [ ] shared fan-out channel for real-time notifications across instances
 - [x] object-storage backend behind the Git LFS interface
-- [ ] migration command for an instance whose objects are already on a volume
+- [x] migration command for an instance whose objects are already on a volume
 - [ ] connection-draining rollout and a rehearsed rollback drill

@@ -102,7 +102,7 @@ Implementation of the designed model:
 - [ ] migrations safe to run from two instances starting at the same instant — two simultaneous starts race on `ALTER TABLE ADD COLUMN`
 - [ ] shared fan-out channel so real-time notifications reach sockets on another instance
 - [x] object-storage backend behind the Git LFS interface, with backup/restore updated in the same change — [OBJECT_STORAGE.md](OBJECT_STORAGE.md)
-- [ ] migration command to move an existing instance's LFS objects from a volume into a bucket
+- [x] migration command to move an existing instance's LFS objects from a volume into a bucket — `npm run lfs:storage`
 - [ ] connection-draining rollout and a rehearsed rollback drill
 
 ## P1 — Private-alpha exit features

@@ -413,8 +413,8 @@ Plan capacity with these in mind:
   occupies its request for the full duration.
 - **Local storage.** Repositories live on the instance volume. LFS objects can be
   moved to an S3-compatible bucket — see [OBJECT_STORAGE.md](OBJECT_STORAGE.md) —
-  but only on an instance that starts that way; there is no migration for objects
-  already on a volume.
+  and an instance that already has objects on a volume can move them with
+  `npm run lfs:storage`.
 - **Per-instance rate limits.** The limiter is in-process, so limits are enforced
   per instance rather than per cluster, and Git over SSH is not covered at all.
 

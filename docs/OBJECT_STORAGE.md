@@ -13,9 +13,9 @@ living on the instance volume.
 | Scales past one volume | no | yes |
 
 Filesystem is the default and stays the default. Switching an instance whose
-objects are already on a volume to a bucket would make every existing object
-unreadable — the rows still point at keys nothing serves. **Moving them is a
-migration, not a configuration change**, and KukGit does not yet ship one.
+objects are already on a volume to a bucket does **not** move them — the rows
+still point at keys nothing serves until they are copied. That copy is
+`npm run lfs:storage`, below.
 
 ## Configuration
 
@@ -122,11 +122,51 @@ backup surface: a `.kgbak` plus a deleted bucket is not a recovery.
 - the S3 error body carries a request id and the bucket name, so it goes to the
   operator log and never into a message a user sees
 
+## Migrating an instance that already has objects
+
+```bash
+npm run lfs:storage -- plan               # what would move, and what is already wrong
+npm run lfs:storage -- copy               # copy to the bucket; deletes nothing
+npm run lfs:storage -- verify             # can the bucket serve every recorded object?
+# restart the instance with KUKGIT_OBJECT_STORAGE_DRIVER=s3
+npm run lfs:storage -- reclaim --confirm  # only once you trust the bucket
+```
+
+Four separate commands rather than one, because each answers a different
+question and only the last one destroys anything.
+
+**`plan` first, always.** It is the only way to find out that the volume is
+missing objects the database still lists, or that one has quietly rotted, *before*
+a cutover makes that everyone's problem. Neither is caused by migrating — both
+are true today — but a corrupt object is a restore-from-backup decision, and
+copying it would move the corruption into the bucket. `copy` refuses to run while
+one exists.
+
+**`copy` deletes nothing.** A migration that removes its own source has no
+rollback: the moment anything is wrong with the bucket — a wrong region, a
+lifecycle rule, a credential that expires — the objects are simply gone. It is
+also resumable by construction, because an object is addressed by its digest and
+a second run finds the bucket already holding exactly those bytes.
+
+Every object is verified **in the bucket** after it is written, by reading it back
+and re-hashing. A `PUT` that returned `200` is a claim; the digest is the proof,
+and this is the one moment when checking costs nothing extra. An object that
+arrives wrong is removed rather than left in place, so the next run retries
+cleanly instead of skipping a plausible-looking object.
+
+**`verify` is the cutover gate**, and a partial run cannot clear it — the objects
+it skipped are exactly the ones nobody has looked at.
+
+**`reclaim` re-verifies each object immediately before deleting its local copy.**
+Trusting the earlier verification would mean deleting on the strength of a result
+from before a lifecycle rule or an accidental delete could have happened. Anything
+it cannot confirm is kept, and reported.
+
+Run it during a quiet period. The copy reads the volume and writes the network at
+whatever rate both allow, and there is no throttle.
+
 ## What is not done yet
 
-- **No migration command.** Moving an existing instance's objects from a volume
-  into a bucket needs a copy, a verification pass and a cutover. Until that
-  exists, object storage is for instances that start with it.
 - **Bare Git repositories and CI blobs stay on the volume.** Git's own object
   store is not content-addressed in a way that survives being remote, and
   repacking over a network store would be far slower than the storage saving is
