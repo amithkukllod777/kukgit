@@ -33,6 +33,18 @@ check('Git LFS directory', () => {
   if (path.resolve(config.lfsDir) === path.resolve(config.backupsDir)) throw new Error('KUKGIT_LFS_DIR cannot equal the backup directory');
   return config.lfsDir;
 });
+check('Git LFS object storage', () => {
+  const settings = config.objectStorage;
+  if (settings.driver !== 's3') return `local volume: ${config.lfsDir}`;
+  if (!settings.endpoint && settings.region === 'us-east-1' && !process.env.KUKGIT_OBJECT_STORAGE_REGION) {
+    // An unset region silently signs for us-east-1 and every request to a bucket
+    // elsewhere is refused with a signature error that names nothing useful.
+    throw new Error('KUKGIT_OBJECT_STORAGE_REGION is not set; set it to the bucket region');
+  }
+  // Reported so an operator can see which store an instance is actually using.
+  // The credential is never printed, only whether one is configured.
+  return `s3: ${settings.bucket} (${settings.region})${settings.endpoint ? ` at ${settings.endpoint}` : ''}${settings.prefix ? ` prefix ${settings.prefix}` : ''}`;
+});
 check('Git LFS limits', () => {
   const values = [
     ['KUKGIT_LFS_MAX_OBJECT_BYTES', config.lfsMaxObjectBytes],

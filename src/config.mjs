@@ -138,6 +138,24 @@ export function loadConfig(overrides = {}) {
     throw new Error('KUKGIT_EMAIL_PROVIDER_WEBHOOK_SECRET must contain at least 32 characters when provider events are enabled.');
   }
 
+  const objectStorageDriver = (overrides.objectStorageDriver ?? process.env.KUKGIT_OBJECT_STORAGE_DRIVER ?? 'filesystem').toLowerCase();
+  if (!['filesystem', 's3'].includes(objectStorageDriver)) {
+    throw new Error("KUKGIT_OBJECT_STORAGE_DRIVER must be 'filesystem' or 's3'.");
+  }
+  if (objectStorageDriver === 's3') {
+    // Checked here rather than at the first upload. An instance that starts
+    // happily and then fails on the first `git push` of a large file has already
+    // told its users it is working.
+    const missing = [
+      ['KUKGIT_OBJECT_STORAGE_BUCKET', overrides.objectStorageBucket ?? process.env.KUKGIT_OBJECT_STORAGE_BUCKET],
+      ['KUKGIT_OBJECT_STORAGE_ACCESS_KEY_ID', overrides.objectStorageAccessKeyId ?? process.env.KUKGIT_OBJECT_STORAGE_ACCESS_KEY_ID],
+      ['KUKGIT_OBJECT_STORAGE_SECRET_ACCESS_KEY', overrides.objectStorageSecretAccessKey ?? process.env.KUKGIT_OBJECT_STORAGE_SECRET_ACCESS_KEY],
+    ].filter(([, value]) => !value).map(([name]) => name);
+    if (missing.length) {
+      throw new Error(`Object storage is enabled but ${missing.join(', ')} ${missing.length > 1 ? 'are' : 'is'} not set.`);
+    }
+  }
+
   return {
     root,
     host: overrides.host ?? process.env.HOST ?? '0.0.0.0',
@@ -152,6 +170,21 @@ export function loadConfig(overrides = {}) {
     lfsInstanceQuotaBytes: Number(overrides.lfsInstanceQuotaBytes ?? process.env.KUKGIT_LFS_INSTANCE_QUOTA_BYTES ?? 100 * 1024 * 1024 * 1024),
     lfsUploadExpirySeconds: Number(overrides.lfsUploadExpirySeconds ?? process.env.KUKGIT_LFS_UPLOAD_EXPIRY_SECONDS ?? 3600),
     lfsAuthKey: overrides.lfsAuthKey ?? process.env.KUKGIT_LFS_AUTH_KEY ?? (isProduction ? '' : 'kukgit-development-lfs-auth-key-change-me'),
+    // Where Git LFS object bytes live. Filesystem is the default and stays the
+    // default: switching an instance whose objects are on a volume to a bucket
+    // would make every existing object unreadable, so moving them is a
+    // migration rather than a configuration change.
+    objectStorage: {
+      driver: (overrides.objectStorageDriver ?? process.env.KUKGIT_OBJECT_STORAGE_DRIVER ?? 'filesystem').toLowerCase(),
+      bucket: overrides.objectStorageBucket ?? process.env.KUKGIT_OBJECT_STORAGE_BUCKET ?? '',
+      region: overrides.objectStorageRegion ?? process.env.KUKGIT_OBJECT_STORAGE_REGION ?? 'us-east-1',
+      endpoint: overrides.objectStorageEndpoint ?? process.env.KUKGIT_OBJECT_STORAGE_ENDPOINT ?? '',
+      prefix: overrides.objectStoragePrefix ?? process.env.KUKGIT_OBJECT_STORAGE_PREFIX ?? '',
+      accessKeyId: overrides.objectStorageAccessKeyId ?? process.env.KUKGIT_OBJECT_STORAGE_ACCESS_KEY_ID ?? '',
+      secretAccessKey: overrides.objectStorageSecretAccessKey ?? process.env.KUKGIT_OBJECT_STORAGE_SECRET_ACCESS_KEY ?? '',
+      sessionToken: overrides.objectStorageSessionToken ?? process.env.KUKGIT_OBJECT_STORAGE_SESSION_TOKEN ?? null,
+      forcePathStyle: String(overrides.objectStorageForcePathStyle ?? process.env.KUKGIT_OBJECT_STORAGE_FORCE_PATH_STYLE ?? 'true') !== 'false',
+    },
     tempDir: overrides.tempDir ?? path.join(dataDir, 'tmp'),
     backupsDir: path.resolve(overrides.backupsDir ?? process.env.KUKGIT_BACKUPS_DIR ?? path.join(dataDir, 'backups')),
     backupRetentionCount: Number(overrides.backupRetentionCount ?? process.env.KUKGIT_BACKUP_RETENTION_COUNT ?? 14),

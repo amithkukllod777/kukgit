@@ -12,6 +12,8 @@ import {
 } from './backups.mjs';
 import { audit, uid } from './db.mjs';
 import { httpError, originAllowed } from './security.mjs';
+import { lfsStorage } from './git-lfs.mjs';
+import { digestObject } from './object-storage.mjs';
 
 const BACKUP_FILENAME = /^kukgit-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{12}\.kgbak$/;
 const OID_PATTERN = /^[0-9a-f]{64}$/;
@@ -49,21 +51,53 @@ function lfsSourcePath(config, row) {
   return { storagePath, source, archivePath: `lfs/${storagePath}` };
 }
 
+/**
+ * Verifies one live object and says whether its bytes can go in the archive.
+ *
+ * On a volume the object is read from disk and copied into the archive, which is
+ * what makes a `.kgbak` self-contained. In a bucket it is read *through* and
+ * re-hashed but **not** copied: an archive is not the place to put a bucket, and
+ * an operator who thinks a 40 GB file contains their 4 TB of objects has a
+ * recovery plan that fails the first time it is needed.
+ *
+ * Either way the object is verified. What changes is where the bytes end up, and
+ * the manifest records which of the two happened.
+ */
 async function verifyLiveLfsObject(config, row) {
   const location = lfsSourcePath(config, row);
-  if (!fs.existsSync(location.source) || !fs.statSync(location.source).isFile()) {
-    throw httpError(404, `Git LFS object '${row.oid}' is missing from storage.`, 'BACKUP_LFS_OBJECT_MISSING');
+  const storage = lfsStorage(config);
+
+  if (storage.selfContainedBackup) {
+    if (!fs.existsSync(location.source) || !fs.statSync(location.source).isFile()) {
+      throw httpError(404, `Git LFS object '${row.oid}' is missing from storage.`, 'BACKUP_LFS_OBJECT_MISSING');
+    }
+    const digest = await sha256File(location.source);
+    if (digest.size !== Number(row.size)) throw httpError(400, `Git LFS object '${row.oid}' has the wrong size.`, 'BACKUP_LFS_SIZE_MISMATCH');
+    if (digest.sha256 !== row.oid) throw httpError(400, `Git LFS object '${row.oid}' failed SHA-256 verification.`, 'BACKUP_LFS_HASH_MISMATCH');
+    return {
+      oid: row.oid,
+      size: digest.size,
+      sha256: digest.sha256,
+      path: location.archivePath,
+      sourcePath: location.source,
+      storagePath: location.storagePath,
+      inArchive: true,
+    };
   }
-  const digest = await sha256File(location.source);
-  if (digest.size !== Number(row.size)) throw httpError(400, `Git LFS object '${row.oid}' has the wrong size.`, 'BACKUP_LFS_SIZE_MISMATCH');
-  if (digest.sha256 !== row.oid) throw httpError(400, `Git LFS object '${row.oid}' failed SHA-256 verification.`, 'BACKUP_LFS_HASH_MISMATCH');
+
+  const head = await storage.head(location.storagePath).catch(() => null);
+  if (!head) throw httpError(404, `Git LFS object '${row.oid}' is missing from object storage.`, 'BACKUP_LFS_OBJECT_MISSING');
+  const { digest, size } = await digestObject(storage, location.storagePath);
+  if (size !== Number(row.size)) throw httpError(400, `Git LFS object '${row.oid}' has the wrong size.`, 'BACKUP_LFS_SIZE_MISMATCH');
+  if (digest !== row.oid) throw httpError(400, `Git LFS object '${row.oid}' failed SHA-256 verification.`, 'BACKUP_LFS_HASH_MISMATCH');
   return {
     oid: row.oid,
-    size: digest.size,
-    sha256: digest.sha256,
+    size,
+    sha256: digest,
     path: location.archivePath,
-    sourcePath: location.source,
+    sourcePath: null,
     storagePath: location.storagePath,
+    inArchive: false,
   };
 }
 
@@ -80,10 +114,20 @@ async function augmentBackupWithLfs(config, archivePath) {
 
     const objects = [];
     for (const row of lfsRows(databaseEntry.destination)) objects.push(await verifyLiveLfsObject(config, row));
+    const storage = lfsStorage(config);
     manifest.lfs = {
       format: 'kukgit-lfs-backup-v1',
       objectCount: objects.length,
       totalBytes: objects.reduce((sum, object) => sum + object.size, 0),
+      // Where the bytes are. `selfContained: false` means this archive verifies
+      // the objects but does not contain them, and a restore needs the store
+      // below as well — stated in the manifest so it is discovered when the
+      // archive is read rather than when the restore fails.
+      selfContained: storage.selfContainedBackup,
+      // The descriptor carries a bucket, a region and an endpoint. It carries no
+      // credential: an archive that could be read is an archive that hands over
+      // the object store.
+      store: storage.describe(),
       objects: objects.map(({ sourcePath, ...object }) => object),
     };
     manifest.totals = {
@@ -91,10 +135,14 @@ async function augmentBackupWithLfs(config, archivePath) {
       lfsObjects: manifest.lfs.objectCount,
       lfsBytes: manifest.lfs.totalBytes,
     };
+    const archived = objects.filter((object) => object.inArchive);
     const existingFiles = Array.isArray(manifest.files) ? manifest.files.filter((file) => !String(file.path).startsWith('lfs/')) : [];
+    // `files` lists what the archive actually holds. Listing an object that was
+    // only verified would make every archive integrity check fail on a file that
+    // was never meant to be there.
     manifest.files = [
       ...existingFiles,
-      ...objects.map((object) => ({ path: object.path, size: object.size, sha256: object.sha256 })),
+      ...archived.map((object) => ({ path: object.path, size: object.size, sha256: object.sha256 })),
     ];
     writeJsonAtomic(manifestEntry.destination, manifest);
 
@@ -104,7 +152,7 @@ async function augmentBackupWithLfs(config, archivePath) {
     const entries = [
       { path: 'manifest.json', sourcePath: manifestEntry.destination },
       ...existingEntries,
-      ...objects.map((object) => ({ path: object.path, sourcePath: object.sourcePath })),
+      ...archived.map((object) => ({ path: object.path, sourcePath: object.sourcePath })),
     ];
     await packPortableArchive(entries, replacement);
     fs.renameSync(replacement, archivePath);
@@ -137,6 +185,9 @@ async function verifyLfsArchive(config, archivePath) {
     if (manifest.lfs.format !== 'kukgit-lfs-backup-v1' || !Array.isArray(manifest.lfs.objects)) {
       throw httpError(400, 'Backup Git LFS manifest is invalid.', 'BACKUP_LFS_MANIFEST_INVALID');
     }
+    // Absent on an archive written before object storage existed, and those are
+    // always self-contained — every one of them had the bytes on a volume.
+    const selfContained = manifest.lfs.selfContained !== false;
     const entries = new Map(unpacked.entries.map((entry) => [entry.path, entry]));
     const seen = new Set();
     let totalBytes = 0;
@@ -149,8 +200,21 @@ async function verifyLfsArchive(config, archivePath) {
       if (archiveObjectPath !== `lfs/objects/${object.oid.slice(0, 2)}/${object.oid.slice(2, 4)}/${object.oid}`) {
         throw httpError(400, `Backup Git LFS path for '${object.oid}' is invalid.`, 'BACKUP_LFS_PATH_INVALID');
       }
+      if (object.sha256 !== object.oid) {
+        throw httpError(400, `Backup Git LFS object '${object.oid}' failed manifest verification.`, 'BACKUP_LFS_OBJECT_INVALID');
+      }
+      if (object.inArchive === false) {
+        // Verified at backup time by reading it out of the object store and
+        // re-hashing it; the bytes are not here. Checking the archive for it
+        // would fail an archive that is exactly as intended.
+        if (selfContained) {
+          throw httpError(400, `Backup claims to be self-contained but '${object.oid}' is not in it.`, 'BACKUP_LFS_OBJECT_INVALID');
+        }
+        totalBytes += Number(object.size);
+        continue;
+      }
       const entry = entries.get(archiveObjectPath);
-      if (!entry || entry.size !== Number(object.size) || entry.sha256 !== object.oid || object.sha256 !== object.oid) {
+      if (!entry || entry.size !== Number(object.size) || entry.sha256 !== object.oid) {
         throw httpError(400, `Backup Git LFS object '${object.oid}' failed manifest verification.`, 'BACKUP_LFS_OBJECT_INVALID');
       }
       totalBytes += entry.size;
@@ -158,7 +222,15 @@ async function verifyLfsArchive(config, archivePath) {
     if (seen.size !== Number(manifest.lfs.objectCount) || totalBytes !== Number(manifest.lfs.totalBytes)) {
       throw httpError(400, 'Backup Git LFS totals are inconsistent.', 'BACKUP_LFS_TOTALS_INVALID');
     }
-    return { objectCount: seen.size, totalBytes, legacyWithoutLfs: false };
+    return {
+      objectCount: seen.size,
+      totalBytes,
+      legacyWithoutLfs: false,
+      selfContained,
+      // Restoring this archive needs the object store as well. The caller is
+      // told, rather than finding out when a clone fails to fetch an object.
+      store: selfContained ? null : (manifest.lfs.store ?? null),
+    };
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
