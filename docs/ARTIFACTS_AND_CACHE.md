@@ -14,6 +14,44 @@ something a build restores to go faster, and can always rebuild without.
 That difference decides everything below, including what happens when the quota
 runs out and who is allowed to write one.
 
+## Using it from a workflow
+
+```yaml
+steps:
+  - uses: kukgit/cache@v1
+    with:
+      key: npm-${{ github.sha }}
+      path: node_modules
+      restore-keys: npm-
+
+  - run: npm ci && npm test
+
+  - uses: kukgit/upload-artifact@v1
+    with:
+      name: test-reports
+      path: reports
+      retention-days: 7
+```
+
+Both are implemented by the runner agent, so nothing is fetched and there is no
+third-party code to pin or review.
+
+`kukgit/cache@v1` restores where it appears and **saves after the job finishes**.
+Saving at the end is what makes a cache a cache: the content it is meant to hold
+does not exist yet when the step runs. Two cases skip the save — an exact key
+hit, because the bytes under that key are already the bytes we would write, and a
+failed job, because a cache written from a broken build is one every later build
+restores until somebody clears it by hand.
+
+A cache service that is unreachable never fails a build. A cache is an
+optimisation; turning a slow build into a broken one would be the wrong trade.
+
+Paths are workspace-relative and are checked after resolution, so `a/../../etc`
+and a symlinked parent are caught by the same comparison. A path that escaped
+would let a workflow archive the runner's own files — its configuration, its
+registration token, whatever else is on the machine. Content is packed with
+`tar`, invoked with an argument vector and never a command string.
+
 ## Two credentials
 
 | | Credential | Routes |

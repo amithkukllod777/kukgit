@@ -75,7 +75,10 @@ secrets at all**, checked before the vault is read. See
    ends up in the remote config, in reflogs and in error output.
 3. **Steps**, in order, stopping at the first failure unless the step is marked
    `continue-on-error`.
-4. **Report.** Logs are flushed *before* the outcome is sent, because completing
+4. **Post-job caches.** A `kukgit/cache@v1` step registers a save that runs here,
+   after the last step and only if the job succeeded — the content a cache is
+   meant to hold does not exist when the step itself runs.
+5. **Report.** Logs are flushed *before* the outcome is sent, because completing
    the job destroys the token and anything still buffered would have nowhere to
    go.
 
@@ -129,11 +132,33 @@ A missed heartbeat does **not** abandon the job. The server reaps a runner that
 stops reporting for five minutes; abandoning on one blip would turn a network
 hiccup into a failed build.
 
+## Built-in actions
+
+`kukgit/cache@v1` and `kukgit/upload-artifact@v1` are implemented by this agent.
+Nothing is fetched for them, so there is no third-party code on the machine to
+review.
+
+Both need `tar` on the `PATH`. It is invoked with an argument vector and never a
+command string, and content is packed relative to a `-C` directory so nothing
+arriving from a workflow can look like an option. A cache is unpacked into a
+staging directory and copied in only once `tar` has succeeded — a half-extracted
+archive never reaches a workspace a build is about to compile, and the workspace
+is never the directory `tar` is pointed at.
+
+A path from a workflow is resolved and then checked against the workspace root,
+so `a/../../etc` and a symlinked parent are caught by the same comparison. A path
+that escaped would let a workflow archive this machine's own files — including
+this runner's registration token.
+
+`kukgit/cache@v1` saves after the job, and only when the job succeeded. Read
+[Artifacts and Cache](ARTIFACTS_AND_CACHE.md).
+
 ## What this runner does not do yet
 
-- **`uses:` steps are skipped**, and say so in the log. Pretending an
-  unimplemented step ran would make a build look green that never happened.
-- no cache, no artifacts, no container or service steps
+- **Third-party `uses:` steps are skipped**, and say so in the log. Pretending an
+  unimplemented step ran would make a build look green that never happened. The
+  two built-ins above are the exception — they are this agent, not fetched code.
+- no container or service steps
 - no sandbox, as stated at the top
 
 ## Operating advice

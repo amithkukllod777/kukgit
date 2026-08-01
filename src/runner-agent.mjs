@@ -107,6 +107,97 @@ export function resolveRunScript(script, { job, run }) {
 }
 
 /**
+ * Resolves the same allow-list inside a built-in action's inputs.
+ *
+ * A cache key is normally composed from `${{ github.sha }}` or a ref name, so
+ * the substitution has to happen somewhere. It is the same map `run:` scripts
+ * get and nothing more — an input that reaches here with an unrecognised
+ * expression is left as written, because a validator that let it through is a
+ * bug and guessing at a value would hide it.
+ */
+export function resolveInputs(inputs, context) {
+  const resolved = {};
+  for (const [name, value] of Object.entries(inputs ?? {})) {
+    resolved[name] = resolveRunScript(String(value ?? ''), context);
+  }
+  return resolved;
+}
+
+/**
+ * Resolves a workspace-relative path from a workflow input.
+ *
+ * The check is on the resolved path rather than on the text, so `a/../../etc`
+ * and a symlinked parent are both caught by the same comparison. A path that
+ * escapes the workspace would let a workflow archive the runner's own files —
+ * its configuration, its registration token, whatever else is on the machine.
+ */
+export function resolveWorkspacePath(workspace, relative, label = 'path') {
+  const text = String(relative ?? '').trim();
+  if (!text) throw new AgentError(`${label} is required.`, 'RUNNER_PATH_REQUIRED');
+  const root = fs.realpathSync(workspace);
+  const target = path.resolve(root, text);
+  const within = target === root || target.startsWith(`${root}${path.sep}`);
+  if (!within) throw new AgentError(`${label} must stay inside the workspace.`, 'RUNNER_PATH_ESCAPE');
+  return target;
+}
+
+function runTar(args, { cwd, signal }) {
+  return new Promise((resolve) => {
+    // argv, never a command string. A path out of a workflow file reaching a
+    // shell is the whole class of bug this avoids.
+    const child = spawn('tar', args, { cwd, stdio: ['ignore', 'ignore', 'pipe'], shell: false, signal });
+    let stderr = '';
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.on('error', (error) => resolve({ ok: false, reason: error.message }));
+    child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, reason: stderr.trim() || `tar exited ${code}` }));
+  });
+}
+
+/**
+ * Packs a workspace path into a gzipped tar and returns the bytes.
+ *
+ * Paths are passed relative to a `-C` directory so nothing that looks like an
+ * option can arrive from a workflow: `tar` sees `-C <dir> -- <name>`, and the
+ * name is a single path component the caller already resolved.
+ */
+export async function archivePath(workspace, relative, { signal } = {}) {
+  const target = resolveWorkspacePath(workspace, relative);
+  if (!fs.existsSync(target)) return { found: false, content: null };
+  const archive = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-pack-')), 'content.tar.gz');
+  const result = await runTar(['-czf', archive, '-C', path.dirname(target), '--', path.basename(target)], { signal });
+  try {
+    if (!result.ok) throw new AgentError(`could not archive ${relative}: ${result.reason}`, 'RUNNER_ARCHIVE_FAILED');
+    return { found: true, content: fs.readFileSync(archive) };
+  } finally {
+    fs.rmSync(path.dirname(archive), { recursive: true, force: true });
+  }
+}
+
+/**
+ * Unpacks a cache archive into the workspace.
+ *
+ * Unpacked into a staging directory first and copied in only once tar has
+ * succeeded. Two reasons: a half-extracted archive never reaches a workspace a
+ * build is about to compile, and the workspace is never the directory tar is
+ * pointed at — so escaping into it takes escaping staging first, on top of
+ * tar's own refusal of absolute and `..` members.
+ */
+export async function extractArchive(workspace, content, { signal } = {}) {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-unpack-'));
+  const archive = path.join(scratch, 'content.tar.gz');
+  const staging = path.join(scratch, 'out');
+  fs.mkdirSync(staging, { mode: 0o700 });
+  fs.writeFileSync(archive, content, { mode: 0o600 });
+  try {
+    const result = await runTar(['-xzf', archive, '--no-same-owner', '-C', staging], { signal });
+    if (!result.ok) throw new AgentError(`could not restore cache: ${result.reason}`, 'RUNNER_EXTRACT_FAILED');
+    fs.cpSync(staging, fs.realpathSync(workspace), { recursive: true, force: true });
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+/**
  * Writes a step's script to a file and executes it.
  *
  * The script is never assembled into a shell command string. `bash <file>` means
@@ -229,16 +320,110 @@ export function createRunnerClient({ baseUrl, runnerToken, fetchImpl = fetch }) 
     return payload;
   };
 
+  // Artifact and cache payloads are raw bytes rather than JSON. Base64 in a JSON
+  // envelope would cost a third more memory on both sides for content that is
+  // already compressed.
+  const sendBytes = async (route, { token, content, headers = {} }) => {
+    const response = await fetchImpl(url(route), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream', ...headers },
+      body: content,
+    });
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : null;
+    if (!response.ok) {
+      throw new AgentError(payload?.error?.message || `request failed with ${response.status}`, payload?.error?.code || 'RUNNER_REQUEST_FAILED');
+    }
+    return payload;
+  };
+
   return {
     claim: (labels) => call('/api/runners/claim', { token: runnerToken, body: { labels, version: KUKGIT_VERSION } }),
     appendLogs: (jobToken, chunks) => call('/api/workflow-jobs/self/logs', { token: jobToken, body: { chunks } }),
     heartbeat: (jobToken) => call('/api/workflow-jobs/self/heartbeat', { token: jobToken, body: {} }),
     complete: (jobToken, status, reason) => call('/api/workflow-jobs/self/complete', { token: jobToken, body: { status, reason } }),
+    uploadArtifact: (jobToken, { name, retentionDays = null }, content) => sendBytes('/api/workflow-jobs/self/artifacts', {
+      token: jobToken,
+      content,
+      headers: { 'X-Artifact-Name': name, ...(retentionDays ? { 'X-Artifact-Retention-Days': String(retentionDays) } : {}) },
+    }),
+    saveCache: (jobToken, key, content) => sendBytes('/api/workflow-jobs/self/cache', {
+      token: jobToken, content, headers: { 'X-Cache-Key': key },
+    }),
+    restoreCache: async (jobToken, { key, restoreKeys = [] }) => {
+      const query = new URLSearchParams([['key', key], ...restoreKeys.map((prefix) => ['restoreKey', prefix])]);
+      const response = await fetchImpl(url(`/api/workflow-jobs/self/cache?${query}`), {
+        method: 'GET', headers: { Authorization: `Bearer ${jobToken}` },
+      });
+      // A miss is the ordinary case on a first build, not an error.
+      if (response.status === 404) return null;
+      if (!response.ok) {
+        const text = await response.text();
+        const payload = text ? JSON.parse(text) : null;
+        throw new AgentError(payload?.error?.message || `request failed with ${response.status}`, payload?.error?.code || 'RUNNER_REQUEST_FAILED');
+      }
+      return {
+        key: response.headers.get('x-cache-key'),
+        ref: response.headers.get('x-cache-ref'),
+        exact: response.headers.get('x-cache-exact') === 'true',
+        content: Buffer.from(await response.arrayBuffer()),
+      };
+    },
   };
 }
 
 function stepLabel(step, index) {
   return step.name || (step.type === 'uses' ? `uses ${step.uses?.raw ?? 'action'}` : `step ${index + 1}`);
+}
+
+/**
+ * Runs one built-in action.
+ *
+ * `cache` restores here and registers a save for after the job. Saving at the
+ * end is what makes a cache a cache: the content it is meant to hold does not
+ * exist yet when the step runs. It is skipped on an exact hit — the bytes under
+ * that key are already the bytes we would write — and skipped when the job
+ * failed, because a cache written from a broken build is one every later build
+ * restores.
+ */
+async function runBuiltinStep(step, {
+  client, token, workspace, context, report, signal, postActions,
+}) {
+  const inputs = resolveInputs(step.with, context);
+
+  if (step.uses.builtin === 'cache') {
+    const restoreKeys = String(inputs['restore-keys'] ?? '')
+      .split(/[\n,]/).map((entry) => entry.trim()).filter(Boolean);
+    let hit = null;
+    try {
+      hit = await client.restoreCache(token, { key: inputs.key, restoreKeys });
+    } catch (error) {
+      // A cache is an optimisation. Failing the build because the cache service
+      // was unreachable would turn a slow build into a broken one.
+      report(`cache could not be restored (${error.message}); continuing without it\n`);
+    }
+    if (hit) {
+      await extractArchive(workspace, hit.content, { signal });
+      report(`cache restored from '${hit.key}' on ${hit.ref}${hit.exact ? '' : ' (prefix match)'}\n`);
+    } else {
+      report(`cache miss for '${inputs.key}'\n`);
+    }
+    if (!hit?.exact) postActions.push({ kind: 'cache', key: inputs.key, path: inputs.path });
+    return { ok: true };
+  }
+
+  const packed = await archivePath(workspace, inputs.path, { signal });
+  if (!packed.found) {
+    const policy = inputs['if-no-files-found'] || 'warn';
+    if (policy === 'error') return { ok: false, reason: `no files matched '${inputs.path}'` };
+    if (policy === 'warn') report(`no files matched '${inputs.path}'; nothing was uploaded\n`);
+    return { ok: true };
+  }
+  const stored = await client.uploadArtifact(token, {
+    name: inputs.name, retentionDays: inputs['retention-days'],
+  }, packed.content);
+  report(`uploaded artifact '${stored.name}' (${stored.size} bytes, kept ${stored.retentionDays} days)\n`);
+  return { ok: true };
 }
 
 /**
@@ -275,6 +460,7 @@ export async function executeJob(client, claimed, {
   heartbeatTimer.unref?.();
 
   const deadline = now() + job.timeoutMinutes * 60_000;
+  const postActions = [];
   let status = 'success';
   let reason = null;
 
@@ -291,6 +477,31 @@ export async function executeJob(client, claimed, {
       if (remaining <= 0) { status = 'failure'; reason = `job exceeded its ${job.timeoutMinutes} minute timeout`; break; }
 
       buffer.push({ stream: 'system', stepIndex: index, content: `\n=== ${stepLabel(step, index)}\n` });
+
+      if (step.type === 'uses' && step.uses?.builtin) {
+        let outcome;
+        try {
+          outcome = await runBuiltinStep(step, {
+            client,
+            token,
+            workspace: workspaceRoot,
+            context: { job, run: { ...run, workspace: workspaceRoot } },
+            report: (content) => buffer.push({ stream: 'system', stepIndex: index, content }),
+            signal: controller.signal,
+            postActions,
+          });
+        } catch (error) {
+          outcome = { ok: false, reason: error.message };
+        }
+        if (outcome.ok) continue;
+        if (step.continueOnError) {
+          buffer.push({ stream: 'system', stepIndex: index, content: `${outcome.reason}; continuing because continue-on-error is set\n` });
+          continue;
+        }
+        status = 'failure';
+        reason = outcome.reason;
+        break;
+      }
 
       if (step.type !== 'run') {
         // Not implemented, and said so rather than counted as a pass.
@@ -323,6 +534,32 @@ export async function executeJob(client, claimed, {
       status = 'failure';
       reason = result.reason;
       break;
+    }
+
+    // Caches are written only by a job that succeeded. A cache saved from a
+    // broken build is one every later build restores, so a single bad run would
+    // keep costing until somebody noticed and cleared it by hand.
+    if (status === 'success') {
+      for (const action of postActions) {
+        try {
+          const packed = await archivePath(workspaceRoot, action.path, { signal: controller.signal });
+          if (!packed.found) {
+            buffer.push({ stream: 'system', content: `nothing at '${action.path}' to cache under '${action.key}'\n` });
+            continue;
+          }
+          const saved = await client.saveCache(token, action.key, packed.content);
+          buffer.push({
+            stream: 'system',
+            content: saved.stored
+              ? `cache saved as '${action.key}' (${saved.size} bytes)\n`
+              : `cache not saved: ${saved.reason}\n`,
+          });
+        } catch (error) {
+          // The build already passed. Failing it now because the cache could not
+          // be stored would report a false failure for work that succeeded.
+          buffer.push({ stream: 'system', content: `cache could not be saved (${error.message})\n` });
+        }
+      }
     }
   } catch (error) {
     status = 'failure';
