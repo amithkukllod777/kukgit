@@ -32,12 +32,11 @@ which job is visible from the running system rather than only from documentation
 
 ### What is still single-instance
 
-Two things, and neither is fixed by a lease:
-
-- **Real-time WebSocket fan-out.** The socket registry is per process, so a
-  notification created on instance A does not reach a socket held by instance B.
-  The inbox stays durable either way — the socket is an accelerator, never the
-  delivery guarantee — but multi-node real-time needs a shared channel.
+Nothing in this section any longer, which is what changed. Real-time fan-out was
+the last item: a notification created on instance A now reaches a socket held by
+instance B through a shared log both poll. The inbox remains the delivery
+guarantee — the socket is an accelerator — so a fan-out outage degrades to "the
+badge updates on reload" rather than to a lost notification.
 Concurrent startup migrations used to be the second, and are now fixed: schema
 changes run inside `BEGIN IMMEDIATE`, so a second instance waits for the writer
 lock and then finds every migration already applied. Verified by starting three
@@ -263,7 +262,7 @@ Tracked as P0.3 in [TODO.md](TODO.md):
 - [x] `job_leases` table and lease-holding workers
 - [x] requeue of rows stranded in `processing`
 - [x] migrations safe to run from two instances starting at the same instant
-- [ ] shared fan-out channel for real-time notifications across instances
+- [x] shared fan-out channel for real-time notifications across instances
 - [x] object-storage backend behind the Git LFS interface
 - [x] migration command for an instance whose objects are already on a volume
 - [x] connection-draining rollout and a rehearsed rollback drill (`npm run drill`)

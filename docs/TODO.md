@@ -121,7 +121,7 @@ Implementation of the designed model:
 - [x] `job_leases` table and lease-holding workers, so a second instance cannot double-fire — [OPERATIONS_BOUNDARY.md](OPERATIONS_BOUNDARY.md)
 - [x] requeue rows stranded in `processing` by a worker that died
 - [x] migrations safe to run from two instances starting at the same instant — schema changes run under SQLite's writer lock
-- [ ] shared fan-out channel so real-time notifications reach sockets on another instance
+- [x] shared fan-out channel so real-time notifications reach sockets on another instance — [REALTIME_NOTIFICATIONS.md](REALTIME_NOTIFICATIONS.md)
 - [x] object-storage backend behind the Git LFS interface, with backup/restore updated in the same change — [OBJECT_STORAGE.md](OBJECT_STORAGE.md)
 - [x] migration command to move an existing instance's LFS objects from a volume into a bucket — `npm run lfs:storage`
 - [x] connection-draining rollout and a rehearsed rollback drill — `npm run drill`

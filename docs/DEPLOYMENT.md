@@ -420,11 +420,13 @@ before a release and after any change to startup or shutdown.
 
 Plan capacity with these in mind:
 
-- **Background jobs are leased, real-time is not.** The email outbox, webhook
-  deliveries, notifications, access-review campaigns, workflow schedules and CI
-  retention each run behind a named lease, so two instances against one volume
-  own one job each rather than both doing all of them. Real-time WebSockets are
-  still per process, which is what keeps this a single-node release.
+- **Background jobs are leased.** The email outbox, webhook deliveries,
+  notifications, access-review campaigns, workflow schedules and CI retention
+  each run behind a named lease, so two instances against one volume own one job
+  each rather than both doing all of them.
+- **Real-time reaches every instance.** A notification created on one instance is
+  delivered to sockets held by another through a shared fan-out log, polled every
+  400ms. The inbox is still the delivery guarantee; the socket is an accelerator.
 - **Startup migrations are serialised.** Two instances starting at the same
   instant no longer race: schema changes run under SQLite's writer lock, and the
   second waits and then finds everything applied. Starting sequentially is still

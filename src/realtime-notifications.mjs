@@ -7,6 +7,7 @@ import {
   requestAuthKit,
 } from './authkit-identity.mjs';
 import { hashToken, httpError, parseCookies } from './security.mjs';
+import { createFanoutReader, FANOUT_DEFAULTS, migrateNotificationFanout } from './notification-fanout.mjs';
 
 const SOCKET_PATH = '/api/notifications/socket';
 const MAX_SERVER_BUFFER_BYTES = 1024 * 1024;
@@ -326,25 +327,23 @@ export function createRealtimeNotificationServer({ server, config, db, options =
     return 0;
   }
 
-  if (typeof db.function !== 'function') {
-    throw new Error('Real-time notification delivery requires the Node SQLite custom-function API.');
-  }
-  db.function('kukgit_realtime_notification', queueDatabaseEvent);
-  db.exec(`
-    DROP TRIGGER IF EXISTS temp.kg_realtime_notification_insert;
-    DROP TRIGGER IF EXISTS temp.kg_realtime_notification_read;
-    CREATE TEMP TRIGGER kg_realtime_notification_insert
-      AFTER INSERT ON notifications
-      BEGIN
-        SELECT kukgit_realtime_notification(NEW.user_id, 'created', NEW.id);
-      END;
-    CREATE TEMP TRIGGER kg_realtime_notification_read
-      AFTER UPDATE OF read_at ON notifications
-      WHEN COALESCE(OLD.read_at, '') <> COALESCE(NEW.read_at, '')
-      BEGIN
-        SELECT kukgit_realtime_notification(NEW.user_id, CASE WHEN NEW.read_at IS NULL THEN 'unread' ELSE 'read' END, NEW.id);
-      END;
-  `);
+  // Delivery goes through a durable fan-out log rather than an in-process
+  // trigger. A `TEMP` trigger only fires for writes made on the connection that
+  // created it, so a notification written by one instance never reached a socket
+  // held by another — the inbox stayed correct, but the badge did not move until
+  // the page was reloaded.
+  //
+  // Every instance now polls the same log, including the one that wrote the row.
+  // One delivery path rather than two means there is nothing to keep in sync and
+  // no way for local behaviour to diverge from what everyone else sees.
+  migrateNotificationFanout(db);
+
+  const fanout = createFanoutReader(db, {
+    intervalMs: options.fanoutIntervalMs ?? FANOUT_DEFAULTS.intervalMs,
+    onEvents: (rows) => {
+      for (const row of rows) queueDatabaseEvent(row.userId, row.reason, row.notificationId);
+    },
+  });
 
   async function revalidate(client) {
     if (client.closed || client.authCheck) return;
@@ -473,6 +472,10 @@ export function createRealtimeNotificationServer({ server, config, db, options =
         ...stats,
         activeConnections: allClients.size,
         connectedUsers: clientsByUser.size,
+        // Which fan-out row this instance has reached. Two instances whose
+        // cursors are far apart is the visible symptom of one of them being
+        // stuck, and it is otherwise invisible.
+        fanout: fanout.stats(),
       };
     },
     closeUser(userId, code = 1008, reason = 'Session revoked.') {
@@ -481,6 +484,7 @@ export function createRealtimeNotificationServer({ server, config, db, options =
     stop() {
       if (stopped) return;
       stopped = true;
+      fanout.stop();
       clearInterval(heartbeat);
       server.off('upgrade', onUpgrade);
       for (const client of [...allClients]) close(client, 1001, 'Server shutting down.');

@@ -33,7 +33,26 @@ A user is registered only in their own in-memory connection set. Notification ev
 
 ## Event capture
 
-KukGit registers connection-local SQLite TEMP triggers on the `notifications` table and a bounded Node SQLite custom function. Inserts and `read_at` changes invoke the in-process event hub after the database statement completes.
+A permanent SQLite trigger on `notifications` writes a row into
+`notification_fanout` on every insert and every `read_at` change. Every instance
+polls that log every 400ms and delivers what it finds to its own sockets.
+
+**Permanent, not `TEMP`.** A `TEMP` trigger only fires for writes made on the
+connection that created it, which is exactly why a notification written by one
+instance never reached a socket held by another. The trigger is also plain SQL
+with no custom function, so a backup, a script or `npm run seed` can still write
+a notification — a trigger calling a function only the server registers would
+turn those into crashes.
+
+**One delivery path, not two.** The instance that wrote the row reads it back
+from the same log as everybody else. A local fast path plus a remote one would be
+two behaviours to keep in sync, and the local one is exactly the one that gets
+tested.
+
+The cursor starts at the newest row and lives in memory only. A client fetches
+its inbox on connect, so anything from before an instance was listening is
+already on screen; persisting the cursor would make every restart a burst of
+stale badges.
 
 This captures notifications created by:
 
@@ -44,7 +63,11 @@ This captures notifications created by:
 - token-expiry scheduling
 - backup, webhook and LFS operations
 
-There is no browser HTTP polling requirement and no server outbox polling for WebSocket events. The existing REST endpoint remains available for missed-event resynchronization and fallback.
+There is no browser HTTP polling requirement. The REST endpoint remains available
+for missed-event resynchronisation and fallback, and that is not a formality: the
+inbox is the delivery guarantee and the socket is an accelerator. A fan-out
+failure is logged and retried on the next tick, never thrown, so the worst
+outcome is that a badge updates on reload instead of immediately.
 
 ## Wire events
 
@@ -153,6 +176,23 @@ Browsers reconnect automatically after the new instance becomes available.
 - verify the reverse proxy forwards `Upgrade` and `Connection` headers
 - monitor active connection count, rejected upgrades and connection closures without logging content
 
-## Current deployment boundary
+## Multiple instances
 
-The private-alpha runtime uses SQLite and an in-process connection registry. A multi-instance deployment will require a shared publish/subscribe transport so an event written on one application node reaches sockets connected to another node. Do not deploy multiple active KukGit application nodes until that distributed fan-out layer is implemented.
+An event written on one node reaches sockets on another, so a second application
+node is no longer excluded by this layer.
+
+What to know when running more than one:
+
+- **Latency is the poll interval**, 400ms by default. There is no push in SQLite;
+  this is the entire budget, and it is deliberately below the threshold at which
+  a badge feels delayed.
+- **Fan-out rows are pruned by age**, ten minutes, by whichever instance gets
+  there. Deleting by age is idempotent, so no lease is needed — and a lease here
+  would mean one instance's failure stops the table growing.
+- **A burst is bounded** at 500 rows per tick, so an instance recovering from a
+  pause cannot push ten thousand events into a socket at once.
+- **`instance.realtime.fanout` in the operator health payload** reports each
+  instance's cursor. Two instances whose cursors are far apart is the visible
+  symptom of one being stuck, and it is otherwise invisible.
+
+Sticky sessions are not required. A socket may connect to any instance.

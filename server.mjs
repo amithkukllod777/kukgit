@@ -77,6 +77,7 @@ import { createRunnersApiHandler, migrateRunners } from './src/runners.mjs';
 import { createWorkflowDispatchCapture, observeDispatch } from './src/workflow-dispatch.mjs';
 import { migrateJobLeases } from './src/job-leases.mjs';
 import { createDrainState, createRequestTracker, drainAndClose } from './src/graceful-shutdown.mjs';
+import { migrateNotificationFanout } from './src/notification-fanout.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
@@ -171,6 +172,7 @@ withSchemaLock(db, () => {
   seeded = config.authMode === 'local' ? seedCore(db, config) : { seeded: false };
   if (config.authMode === 'authkit') ensureAuthKitCoreOrganization(db);
   migrateNotifications(db);
+  migrateNotificationFanout(db);
   migrateEmailProviderEvents(db);
 });
 
