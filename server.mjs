@@ -85,6 +85,7 @@ import {
 } from './src/secret-scanning.mjs';
 import { createPushProtectionApiHandler, markBypassesUsed, migratePushProtection } from './src/push-protection.mjs';
 import { createTenantLifecycleApiHandler, migrateTenantLifecycle } from './src/tenant-lifecycle.mjs';
+import { createTenantExportApiHandler, migrateTenantExport } from './src/tenant-export.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
@@ -183,6 +184,7 @@ withSchemaLock(db, () => {
   migrateSecretScanning(db);
   migratePushProtection(db);
   migrateTenantLifecycle(db);
+  migrateTenantExport(db);
   migrateEmailProviderEvents(db);
 });
 
@@ -239,9 +241,12 @@ const pushProtectionApi = createPushProtectionApiHandler({ config, db });
 // Deleting a tenant destroys other people's work. An organization owner may ask;
 // only the operator running the instance carries it out, and the record of who
 // did which is the reason that distinction is worth keeping.
-const tenantLifecycleApi = createTenantLifecycleApiHandler({
-  config, db, isInstanceAdmin: (settings, user) => instanceAdminEmails(settings).includes(String(user.email || '').toLowerCase()),
-});
+const isInstanceAdmin = (settings, user) => instanceAdminEmails(settings).includes(String(user.email || '').toLowerCase());
+const tenantLifecycleApi = createTenantLifecycleApiHandler({ config, db, isInstanceAdmin });
+// Registered before the lifecycle handler, which claims the whole
+// `/api/instance-admin/tenants` prefix and answers anything unknown under it
+// with a 404 — including these routes, if it saw them first.
+const tenantExportApi = createTenantExportApiHandler({ config, db, isInstanceAdmin });
 const workflowLogsApi = createWorkflowLogsApiHandler({ config, db });
 const runnersApi = createRunnersApiHandler({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
@@ -278,6 +283,7 @@ async function dispatch(req, res) {
   if (await workflowTriggersApi(req, res)) return;
   if (await secretScanningApi(req, res)) return;
   if (await pushProtectionApi(req, res)) return;
+  if (await tenantExportApi(req, res)) return;
   if (await tenantLifecycleApi(req, res)) return;
   if (await workflowLogsApi(req, res)) return;
   if (await runnersApi(req, res)) return;

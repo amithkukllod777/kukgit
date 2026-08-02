@@ -157,7 +157,10 @@ test('a deletion removes everything and proves it', async (t) => {
   const scheduled = requestTenantDeletion(context.db, {
     slug: 'acme', reason: 'the customer closed their account in writing', userId: context.userId, graceDays: 0,
   });
-  const result = executeTenantDeletion(context.db, { requestId: scheduled.id });
+  // `withoutExport` because this test is about the deletion. A deletion normally
+  // refuses to run until a verified export has been taken — see
+  // test/tenant-export.test.mjs, where that gate is the subject.
+  const result = executeTenantDeletion(context.db, { requestId: scheduled.id, withoutExport: true });
 
   // "We deleted it" is a claim anybody can make. A census taken afterwards
   // against a schema-derived table list is a check that fails loudly.
@@ -183,7 +186,7 @@ test('another tenant is untouched', async (t) => {
   const scheduled = requestTenantDeletion(context.db, {
     slug: 'acme', reason: 'the customer closed their account in writing', userId: context.userId, graceDays: 0,
   });
-  executeTenantDeletion(context.db, { requestId: scheduled.id });
+  executeTenantDeletion(context.db, { requestId: scheduled.id, withoutExport: true });
 
   const survivor = tenantRowCensus(context.db, kept.id);
   assert.equal(survivor.organizationRows, 1);
