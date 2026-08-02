@@ -109,11 +109,38 @@ is logged and the push stands. Turning a scanner problem into a rejected push
 would make the scanner the least reliable part of pushing code, and the first
 outage would end with somebody disabling it.
 
+## Finding what was already there
+
+Push scanning only ever sees what a push introduced, so a credential committed
+before scanning existed is invisible until the file is next touched. A repository
+migrated in from elsewhere would show an empty findings list and look clean.
+
+```bash
+npm run scan                      # every repository, current branch tips
+npm run scan -- --repo org/name   # one repository
+npm run scan -- --history         # every commit too: slow, finds removed credentials
+```
+
+**Current branch tips is the default**, and it is the mode that matters most: a
+credential in the current tree is the one an attacker finds by cloning. It is
+also the mode that finishes — full history on a large repository reads every blob
+ever written, and a scan nobody runs to completion protects nobody.
+
+Blobs are deduplicated across the whole walk. A file that is identical on fifty
+release branches is read once, which is the difference between one scan and
+fifty.
+
+**`--history` finds credentials that were committed and later removed.** Those
+still need rotating: the bytes are in every clone anybody took in between.
+Removing a credential from the tip is not a fix, and the scan says so when it
+finds something.
+
+A history scan that hit its per-ref commit limit **reports which refs it did not
+finish**. A bounded scan reported as complete is worse than no scan, because
+somebody then believes the part it never reached is clean.
+
 ## What is not done yet
 
-- **History scanning.** Only new content is scanned. A credential committed
-  before this shipped is found the next time the file containing it is touched,
-  not before. A backfill command is the obvious next step.
 - **Provider revocation.** Some providers accept a report of a leaked token and
   revoke it. That is a per-provider integration and an outbound network call
   KukGit does not currently make.
