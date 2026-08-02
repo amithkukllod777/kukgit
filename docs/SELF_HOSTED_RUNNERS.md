@@ -124,6 +124,20 @@ Cancellation arrives as the answer to a heartbeat. The running step gets
 `SIGTERM`, then `SIGKILL` ten seconds later — a step that ignores `SIGTERM` does
 not get to outlive its cancellation.
 
+**The signal goes to the whole process group**, not to the shell. Each step runs
+in its own group for exactly this reason: a build starts compilers, servers,
+databases and watchers, and signalling only the shell leaves every one of them
+running.
+
+That was a real bug, and it hid itself. The orphaned children inherit the step's
+stdout and stderr, and the event that says a process finished waits for its
+*streams* rather than for the process — so a cancelled step did not report until
+the runaway process ended on its own. A cancelled `sleep 30` took the full thirty
+seconds, held its runner slot throughout, and if the job's own timeout landed in
+that window the step was reported as **timed out rather than cancelled**. It
+surfaced as an intermittent test failure at exactly thirty seconds; the tests now
+assert on elapsed time, which is what makes it stay fixed.
+
 A step exceeding its timeout is killed and reported as a timeout, not as an
 ordinary failure. The job deadline is checked between steps too, so a job cannot
 overrun by starting one more step just before its limit.
