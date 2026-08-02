@@ -88,6 +88,7 @@ import { createTenantLifecycleApiHandler, migrateTenantLifecycle } from './src/t
 import { createTenantExportApiHandler, migrateTenantExport } from './src/tenant-export.mjs';
 import { migrateTenantImport } from './src/tenant-import.mjs';
 import { createSupportAccessApiHandler, migrateSupportAccess, registerSupportOperators } from './src/support-access.mjs';
+import { createMaintenanceWindowsApiHandler, migrateMaintenanceWindows } from './src/maintenance-windows.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
@@ -161,6 +162,7 @@ withSchemaLock(db, () => {
   migrateOrganizationOnboarding(db);
   migrateRepositoryAccess(db);
   migrateSupportAccess(db);
+  migrateMaintenanceWindows(db);
   migrateRepositoryInvitations(db);
   migrateExternalAccessReviews(db);
   migrateExternalAccessExpiryGuard(db);
@@ -269,6 +271,11 @@ const externalLifecycleGuard = createExternalCollaboratorLifecycleGuard({ config
 const externalAccessPrivacyApi = createExternalCollaboratorAccessPrivacyApiHandler({ config, db });
 const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
 const supportAccessApi = createSupportAccessApiHandler({ config, db, isInstanceAdmin });
+// Maintenance mode itself is a file switch; these routes are the record of who
+// decided to flip it, when it was meant to end, and how much notice anybody
+// had. The guard lets the window routes through, or turning maintenance off
+// would be refused by maintenance mode.
+const maintenanceWindowsApi = createMaintenanceWindowsApiHandler({ config, db, isInstanceAdmin });
 // Registered so a support grant can be honoured at all. Without this the
 // resolver has no way to tell an operator from anybody else, and it fails
 // closed — which is the right default for every other embedding of this code.
@@ -311,6 +318,7 @@ async function dispatch(req, res) {
   if (await gitLfsApi(req, res)) return;
   if (await externalLifecycleGuard(req, res)) return;
   if (await supportAccessApi(req, res)) return;
+  if (await maintenanceWindowsApi(req, res)) return;
   if (await repositoryLifecycleApi(req, res)) return;
   if (await sshKeysApi(req, res)) return;
   if (await externalAccessPrivacyApi(req, res)) return;

@@ -553,6 +553,11 @@ export function createMaintenanceGuard({ config, next }) {
     const url = new URL(req.url, config.baseUrl);
     const method = String(req.method || 'GET').toUpperCase();
     if (['GET', 'HEAD', 'OPTIONS'].includes(method) || url.pathname === '/api/backups') return next(req, res);
+    // The routes that end a window have to work while the window is on.
+    // Refusing them would make maintenance mode a state the API can enter and
+    // not leave — recoverable only by deleting a file on the box, which is
+    // exactly the sort of step nobody wants to be looking up mid-incident.
+    if (url.pathname.startsWith('/api/instance-admin/maintenance/windows/')) return next(req, res);
     sendMaintenance(res, state);
   };
 }
