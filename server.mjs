@@ -91,6 +91,7 @@ import { createSupportAccessApiHandler, migrateSupportAccess, registerSupportOpe
 import { createMaintenanceWindowsApiHandler, migrateMaintenanceWindows } from './src/maintenance-windows.mjs';
 import { createStatusPageApiHandler, migrateStatusPage } from './src/status-page.mjs';
 import { createAbuseReportsApiHandler, migrateAbuseReports } from './src/abuse-reports.mjs';
+import { createDangerousFilesApiHandler, migrateDangerousFiles } from './src/dangerous-files.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
@@ -167,6 +168,7 @@ withSchemaLock(db, () => {
   migrateMaintenanceWindows(db);
   migrateStatusPage(db);
   migrateAbuseReports(db);
+  migrateDangerousFiles(db);
   migrateRepositoryInvitations(db);
   migrateExternalAccessReviews(db);
   migrateExternalAccessExpiryGuard(db);
@@ -286,6 +288,7 @@ const statusPageApi = createStatusPageApiHandler({ config, db, isInstanceAdmin }
 // `/api/abuse/reports` takes a report without an account: whoever finds phishing
 // hosted here is usually not a customer. It has its own tight rate-limit surface.
 const abuseReportsApi = createAbuseReportsApiHandler({ config, db, isInstanceAdmin });
+const dangerousFilesApi = createDangerousFilesApiHandler({ config, db, isInstanceAdmin });
 // Registered so a support grant can be honoured at all. Without this the
 // resolver has no way to tell an operator from anybody else, and it fails
 // closed — which is the right default for every other embedding of this code.
@@ -331,6 +334,7 @@ async function dispatch(req, res) {
   if (await maintenanceWindowsApi(req, res)) return;
   if (await statusPageApi(req, res)) return;
   if (await abuseReportsApi(req, res)) return;
+  if (await dangerousFilesApi(req, res)) return;
   if (await repositoryLifecycleApi(req, res)) return;
   if (await sshKeysApi(req, res)) return;
   if (await externalAccessPrivacyApi(req, res)) return;
