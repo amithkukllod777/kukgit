@@ -180,7 +180,9 @@ not the boundary being trusted. Those items stay in scope here.
 - [x] repository and account abuse-report workflow — unauthenticated reporting,
       cases rather than a queue, reversible disable enforced at every transport,
       [ABUSE_REPORTS.md](ABUSE_REPORTS.md)
-- [ ] malware and dangerous-file handling policy for LFS/artifacts/packages
+- [x] malware and dangerous-file handling policy for LFS/artifacts/packages —
+      block by content hash, reversible, enforced on every serving path,
+      [DANGEROUS_FILES.md](DANGEROUS_FILES.md)
 - [x] secret scanning foundation — [SECRET_SCANNING.md](SECRET_SCANNING.md)
 - [x] push protection: block a push that introduces a credential, with a
       per-repository policy and an audited bypass — [PUSH_PROTECTION.md](PUSH_PROTECTION.md)

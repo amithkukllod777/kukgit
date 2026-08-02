@@ -4,6 +4,7 @@ import path from 'node:path';
 import { currentUser, requireUser } from './auth.mjs';
 import { audit, uid } from './db.mjs';
 import { authorizeGitCredential, repositoryDisabled } from './git-http.mjs';
+import { assertContentAllowed } from './dangerous-files.mjs';
 import { permissionAtLeast, requireRepositoryAccess } from './repository-access.mjs';
 import { httpError, originAllowed } from './security.mjs';
 import { createObjectStorage, digestObject } from './object-storage.mjs';
@@ -343,6 +344,11 @@ function registerPendingUpload(db, config, repository, oid, size, userId) {
 function processBatchObject(db, config, repository, operation, auth, object) {
   const oid = normalizeOid(object.oid);
   const size = normalizeSize(object.size, config);
+  // In both directions. Refusing the upload of a known-bad hash keeps the
+  // instance from ever holding the bytes again; refusing the download is what
+  // stops the copies already here. An LFS OID is the SHA-256 of the content, so
+  // the check costs one primary-key lookup.
+  assertContentAllowed(db, oid, { context: 'Git LFS object' });
   const existing = objectRecord(db, oid);
   const associated = associationExists(db, repository.id, oid);
   if (operation === 'download') {
@@ -434,6 +440,9 @@ async function hashAndStoreUpload(req, config, expectedSize, oid) {
 
 async function handleUpload(req, res, { config, db, repository, oid }) {
   if (repository.archivedAt) throw httpError(409, 'Archived repositories reject Git LFS uploads.', 'REPOSITORY_ARCHIVED');
+  // Again here, not only in the batch: the PUT names the OID itself and a
+  // client that skips the batch call would otherwise skip the policy with it.
+  assertContentAllowed(db, oid, { context: 'Git LFS object' });
   const auth = requireLfsAuthentication(db, config, req, repository, 'upload');
   cleanupExpiredUploads(db);
   const pending = db.prepare(`
@@ -527,6 +536,7 @@ function parseRange(header, size) {
 
 async function handleDownload(req, res, { config, db, repository, oid }) {
   requireLfsAuthentication(db, config, req, repository, 'download', { allowPublic: true });
+  assertContentAllowed(db, oid, { context: 'Git LFS object' });
   const record = objectRecord(db, oid);
   if (!record || !associationExists(db, repository.id, oid)) throw httpError(404, 'Git LFS object is not available for this repository.', 'LFS_OBJECT_NOT_FOUND');
   const storage = lfsStorage(config);

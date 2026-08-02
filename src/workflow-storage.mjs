@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { uid } from './db.mjs';
+import { assertContentAllowed } from './dangerous-files.mjs';
 import { httpError, originAllowed } from './security.mjs';
 import { requireUser } from './auth.mjs';
 import { requireRepositoryAccess } from './repository-access.mjs';
@@ -206,6 +207,11 @@ export function readArtifact(db, config, { repositoryId, artifactId }) {
     FROM workflow_artifacts WHERE repository_id = ? AND id = ?
   `).get(repositoryId, artifactId);
   if (!artifact) throw httpError(404, 'Artifact not found.', 'ARTIFACT_NOT_FOUND');
+  // An artifact's digest is the SHA-256 of its bytes, same as an LFS OID, so a
+  // block placed on a hash covers a trojan whether it arrived through a push or
+  // out of a build. Caches are deliberately not checked: a cache is only ever
+  // restored into the workspace of the repository that wrote it.
+  assertContentAllowed(db, artifact.digest, { context: 'artifact' });
   return { ...artifact, content: readBlob(config, artifact.digest) };
 }
 
