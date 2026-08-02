@@ -18,6 +18,7 @@
     "runner": "node scripts/runner.mjs",
     "lfs:storage": "node scripts/lfs-storage.mjs",
     "drill": "node scripts/rollout-drill.mjs",
+    "scan": "node scripts/secret-scan.mjs",
     "database": "node scripts/database.mjs",
     "database:runtime-write-surface": "node scripts/database.mjs runtime-write-surface",
     "database:postgresql-import": "node scripts/postgresql-import.mjs",

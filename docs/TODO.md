@@ -173,7 +173,7 @@ not the boundary being trusted. Those items stay in scope here.
 - [x] secret scanning foundation — [SECRET_SCANNING.md](SECRET_SCANNING.md)
 - [x] push protection: block a push that introduces a credential, with a
       per-repository policy and an audited bypass — [PUSH_PROTECTION.md](PUSH_PROTECTION.md)
-- [ ] history backfill scan for credentials committed before scanning existed
+- [x] history backfill scan for credentials committed before scanning existed — `npm run scan`
 - [ ] dependency, license and SBOM scanning design
 
 ## P2 — Public beta

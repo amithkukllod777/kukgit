@@ -34,6 +34,25 @@
 
 ### Added
 
+- `npm run scan` — finds credentials committed **before** scanning existed. Push
+  scanning only sees what a push introduced, so a repository migrated in from
+  elsewhere would show an empty findings list and look clean.
+  - **current branch tips by default.** A credential in the current tree is the
+    one an attacker finds by cloning, and it is the mode that finishes — full
+    history on a large repository reads every blob ever written, and a scan
+    nobody runs to completion protects nobody.
+  - blobs are deduplicated across the whole walk, so a file identical on fifty
+    release branches is read once
+  - `--history` walks every commit and finds credentials that were committed and
+    later removed. Those still need rotating: the bytes are in every clone
+    anybody took in between, and removing one from the tip is not a fix.
+  - a history scan that hit its per-ref commit limit **reports which refs it did
+    not finish**. A bounded scan reported as complete is worse than no scan,
+    because somebody then believes the part it never reached is clean.
+  - a deleted repository is skipped: reporting findings against it would add work
+    nobody can action
+
+
 - Push protection (`src/push-protection.mjs`): a push that introduces a
   credential is **refused** by the pre-receive hook, before the objects are
   accepted.
