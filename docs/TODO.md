@@ -177,7 +177,9 @@ not the boundary being trusted. Those items stay in scope here.
 
 - [x] rate limits for public/authenticated Git, API, webhook and invitation surfaces
       (HTTP surfaces done; Git over SSH and cross-instance shared state remain open)
-- [ ] repository and account abuse-report workflow
+- [x] repository and account abuse-report workflow — unauthenticated reporting,
+      cases rather than a queue, reversible disable enforced at every transport,
+      [ABUSE_REPORTS.md](ABUSE_REPORTS.md)
 - [ ] malware and dangerous-file handling policy for LFS/artifacts/packages
 - [x] secret scanning foundation — [SECRET_SCANNING.md](SECRET_SCANNING.md)
 - [x] push protection: block a push that introduces a credential, with a

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { currentUser, requireUser } from './auth.mjs';
 import { audit, uid } from './db.mjs';
-import { authorizeGitCredential } from './git-http.mjs';
+import { authorizeGitCredential, repositoryDisabled } from './git-http.mjs';
 import { permissionAtLeast, requireRepositoryAccess } from './repository-access.mjs';
 import { httpError, originAllowed } from './security.mjs';
 import { createObjectStorage, digestObject } from './object-storage.mjs';
@@ -634,6 +634,13 @@ export function createGitLfsHandler({ config, db }) {
       if (lfsRoute) {
         const repository = findRepository(db, lfsRoute.orgSlug, lfsRoute.repoSlug);
         if (!repository) throw httpError(404, 'Repository not found.', 'REPO_NOT_FOUND');
+        // Before the operation is dispatched, so batch, upload, download and
+        // verify are all covered by one check. A public repository's objects are
+        // downloadable with no credential at all — and a large binary served
+        // anonymously is exactly what an abuse disable is for.
+        if (repositoryDisabled(db, repository.id)) {
+          throw httpError(403, 'This repository is disabled pending an abuse review.', 'REPOSITORY_DISABLED');
+        }
         if (lfsRoute.suffix === 'objects/batch' && req.method === 'POST') return await handleBatch(req, res, { config, db, repository });
         const objectMatch = lfsRoute.suffix.match(/^objects\/([0-9a-f]{64})(?:\/(verify))?$/);
         if (objectMatch) {

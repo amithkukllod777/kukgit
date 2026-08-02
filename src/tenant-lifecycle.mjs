@@ -48,6 +48,11 @@ const NEVER_TENANT_SCOPED = new Map([
   ['job_leases', 'instance coordination state with a lifetime in seconds'],
   ['maintenance_windows', 'instance-wide downtime, not owned by any one tenant'],
   ['status_incidents', 'published to the public status page about the instance, not a tenant'],
+  // Deliberately outlives the tenant. A moderation record that disappears when
+  // the reported party leaves is a record that says nothing about repeat
+  // offenders, and it is the one somebody asks for afterwards.
+  ['abuse_cases', 'the record of what was reported and what was decided, kept as evidence'],
+  ['abuse_reports', 'belongs to an abuse case'],
   ['status_incident_updates', 'belongs to a status incident'],
   ['kukgit_schema_migrations', 'schema history for the instance'],
   ['organizations', 'the tenant row itself, removed last'],

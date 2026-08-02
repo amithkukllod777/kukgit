@@ -14,7 +14,7 @@
 import { currentRequestIdentity } from './identity-context.mjs';
 import { parseCookies, hashToken } from './security.mjs';
 
-export const RATE_LIMIT_SURFACES = Object.freeze(['auth', 'api', 'git', 'invitation', 'webhook']);
+export const RATE_LIMIT_SURFACES = Object.freeze(['auth', 'api', 'git', 'invitation', 'webhook', 'abuse']);
 
 // Buckets idle for longer than this are dropped by the sweep, so memory tracks
 // active callers rather than every caller ever seen.
@@ -100,6 +100,9 @@ export function surfaceForRequest(method, pathname) {
   if (pathname === '/api/health' || pathname === '/api/health/ready') return null;
   if (/^\/git\//.test(pathname)) return 'git';
   if (/^\/api\/auth\/(login|signup|otp\/request|otp\/verify|google)$/.test(pathname)) return 'auth';
+  // Before the general API surface, and before the method check, so a flood of
+  // reports is limited whichever verb it arrives with.
+  if (pathname === '/api/abuse/reports') return 'abuse';
   if (method === 'POST' || method === 'PATCH' || method === 'PUT') {
     if (/^\/api\/collaboration\/orgs\/[^/]+\/invitations/.test(pathname)) return 'invitation';
     if (/^\/api\/repository-invitations\//.test(pathname)) return 'invitation';

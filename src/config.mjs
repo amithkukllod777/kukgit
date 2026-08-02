@@ -92,6 +92,10 @@ export function loadConfig(overrides = {}) {
     invitation: rateLimit('rateLimitInvitation', 'INVITATION', 30, 10),
     // Webhook create, ping and redeliver, which can be pointed at third parties.
     webhook: rateLimit('rateLimitWebhook', 'WEBHOOK', 60, 20),
+    // Abuse reports, which are accepted without an account. Tight, because the
+    // form is reachable by anybody and a flood of reports against one
+    // repository is itself a way to attack it.
+    abuse: rateLimit('rateLimitAbuse', 'ABUSE', 10, 5),
   };
 
   const organizationOwnerLimit = positiveNumber(overrides.organizationOwnerLimit ?? process.env.KUKGIT_ORGANIZATION_OWNER_LIMIT ?? 5, 'KUKGIT_ORGANIZATION_OWNER_LIMIT');
