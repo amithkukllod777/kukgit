@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import {
   createLogBuffer,
   executeJob,
@@ -104,12 +105,17 @@ test('a failing step reports its exit code and stops the job', async (t) => {
 
 test('a step that runs too long is killed and reported as a timeout', async (t) => {
   const cwd = workspace(t);
+  const started = Date.now();
   const result = await runStep({
     script: 'sleep 30',
     cwd, env: { PATH: process.env.PATH }, timeoutMs: 1200, onOutput: () => {},
   });
   assert.equal(result.ok, false);
   assert.match(result.reason, /exceeded its .* timeout/);
+  // A timeout that reports at thirty seconds is not a 1.2-second timeout. This
+  // used to take the full sleep, because the step's orphaned children still
+  // held its output pipes and `close` waits for the streams, not the process.
+  assert.ok(Date.now() - started < 10_000, `took ${Date.now() - started}ms`);
 });
 
 test('an aborted step is stopped and reported as cancelled, not failed', async (t) => {
@@ -117,16 +123,54 @@ test('an aborted step is stopped and reported as cancelled, not failed', async (
   const controller = new AbortController();
   setTimeout(() => controller.abort(), 300).unref?.();
 
+  const started = Date.now();
   const result = await runStep({
     script: 'sleep 30',
     cwd, env: { PATH: process.env.PATH }, timeoutMs: 30_000, signal: controller.signal, onOutput: () => {},
   });
-  // The reason is in the assertion message because this test has failed once
-  // under heavy parallel load with `cancelled` undefined, and every path that
-  // produces that carries a different reason — a spawn that never started, a
-  // timeout, a plain exit. Without it the next occurrence is a mystery again.
+  // The reason is in the assertion message because this test failed under load
+  // with `cancelled` undefined, and every path that produces that carries a
+  // different reason. It turned out to be the timeout at 30_000ms racing the
+  // step's own late resolution at the same instant — which is the bug the
+  // elapsed-time assertion below now holds shut.
   assert.equal(result.cancelled, true, `reason: ${result.reason}`);
   assert.equal(result.reason, 'cancelled');
+  assert.ok(Date.now() - started < 10_000, `took ${Date.now() - started}ms`);
+});
+
+test('cancelling a step kills the work it started, not only the shell', async (t) => {
+  const cwd = workspace(t);
+  const controller = new AbortController();
+  const pidFile = path.join(cwd, 'child.pid');
+  setTimeout(() => controller.abort(), 500).unref?.();
+
+  const result = await runStep({
+    // A background child, which is what a real step does: a dev server, a
+    // database, a watcher. Killing the shell leaves it running.
+    script: 'sleep 30 & echo $! > child.pid; wait',
+    cwd, env: { PATH: process.env.PATH }, timeoutMs: 30_000, signal: controller.signal, onOutput: () => {},
+  });
+  assert.equal(result.cancelled, true, `reason: ${result.reason}`);
+
+  const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+  assert.ok(Number.isInteger(pid) && pid > 0);
+
+  // "Not running" rather than "no such pid". When the shell dies first the
+  // child is re-parented to pid 1, and in a container pid 1 is often not an
+  // init that reaps — so a killed process sits as a zombie and signal 0 still
+  // finds it. A zombie has exited, which is the thing being asserted.
+  let stopped = false;
+  for (let attempt = 0; attempt < 20 && !stopped; attempt += 1) {
+    try {
+      process.kill(pid, 0);
+      const state = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' }).stdout.trim();
+      stopped = state === '' || state.startsWith('Z');
+    } catch { stopped = true; }
+    if (!stopped) await new Promise((done) => setTimeout(done, 100));
+  }
+  // A cancelled deployment whose deploy command is still running is a
+  // deployment nobody can stop.
+  assert.ok(stopped, "the step's child outlived its cancellation");
 });
 
 test('a step already cancelled before it starts does not run', async (t) => {

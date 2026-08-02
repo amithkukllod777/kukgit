@@ -217,11 +217,34 @@ export function runStep({
       stdio: ['ignore', 'pipe', 'pipe'],
       // No shell interpretation of the arguments themselves.
       shell: false,
+      // Its own process group, so a cancellation can kill the whole tree rather
+      // than only the shell. A build starts compilers, servers and test
+      // harnesses; signalling the shell leaves every one of them running.
+      detached: true,
     });
 
     let settled = false;
     let timedOut = false;
     let cancelled = false;
+
+    /**
+     * Signals the step and everything it started.
+     *
+     * Killing only the shell was not just incomplete, it made cancellation look
+     * broken: the orphaned children inherit the step's stdout and stderr pipes,
+     * so Node's `close` event — which waits for the streams, not the process —
+     * did not fire until the runaway process finished on its own. A cancelled
+     * `sleep 30` took the full thirty seconds to report, holding the runner slot
+     * the whole time, and a timeout landing in that window reported the step as
+     * timed out rather than cancelled.
+     *
+     * The negative pid is the process group. If the group is already gone,
+     * `process.kill` throws and there is nothing left to signal.
+     */
+    const killTree = (signalName) => {
+      try { process.kill(-child.pid, signalName); }
+      catch { try { child.kill(signalName); } catch { /* already gone */ } }
+    };
 
     const finish = (result) => {
       if (settled) return;
@@ -234,15 +257,15 @@ export function runStep({
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGKILL');
+      killTree('SIGKILL');
     }, Math.max(1000, timeoutMs));
     timer.unref?.();
 
     const onAbort = () => {
       cancelled = true;
-      child.kill('SIGTERM');
+      killTree('SIGTERM');
       // A step that ignores SIGTERM is not allowed to outlive its cancellation.
-      setTimeout(() => child.kill('SIGKILL'), AGENT_DEFAULTS.shutdownGraceMs).unref?.();
+      setTimeout(() => killTree('SIGKILL'), AGENT_DEFAULTS.shutdownGraceMs).unref?.();
     };
     signal?.addEventListener?.('abort', onAbort, { once: true });
     // A signal that was *already* aborted fires no event, so listening alone
