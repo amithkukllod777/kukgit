@@ -184,6 +184,16 @@ export function getEffectiveRepositoryAccess(db, { userId, repositoryId, orgSlug
 export function requireRepositoryAccess(db, userId, reference, requiredPermission = 'read') {
   const access = getEffectiveRepositoryAccess(db, { userId, ...reference });
   if (!access?.repository) throw httpError(404, 'Repository not found.', 'REPO_NOT_FOUND');
+  if (access.disabled) {
+    // The reason goes to somebody who belongs to the organization and to nobody
+    // else. A repository that stops working with no message is indistinguishable
+    // from an outage, and its owner is the only person who can fix what caused
+    // it — but "disabled for abuse" is not a fact to hand a passing stranger.
+    const member = db.prepare('SELECT 1 AS found FROM org_members WHERE organization_id = ? AND user_id = ?')
+      .get(access.repository.organizationId, userId);
+    if (!member) throw httpError(404, 'Repository not found.', 'REPO_NOT_FOUND');
+    throw httpError(403, `This repository is disabled pending an abuse review. ${access.disabled.reason ?? ''}`.trim(), 'REPOSITORY_DISABLED');
+  }
   if (!permissionAtLeast(access.permission, requiredPermission)) {
     throw httpError(403, `Repository ${requiredPermission} permission is required.`, 'REPOSITORY_ACCESS_DENIED');
   }

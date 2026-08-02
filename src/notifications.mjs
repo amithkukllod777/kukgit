@@ -308,6 +308,14 @@ function notificationRow(row) {
   };
 }
 
+/**
+ * Newest first, and deterministically so.
+ *
+ * `created_at` has one-second granularity, so two notifications raised in the
+ * same second tie — and a list that claims to be newest-first while returning
+ * either order is one somebody eventually trusts. The row id breaks the tie in
+ * insertion order, which is what "newest" means here.
+ */
 export function listNotifications(db, userId, { unreadOnly = false, limit = 100 } = {}) {
   migrateNotifications(db);
   const count = Math.max(1, Math.min(Number(limit) || 100, 250));
@@ -316,13 +324,13 @@ export function listNotifications(db, userId, { unreadOnly = false, limit = 100 
         SELECT id, category, title, body, link, metadata_json AS metadataJson,
           read_at AS readAt, created_at AS createdAt
         FROM notifications WHERE user_id = ? AND read_at IS NULL
-        ORDER BY created_at DESC LIMIT ?
+        ORDER BY created_at DESC, rowid DESC LIMIT ?
       `).all(userId, count)
     : db.prepare(`
         SELECT id, category, title, body, link, metadata_json AS metadataJson,
           read_at AS readAt, created_at AS createdAt
         FROM notifications WHERE user_id = ?
-        ORDER BY created_at DESC LIMIT ?
+        ORDER BY created_at DESC, rowid DESC LIMIT ?
       `).all(userId, count);
   const unreadCount = Number(db.prepare('SELECT COUNT(*) AS count FROM notifications WHERE user_id = ? AND read_at IS NULL').get(userId).count);
   return { notifications: rows.map(notificationRow), unreadCount };
