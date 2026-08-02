@@ -2,6 +2,7 @@ import { currentUser, requireUser } from './auth.mjs';
 import { runWithRepositoryAccess } from './access-context.mjs';
 import { audit, uid } from './db.mjs';
 import { httpError, originAllowed } from './security.mjs';
+import { recordSupportAccess, supportGrantFor } from './support-access.mjs';
 
 export const REPOSITORY_PERMISSIONS = Object.freeze(['read', 'triage', 'write', 'maintain', 'admin']);
 const PERMISSION_RANK = Object.freeze({ none: 0, read: 1, triage: 2, write: 3, maintain: 4, admin: 5 });
@@ -111,12 +112,35 @@ export function getEffectiveRepositoryAccess(db, { userId, repositoryId, orgSlug
     sources.push({ type: 'team', id: team.id, slug: team.slug, name: team.name, permission: team.permission, teamRole: team.teamRole });
   }
 
+  // A KukGit support operator the customer has given temporary access to. Last,
+  // and always `read`: the grant exists so somebody can look at a problem, and
+  // an escalation path that can also write is a way to change a customer's
+  // repository with nobody in the organization having agreed to it.
+  //
+  // It is a *source*, not a bypass, so it shows up wherever access is explained
+  // — the customer can see why a request was allowed and by whose grant.
+  if (!membership) {
+    const grant = supportGrantFor(db, { userId, organizationId: repository.organizationId, repositoryId: repository.id });
+    if (grant) {
+      recordSupportAccess(db, { grantId: grant.id, repositoryId: repository.id });
+      sources.push({
+        type: 'support',
+        id: grant.id,
+        name: `KukGit support (${grant.operatorEmail})`,
+        permission: 'read',
+        expiresAt: grant.expiresAt,
+        reason: grant.reason,
+      });
+    }
+  }
+
   return {
     repository,
     organizationRole: membership?.role ?? null,
     permission: maxPermission(sources.map((source) => source.permission)),
     sources,
     isExternalCollaborator: !membership && Boolean(direct),
+    supportAccess: sources.find((source) => source.type === 'support') ?? null,
   };
 }
 

@@ -222,6 +222,7 @@ Request IDs make customer-reported failures easier to correlate without disclosi
 - Review `instance_support.*` audit events regularly.
 - Never use a shared support login.
 - Do not add impersonation as a shortcut; use reproducible request IDs and tenant-scoped diagnostics.
+- When diagnostics are not enough, ask the customer for a support access grant — read-only, time-boxed, revocable, and visible to their whole organization. See [SUPPORT_ACCESS.md](SUPPORT_ACCESS.md).
 - Keep host time synchronized because access expiry and delivery scheduling use UTC timestamps.
 - Back up the metadata database before migration or broad support operations.
 
