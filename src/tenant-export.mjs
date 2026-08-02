@@ -11,6 +11,16 @@ import { httpError, originAllowed } from './security.mjs';
 import { requireUser } from './auth.mjs';
 import { tenantRowCensus, tenantSelectors } from './tenant-lifecycle.mjs';
 
+/**
+ * What a withheld value is replaced with.
+ *
+ * A visible sentinel rather than `null`, so somebody reading the file sees that
+ * something was taken out without finding the manifest first — and so an import
+ * can tell "this was withheld" from "this was empty" and refuse to load a
+ * credential that would never work.
+ */
+export const REDACTION_SENTINEL = '[redacted by KukGit export]';
+
 export const TENANT_EXPORT = {
   format: 'kukgit-tenant-export-v1',
   // A row at a time would be correct and slow; a whole table in memory would be
@@ -186,7 +196,7 @@ function* tenantRows(db, selector, organizationId) {
       // Node's SQLite rows have a null prototype, and a null-prototype object
       // does not round-trip through everything that later reads this file.
       const plain = { ...row };
-      for (const column of redactedColumns) plain[column] = '[redacted by KukGit export]';
+      for (const column of redactedColumns) plain[column] = REDACTION_SENTINEL;
       yield plain;
     }
     if (rows.length < TENANT_EXPORT.batchRows) return;
@@ -264,6 +274,13 @@ async function bundleRepositories(config, db, organization, stagingDir) {
  * large files are in somebody else's S3 account is not a copy of their data.
  */
 async function copyLfsObjects(config, db, organization, stagingDir) {
+  // A database on which Git LFS has never been migrated has no such table, and
+  // that is a true "no objects" rather than an error. Reached by running the
+  // export against an instance whose server has not started yet, which is
+  // exactly when somebody is trying it out.
+  const installed = db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'repository_lfs_objects'").get();
+  if (!installed) return { objects: [], missing: [], bytes: 0 };
+
   const rows = db.prepare(`
     SELECT DISTINCT o.oid, o.size, o.storage_path AS storagePath
     FROM repository_lfs_objects link
@@ -356,6 +373,24 @@ export async function createTenantExport(config, db, { slug, userId = null, outp
       files.push({ path: relative, table: selector.table, rows, bytes: digest.size, sha256: digest.sha256 });
     }
 
+    // The member list, which is not the same thing as exporting user accounts.
+    // `org_members` holds user ids and nothing else, and an id means nothing on
+    // another instance — so an import could restore an organization with no
+    // members and no way to get in. Email is what identifies the same person on
+    // two instances, and an organization's own member list is the
+    // organization's data.
+    const members = db.prepare(`
+      SELECT m.user_id AS userId, m.role, m.created_at AS createdAt, u.email, u.display_name AS displayName
+      FROM org_members m JOIN users u ON u.id = m.user_id
+      WHERE m.organization_id = ? ORDER BY u.email
+    `).all(organization.id);
+    if (members.length) {
+      const destination = path.join(stagingDir, 'metadata', 'members.jsonl');
+      writeJsonl(destination, members.map((member) => ({ ...member })));
+      const digest = await sha256File(destination);
+      files.push({ path: 'metadata/members.jsonl', members: members.length, bytes: digest.size, sha256: digest.sha256 });
+    }
+
     const repositories = await bundleRepositories(config, db, organization, stagingDir);
     const lfs = await copyLfsObjects(config, db, organization, stagingDir);
     for (const object of lfs.objects) {
@@ -373,6 +408,7 @@ export async function createTenantExport(config, db, { slug, userId = null, outp
       census: { total: census.total, counts: census.counts },
       tables: files.filter((file) => file.table).map(({ path: filePath, table, rows, bytes, sha256 }) => ({ path: filePath, table, rows, bytes, sha256 })),
       repositories,
+      members: files.filter((file) => file.members).map(({ path: filePath, members: count, bytes, sha256 }) => ({ path: filePath, members: count, bytes, sha256 }))[0] ?? null,
       lfs: { objects: lfs.objects.length, bytes: lfs.bytes, missing: lfs.missing },
       // Named, not merely done. A customer reading this needs to know what was
       // taken out and why before they discover it by trying to use the export.
@@ -486,6 +522,17 @@ export async function verifyTenantExport(config, archivePath) {
       rows += lines;
     }
 
+    let members = 0;
+    if (manifest.members) {
+      const entry = checkFile(manifest.members, 'member list');
+      if (entry) {
+        members = fs.readFileSync(entry.destination, 'utf8').split('\n').filter(Boolean).length;
+        if (members !== manifest.members.members) {
+          problems.push(`member list holds ${members} members, the manifest says ${manifest.members.members}`);
+        }
+      }
+    }
+
     spawnSync('git', ['init', '--bare', '--quiet', scratchRepo], { encoding: 'utf8' });
     let bundles = 0;
     for (const repository of manifest.repositories ?? []) {
@@ -523,9 +570,11 @@ export async function verifyTenantExport(config, archivePath) {
 
     return {
       archivePath: path.resolve(archivePath),
+      archiveSha256: (await sha256File(path.resolve(archivePath))).sha256,
       organization: manifest.organization,
       generatedAt: manifest.generatedAt,
       rows,
+      members,
       bundles,
       lfsObjects,
       redactedColumns: manifest.redactedColumns ?? [],

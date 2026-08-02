@@ -86,6 +86,7 @@ import {
 import { createPushProtectionApiHandler, markBypassesUsed, migratePushProtection } from './src/push-protection.mjs';
 import { createTenantLifecycleApiHandler, migrateTenantLifecycle } from './src/tenant-lifecycle.mjs';
 import { createTenantExportApiHandler, migrateTenantExport } from './src/tenant-export.mjs';
+import { migrateTenantImport } from './src/tenant-import.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
@@ -185,6 +186,7 @@ withSchemaLock(db, () => {
   migratePushProtection(db);
   migrateTenantLifecycle(db);
   migrateTenantExport(db);
+  migrateTenantImport(db);
   migrateEmailProviderEvents(db);
 });
 

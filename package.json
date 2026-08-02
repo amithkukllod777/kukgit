@@ -20,6 +20,7 @@
     "drill": "node scripts/rollout-drill.mjs",
     "scan": "node scripts/secret-scan.mjs",
     "export": "node scripts/tenant-export.mjs",
+    "import": "node scripts/tenant-import.mjs",
     "database": "node scripts/database.mjs",
     "database:runtime-write-surface": "node scripts/database.mjs runtime-write-surface",
     "database:postgresql-import": "node scripts/postgresql-import.mjs",

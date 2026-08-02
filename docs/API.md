@@ -591,6 +591,9 @@ that long times out leaving a half-written archive. A deletion refuses to
 execute until a verified export has been taken since it was requested. Read
 [Tenant Export](TENANT_EXPORT.md).
 
+Loading one back is `npm run import -- --archive PATH`, also command line only
+and with no HTTP surface at all. Read [Tenant Import](TENANT_IMPORT.md).
+
 ## Push protection
 
 `src/push-protection.mjs`

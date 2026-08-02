@@ -24,6 +24,7 @@ npm run export -- --list                  # what has been exported, and whether 
 ```text
 manifest.json
 metadata/<table>.jsonl        every row the tenant owns, one JSON object per line
+metadata/members.jsonl        the member list: email, name and role
 repositories/<slug>.bundle    a Git bundle per repository
 lfs/objects/aa/bb/<oid>       every Git LFS object the tenant's repositories use
 ```
@@ -150,11 +151,22 @@ archive nobody knows about.
 Instance administrator only, like the deletion routes: an export manifest is a
 description of everything a tenant owns.
 
+## Loading one back
+
+`npm run import -- --archive PATH` reads an export into an instance — a different
+one, for a migration, or the same one to restore a tenant that was deleted. Two
+things do not come back: withheld credentials, and members who have no account on
+the target. Both are counted before anything is written. See
+[Tenant Import](TENANT_IMPORT.md).
+
+The member list is in the archive for this reason. `org_members` holds user ids
+and nothing else, and an id means nothing on another instance, so an import would
+restore an organization with no members and no way to get in. Email is what
+identifies the same person on two instances, and an organization's own member
+list is the organization's data.
+
 ## Not done yet
 
-- **Import.** An export can be read by Git and by anything that reads JSON, but
-  nothing loads one back into a KukGit instance. That is the natural next piece
-  and it is not written.
 - **Delivery.** The archive lands on the instance's disk. Getting it to the
   customer — signed URL, expiry, a record of who downloaded it — is manual.
 - **Encryption at rest.** The archive is `0600` and holds no credentials, but it
