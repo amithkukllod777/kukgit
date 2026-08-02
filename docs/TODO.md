@@ -159,7 +159,9 @@ not the boundary being trusted. Those items stay in scope here.
 ### Platform administration
 
 - [ ] broader capacity and queue diagnostics in Instance Admin
-- [ ] maintenance scheduling and operator approval records
+- [x] maintenance scheduling and operator approval records — two-operator
+      approval, announced windows, planned against actual,
+      [MAINTENANCE_WINDOWS.md](MAINTENANCE_WINDOWS.md)
 - [ ] status page and incident timeline
 - [x] verified tenant deletion — [TENANT_DELETION.md](TENANT_DELETION.md)
 - [x] tenant export, so a deletion is preceded by data the customer keeps —
