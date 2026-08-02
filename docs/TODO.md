@@ -166,7 +166,9 @@ not the boundary being trusted. Those items stay in scope here.
       `npm run export` and a gate on deletion, [TENANT_EXPORT.md](TENANT_EXPORT.md)
 - [x] tenant import, so an export can be loaded back into an instance —
       `npm run import`, [TENANT_IMPORT.md](TENANT_IMPORT.md)
-- [ ] support escalation without impersonation
+- [x] support escalation without impersonation — customer-granted, time-boxed,
+      read-only grants with the uses visible to the organization,
+      [SUPPORT_ACCESS.md](SUPPORT_ACCESS.md)
 
 ### Security and abuse readiness
 

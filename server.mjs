@@ -87,6 +87,7 @@ import { createPushProtectionApiHandler, markBypassesUsed, migratePushProtection
 import { createTenantLifecycleApiHandler, migrateTenantLifecycle } from './src/tenant-lifecycle.mjs';
 import { createTenantExportApiHandler, migrateTenantExport } from './src/tenant-export.mjs';
 import { migrateTenantImport } from './src/tenant-import.mjs';
+import { createSupportAccessApiHandler, migrateSupportAccess, registerSupportOperators } from './src/support-access.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
@@ -159,6 +160,7 @@ withSchemaLock(db, () => {
   migrateCollaboration(db);
   migrateOrganizationOnboarding(db);
   migrateRepositoryAccess(db);
+  migrateSupportAccess(db);
   migrateRepositoryInvitations(db);
   migrateExternalAccessReviews(db);
   migrateExternalAccessExpiryGuard(db);
@@ -266,6 +268,11 @@ const gitLfsApi = createGitLfsHandler({ config, db });
 const externalLifecycleGuard = createExternalCollaboratorLifecycleGuard({ config, db });
 const externalAccessPrivacyApi = createExternalCollaboratorAccessPrivacyApiHandler({ config, db });
 const repositoryAccessApi = createRepositoryAccessApiHandler({ config, db });
+const supportAccessApi = createSupportAccessApiHandler({ config, db, isInstanceAdmin });
+// Registered so a support grant can be honoured at all. Without this the
+// resolver has no way to tell an operator from anybody else, and it fails
+// closed — which is the right default for every other embedding of this code.
+registerSupportOperators(db, (user) => isInstanceAdmin(config, user));
 const repositoryLifecycleApi = createRepositoryLifecycleApiHandler({ config, db });
 const sshKeysApi = createSshKeysApiHandler({ config, db });
 const branchGovernanceApi = createBranchGovernanceApiHandler({ config, db });
@@ -303,6 +310,7 @@ async function dispatch(req, res) {
   if (await backupsApi(req, res)) return;
   if (await gitLfsApi(req, res)) return;
   if (await externalLifecycleGuard(req, res)) return;
+  if (await supportAccessApi(req, res)) return;
   if (await repositoryLifecycleApi(req, res)) return;
   if (await sshKeysApi(req, res)) return;
   if (await externalAccessPrivacyApi(req, res)) return;
