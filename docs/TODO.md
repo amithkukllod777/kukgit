@@ -164,7 +164,8 @@ not the boundary being trusted. Those items stay in scope here.
 - [x] verified tenant deletion — [TENANT_DELETION.md](TENANT_DELETION.md)
 - [x] tenant export, so a deletion is preceded by data the customer keeps —
       `npm run export` and a gate on deletion, [TENANT_EXPORT.md](TENANT_EXPORT.md)
-- [ ] tenant import, so an export can be loaded back into an instance
+- [x] tenant import, so an export can be loaded back into an instance —
+      `npm run import`, [TENANT_IMPORT.md](TENANT_IMPORT.md)
 - [ ] support escalation without impersonation
 
 ### Security and abuse readiness

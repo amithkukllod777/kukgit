@@ -56,6 +56,7 @@ const NEVER_TENANT_SCOPED = new Map([
   // tenant would leave nothing to show for it.
   ['tenant_deletion_requests', 'the record of the deletion itself, kept as evidence'],
   ['tenant_exports', 'the record of what the customer was handed, kept as evidence'],
+  ['tenant_imports', 'the record of where a tenant came from, kept as evidence'],
 ]);
 
 function tableNames(db) {
