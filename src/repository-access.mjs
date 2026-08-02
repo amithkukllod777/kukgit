@@ -52,18 +52,34 @@ function maxPermission(values) {
   return values.reduce((best, value) => permissionAtLeast(value, best) ? value : best, 'none');
 }
 
+// Whether this database has the abuse-disable columns. Cached only once true,
+// because a column that exists does not go away — while a database that has not
+// run the migration yet is asked again rather than remembered as missing.
+const ABUSE_COLUMNS = new WeakSet();
+
+function abuseColumnsPresent(db) {
+  if (ABUSE_COLUMNS.has(db)) return true;
+  const present = db.prepare('PRAGMA table_info(repositories)').all()
+    .some((row) => String(row.name) === 'abuse_disabled_at');
+  if (present) ABUSE_COLUMNS.add(db);
+  return present;
+}
+
 function findRepository(db, { repositoryId, orgSlug, repoSlug }) {
+  const abuse = abuseColumnsPresent(db)
+    ? ', r.abuse_disabled_at AS abuseDisabledAt, r.abuse_disabled_reason AS abuseDisabledReason'
+    : '';
+  const columns = `r.id, r.slug, r.name, r.visibility, r.organization_id AS organizationId,
+      o.slug AS orgSlug, o.name AS orgName${abuse}`;
   if (repositoryId) {
     return db.prepare(`
-      SELECT r.id, r.slug, r.name, r.visibility, r.organization_id AS organizationId,
-        o.slug AS orgSlug, o.name AS orgName
+      SELECT ${columns}
       FROM repositories r JOIN organizations o ON o.id = r.organization_id
       WHERE r.id = ? AND r.deleted_at IS NULL
     `).get(repositoryId);
   }
   return db.prepare(`
-    SELECT r.id, r.slug, r.name, r.visibility, r.organization_id AS organizationId,
-      o.slug AS orgSlug, o.name AS orgName
+    SELECT ${columns}
     FROM repositories r JOIN organizations o ON o.id = r.organization_id
     WHERE o.slug = ? AND r.slug = ? AND r.deleted_at IS NULL
   `).get(orgSlug, repoSlug);
@@ -72,6 +88,27 @@ function findRepository(db, { repositoryId, orgSlug, repoSlug }) {
 export function getEffectiveRepositoryAccess(db, { userId, repositoryId, orgSlug, repoSlug }) {
   const repository = findRepository(db, { repositoryId, orgSlug, repoSlug });
   if (!repository) return null;
+
+  // Disabled for abuse: nobody reads it, including its owners, until an operator
+  // puts it back. Enforced here rather than per transport, because HTTP, Git and
+  // LFS all resolve through this function and a check in three places is a check
+  // that gets forgotten in one.
+  //
+  // The bytes are untouched and the flag is a single column, so reinstating is
+  // one statement. That is the point: the alternative to a reversible disable is
+  // either doing nothing about hosted malware or deleting somebody's work on the
+  // strength of a report form.
+  if (repository.abuseDisabledAt) {
+    return {
+      repository,
+      organizationRole: null,
+      permission: 'none',
+      sources: [],
+      isExternalCollaborator: false,
+      supportAccess: null,
+      disabled: { at: repository.abuseDisabledAt, reason: repository.abuseDisabledReason ?? null },
+    };
+  }
 
   const membership = db.prepare(`
     SELECT role FROM org_members WHERE organization_id = ? AND user_id = ?

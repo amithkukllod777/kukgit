@@ -24,6 +24,28 @@ export function isGitHttpPath(pathname) {
   return pathname.startsWith('/git/') && pathname.includes('.git');
 }
 
+// Cached only once true: a column that exists does not go away, while a database
+// that has not run the abuse migration is asked again rather than remembered as
+// missing.
+const ABUSE_COLUMNS = new WeakSet();
+
+/**
+ * Whether a repository has been disabled by an abuse decision.
+ *
+ * Exported because every transport has to ask it. The permission resolver covers
+ * the ones that resolve a permission; this covers the ones that do not, which is
+ * anonymous access to a public repository.
+ */
+export function repositoryDisabled(db, repositoryId) {
+  if (!ABUSE_COLUMNS.has(db)) {
+    const present = db.prepare('PRAGMA table_info(repositories)').all()
+      .some((row) => String(row.name) === 'abuse_disabled_at');
+    if (!present) return false;
+    ABUSE_COLUMNS.add(db);
+  }
+  return Boolean(db.prepare('SELECT abuse_disabled_at AS at FROM repositories WHERE id = ?').get(repositoryId)?.at);
+}
+
 export function authorizeGitCredential(db, config, { credential, orgSlug, repoSlug = null, isPush }) {
   const presented = String(credential ?? '');
   if (!presented) return null;
@@ -70,6 +92,17 @@ export function handleGitHttp(req, res, { config, db, pathname, queryString }) {
   if (!repo) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end('Repository not found.\n');
+  }
+
+  // Checked here, before the auth branch below, because a **public** repository
+  // is served with no authorization at all — so a check that lived in the
+  // permission resolver would never run for the exact case that matters most.
+  // Hosted malware is public on purpose; anonymous download is the point of it.
+  //
+  // Found by disabling a repository on a live instance and cloning it anyway.
+  if (repositoryDisabled(db, repo.id)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end('This repository is disabled pending an abuse review.\n');
   }
 
   const isPush = suffix.includes('git-receive-pack') || queryString.includes('service=git-receive-pack');
