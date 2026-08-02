@@ -103,6 +103,56 @@ Git HTTP and Git LFS. SSH resolves a permission and is covered by the resolver.
 Three transports, and the test that caught it was a real `git clone` rather than
 a unit test of the function that was already passing.
 
+## The owner is told
+
+A disable or a warning notifies every **owner and admin** of the organization,
+with the operator's written reason **verbatim**. A message that says only "policy
+violation" leaves somebody unable to fix anything, and they are the only person
+who can.
+
+A repository that stops working with no message is indistinguishable from an
+outage, and the first thing its owner does is open a support ticket asking why
+the platform is broken.
+
+Members also get the reason from the API rather than a bare 403:
+
+```text
+403 REPOSITORY_DISABLED
+This repository is disabled pending an abuse review. Confirmed phishing page …
+```
+
+A stranger gets the same 404 they would get for a private repository. "Disabled
+for abuse" is not a fact to hand to somebody passing by.
+
+Delivery failures are swallowed — an operator who disabled hosted malware has
+done the important part, and not being able to send an email is a worse day, not
+a reason to leave it running. How many owners were actually reached is written
+into the audit event, so telling nobody at all is visible rather than silent.
+
+## Appealing
+
+```text
+POST /api/abuse/appeals                                  {"org": "…", "repo": "…", "body": "…"}
+GET  /api/instance-admin/abuse/appeals?status=open|all
+POST /api/instance-admin/abuse/appeals/:id/answer        {"answer": "…"}
+```
+
+Deliberately **not** under `/api/repos/:org/:repo/…`. Those routes resolve
+repository access, which is exactly what a disable takes away — so the one route
+somebody needs when their repository is disabled would have been the one refusing
+them. Authorization is on the organization, which a disable does not touch.
+
+One open appeal at a time. Filing ten does not make anybody read it faster, and
+it turns the appeal route into the flooding problem the report route already has.
+
+Two ways it ends, and both notify the owner:
+
+- **Reinstating answers it.** Waiting for a reply to a question already decided
+  in your favour is the worst outcome available here.
+- **Answering without reinstating.** The decision stands, and here is why. An
+  appeal process with no way to say no says nothing at all, and the person waits
+  forever.
+
 ## What this is not
 
 - **Not a DMCA process.** Copyright is a category here so a report can be filed
@@ -110,16 +160,12 @@ a unit test of the function that was already passing.
   does not implement.
 - **Not automated detection.** Nothing scans for malware. See
   [Secret Scanning](SECRET_SCANNING.md) for the one thing that is scanned.
-- **Not notification.** The owner of a disabled repository is not told by KukGit
-  yet. That is the largest gap here: a repository that stops working with no
-  message is indistinguishable from an outage, and it should carry the reason and
-  a way to answer.
 
 ## Not done yet
 
-- **Telling the owner**, with the reason and a route to reply. Next.
-- **Appeals** with a record, so a reinstatement is the end of a conversation
-  rather than a decision somebody made quietly.
+- **Email.** Notifications are raised in the `security` category, which defaults
+  to email on — but a disabled repository's owner may not be reachable by email
+  at all, and nothing here retries or escalates.
 - **Organization-level disable.** Only repositories can be disabled today.
 - **Reporter feedback.** A reporter who left an address hears nothing back.
 

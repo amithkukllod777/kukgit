@@ -53,6 +53,7 @@ const NEVER_TENANT_SCOPED = new Map([
   // offenders, and it is the one somebody asks for afterwards.
   ['abuse_cases', 'the record of what was reported and what was decided, kept as evidence'],
   ['abuse_reports', 'belongs to an abuse case'],
+  ['abuse_appeals', 'the customer\'s reply to a moderation decision, kept with it'],
   ['status_incident_updates', 'belongs to a status incident'],
   ['kukgit_schema_migrations', 'schema history for the instance'],
   ['organizations', 'the tenant row itself, removed last'],

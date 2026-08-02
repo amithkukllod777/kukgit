@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { currentUser, requireUser } from './auth.mjs';
-import { audit, uid } from './db.mjs';
+import { audit, orgAccess, uid } from './db.mjs';
+import { createNotification } from './notifications.mjs';
 import { clientAddress } from './rate-limit.mjs';
 import { httpError, originAllowed } from './security.mjs';
 
@@ -57,6 +58,21 @@ export function migrateAbuseReports(db) {
       ON abuse_cases(target_type, target_id, status);
     CREATE INDEX IF NOT EXISTS idx_abuse_reports_case
       ON abuse_reports(case_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS abuse_appeals (
+      id TEXT PRIMARY KEY,
+      case_id TEXT REFERENCES abuse_cases(id) ON DELETE SET NULL,
+      organization_slug TEXT NOT NULL,
+      repository_slug TEXT NOT NULL,
+      body TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      submitted_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      answer TEXT,
+      answered_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      answered_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_abuse_appeals_open
+      ON abuse_appeals(status, created_at DESC);
   `);
   // Disabled, not deleted, and on the repository itself so every transport is
   // covered by the same check. HTTP, Git and LFS all resolve access through the
@@ -170,6 +186,41 @@ export function fileAbuseReport(db, config, req, { orgSlug, repoSlug = null, cat
   return { received: true, caseId: record.id };
 }
 
+/**
+ * Tells the people who own the repository.
+ *
+ * Everyone who could have done something about it: owners and admins. A
+ * repository that stops working with no message is indistinguishable from an
+ * outage, and the first thing its owner does is open a support ticket asking why
+ * the platform is broken.
+ *
+ * A notification failure never stops the decision. An operator who disabled
+ * hosted malware has done the important part; not being able to send an email is
+ * a worse day, not a reason to leave it running.
+ */
+function notifyRepositoryOwners(db, config, { organizationId, title, body, link, dedupeKey }) {
+  const recipients = db.prepare(`
+    SELECT user_id AS userId FROM org_members
+    WHERE organization_id = ? AND role IN ('owner', 'admin')
+  `).all(organizationId);
+  let sent = 0;
+  for (const recipient of recipients) {
+    try {
+      createNotification(db, config, {
+        userId: recipient.userId,
+        // `security`, which defaults to email on. This is not a digest item.
+        category: 'security',
+        title,
+        body,
+        link,
+        dedupeKey: dedupeKey ? `${dedupeKey}:${recipient.userId}` : null,
+      });
+      sent += 1;
+    } catch { /* one unreachable recipient does not stop the others */ }
+  }
+  return sent;
+}
+
 function shapeCase(db, row, { includeReporters = false } = {}) {
   if (!row) return null;
   const reports = db.prepare(`
@@ -220,7 +271,7 @@ export function getAbuseCase(db, id, options) {
  * was fine" is the sentence somebody needs when the same repository is reported
  * again next month.
  */
-export function resolveAbuseCase(db, { caseId, action, resolution, userId }) {
+export function resolveAbuseCase(db, config, { caseId, action, resolution, userId }) {
   if (!ABUSE.actions.includes(action)) {
     throw httpError(422, `Action must be one of ${ABUSE.actions.join(', ')}.`, 'ABUSE_ACTION_INVALID');
   }
@@ -248,6 +299,30 @@ export function resolveAbuseCase(db, { caseId, action, resolution, userId }) {
       action, written, userId, caseId);
   })();
 
+  let notified = null;
+  if (action === 'disable' || action === 'warn') {
+    const repository = db.prepare(`
+      SELECT r.slug AS repoSlug, r.organization_id AS organizationId, o.slug AS orgSlug
+      FROM repositories r JOIN organizations o ON o.id = r.organization_id WHERE r.id = ?
+    `).get(record.target_id);
+    if (repository) {
+      notified = notifyRepositoryOwners(db, config, {
+        organizationId: repository.organizationId,
+        title: action === 'disable'
+          ? `${repository.orgSlug}/${repository.repoSlug} has been disabled`
+          : `A warning about ${repository.orgSlug}/${repository.repoSlug}`,
+        // The operator's written reason, verbatim. A message that says only
+        // "policy violation" leaves somebody unable to fix anything, and they
+        // are the only person who can.
+        body: action === 'disable'
+          ? `A KukGit operator has disabled this repository following an abuse report.\n\nReason: ${written}\n\nNothing has been deleted. If you believe this is wrong, appeal at /api/abuse/appeals with the organization and repository and an explanation.`
+          : `A KukGit operator has reviewed an abuse report about this repository.\n\n${written}`,
+        link: `#/repos/${repository.orgSlug}/${repository.repoSlug}`,
+        dedupeKey: `abuse:${action}:${caseId}`,
+      });
+    }
+  }
+
   audit(db, {
     userId,
     action: `abuse.${action}`,
@@ -256,7 +331,10 @@ export function resolveAbuseCase(db, { caseId, action, resolution, userId }) {
     // The reports themselves are not copied into the audit metadata. A report is
     // somebody's prose about somebody else, and the audit log is read far more
     // widely than the abuse queue.
-    metadata: { caseId, category: record.category, reportCount: Number(record.report_count) },
+    // How many owners were actually reached. Delivery failures are swallowed so
+    // a notification problem cannot leave hosted malware running — but silently
+    // telling nobody is its own failure, and this is where it shows up.
+    metadata: { caseId, category: record.category, reportCount: Number(record.report_count), notified },
   });
   return getAbuseCase(db, caseId, { includeReporters: true });
 }
@@ -268,10 +346,63 @@ export function resolveAbuseCase(db, { caseId, action, resolution, userId }) {
  * repository is disabled while somebody looks, and re-enabled when they are
  * satisfied — often after the owner has answered.
  */
-export function reinstateRepository(db, { orgSlug, repoSlug, reason, userId }) {
+export function reinstateRepository(db, config, { orgSlug, repoSlug, reason, userId }) {
   const written = String(reason ?? '').trim();
   if (written.length < ABUSE.minimumResolutionLength) {
     throw httpError(422, `A written reason of at least ${ABUSE.minimumResolutionLength} characters is required.`, 'ABUSE_RESOLUTION_REQUIRED');
+  }
+  const repository = db.prepare(`
+    SELECT r.id, r.organization_id AS organizationId, r.abuse_disabled_at AS disabledAt FROM repositories r
+    JOIN organizations o ON o.id = r.organization_id
+    WHERE o.slug = ? AND r.slug = ?
+  `).get(orgSlug, repoSlug);
+  if (!repository) throw httpError(404, 'No such repository.', 'ABUSE_TARGET_NOT_FOUND');
+  if (!repository.disabledAt) throw httpError(409, 'That repository is not disabled.', 'ABUSE_NOT_DISABLED');
+
+  db.prepare('UPDATE repositories SET abuse_disabled_at = NULL, abuse_disabled_reason = NULL WHERE id = ?')
+    .run(repository.id);
+  // Any appeal about this repository is answered by the reinstatement itself.
+  // Leaving it open would mean somebody waiting for a reply to a question that
+  // has already been decided in their favour.
+  db.prepare(`
+    UPDATE abuse_appeals SET status = 'answered', answer = ?, answered_by = ?, answered_at = datetime('now')
+    WHERE organization_slug = ? AND repository_slug = ? AND status = 'open'
+  `).run(written, userId, orgSlug, repoSlug);
+  notifyRepositoryOwners(db, config, {
+    organizationId: repository.organizationId,
+    title: `${orgSlug}/${repoSlug} is available again`,
+    body: `A KukGit operator has re-enabled this repository.\n\n${written}`,
+    link: `#/repos/${orgSlug}/${repoSlug}`,
+    // The timestamp goes through the same charset the key allows; a raw SQLite
+    // datetime has a space in it.
+    dedupeKey: `abuse:reinstate:${repository.id}:${String(repository.disabledAt).replace(/[^A-Za-z0-9:_./-]/g, '-')}`,
+  });
+  audit(db, {
+    userId,
+    action: 'abuse.reinstated',
+    targetType: 'repository',
+    targetId: repository.id,
+    metadata: { reason: written, disabledSince: repository.disabledAt },
+  });
+  return { repository: `${orgSlug}/${repoSlug}`, reinstated: true };
+}
+
+/**
+ * The owner's reply.
+ *
+ * Deliberately **not** under `/api/repos/:org/:repo/…`. Those routes resolve
+ * repository access, which is exactly what a disable takes away — so the one
+ * route somebody needs when their repository is disabled would have been the one
+ * refusing them. Authorization is on the organization instead, which a disable
+ * does not touch.
+ */
+export function appealDisable(db, { orgSlug, repoSlug, body, userId }) {
+  if (!orgAccess(db, userId, orgSlug, 'admin')) {
+    throw httpError(403, 'Organization admin access is required.', 'ORG_ADMIN_REQUIRED');
+  }
+  const written = String(body ?? '').trim();
+  if (written.length < ABUSE.minimumDetailLength) {
+    throw httpError(422, `Explain in at least ${ABUSE.minimumDetailLength} characters.`, 'ABUSE_APPEAL_TOO_SHORT');
   }
   const repository = db.prepare(`
     SELECT r.id, r.abuse_disabled_at AS disabledAt FROM repositories r
@@ -281,16 +412,94 @@ export function reinstateRepository(db, { orgSlug, repoSlug, reason, userId }) {
   if (!repository) throw httpError(404, 'No such repository.', 'ABUSE_TARGET_NOT_FOUND');
   if (!repository.disabledAt) throw httpError(409, 'That repository is not disabled.', 'ABUSE_NOT_DISABLED');
 
-  db.prepare('UPDATE repositories SET abuse_disabled_at = NULL, abuse_disabled_reason = NULL WHERE id = ?')
-    .run(repository.id);
+  const existing = db.prepare(`
+    SELECT id FROM abuse_appeals WHERE organization_slug = ? AND repository_slug = ? AND status = 'open'
+  `).get(orgSlug, repoSlug);
+  // One open appeal at a time. Filing ten does not make anybody read it faster,
+  // and it turns the appeal route into the same flooding problem the report
+  // route already has.
+  if (existing) throw httpError(409, 'An appeal for this repository is already open.', 'ABUSE_APPEAL_OPEN');
+
+  const record = db.prepare(`
+    SELECT id FROM abuse_cases WHERE target_type = 'repository' AND target_id = ? AND action = 'disable'
+    ORDER BY resolved_at DESC LIMIT 1
+  `).get(repository.id);
+
+  const id = uid('aba');
+  db.prepare(`
+    INSERT INTO abuse_appeals (id, case_id, organization_slug, repository_slug, body, submitted_by)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, record?.id ?? null, orgSlug, repoSlug, written.slice(0, ABUSE.maximumDetailLength), userId);
   audit(db, {
     userId,
-    action: 'abuse.reinstated',
+    action: 'abuse.appealed',
     targetType: 'repository',
     targetId: repository.id,
-    metadata: { reason: written, disabledSince: repository.disabledAt },
+    metadata: { appealId: id, caseId: record?.id ?? null },
   });
-  return { repository: `${orgSlug}/${repoSlug}`, reinstated: true };
+  return { id, status: 'open', repository: `${orgSlug}/${repoSlug}` };
+}
+
+/**
+ * Answers an appeal without reinstating.
+ *
+ * The other outcome, and the one that needs saying out loud: the decision
+ * stands, and here is why. An appeal that is only ever answered by a
+ * reinstatement is an appeal process that has no way to say no, so it says
+ * nothing at all and the person waits forever.
+ */
+export function answerAppeal(db, config, { appealId, answer, userId }) {
+  const written = String(answer ?? '').trim();
+  if (written.length < ABUSE.minimumResolutionLength) {
+    throw httpError(422, `A written answer of at least ${ABUSE.minimumResolutionLength} characters is required.`, 'ABUSE_RESOLUTION_REQUIRED');
+  }
+  const appeal = db.prepare('SELECT * FROM abuse_appeals WHERE id = ?').get(appealId);
+  if (!appeal) throw httpError(404, 'No such appeal.', 'ABUSE_APPEAL_NOT_FOUND');
+  if (appeal.status !== 'open') throw httpError(409, 'That appeal is already answered.', 'ABUSE_APPEAL_ANSWERED');
+
+  db.prepare(`
+    UPDATE abuse_appeals SET status = 'answered', answer = ?, answered_by = ?, answered_at = datetime('now')
+    WHERE id = ?
+  `).run(written, userId, appealId);
+
+  const repository = db.prepare(`
+    SELECT r.id, r.organization_id AS organizationId FROM repositories r
+    JOIN organizations o ON o.id = r.organization_id
+    WHERE o.slug = ? AND r.slug = ?
+  `).get(appeal.organization_slug, appeal.repository_slug);
+  if (repository) {
+    notifyRepositoryOwners(db, config, {
+      organizationId: repository.organizationId,
+      title: `Your appeal about ${appeal.organization_slug}/${appeal.repository_slug} has been answered`,
+      body: written,
+      link: `#/repos/${appeal.organization_slug}/${appeal.repository_slug}`,
+      dedupeKey: `abuse:appeal-answer:${appealId}`,
+    });
+  }
+  audit(db, {
+    userId,
+    action: 'abuse.appeal_answered',
+    targetType: 'repository',
+    targetId: repository?.id ?? null,
+    metadata: { appealId },
+  });
+  return { id: appealId, status: 'answered' };
+}
+
+export function listAbuseAppeals(db, { status = 'open', limit = 50 } = {}) {
+  const rows = status === 'all'
+    ? db.prepare('SELECT * FROM abuse_appeals ORDER BY created_at DESC LIMIT ?').all(limit)
+    : db.prepare('SELECT * FROM abuse_appeals WHERE status = ? ORDER BY created_at DESC LIMIT ?').all(status, limit);
+  return rows.map((row) => ({
+    id: row.id,
+    caseId: row.case_id,
+    repository: `${row.organization_slug}/${row.repository_slug}`,
+    body: row.body,
+    status: row.status,
+    createdAt: row.created_at,
+    answer: row.answer,
+    answeredAt: row.answered_at,
+  }));
 }
 
 export function disabledRepositories(db) {
@@ -333,9 +542,13 @@ export function createAbuseReportsApiHandler({ config, db, isInstanceAdmin }) {
     const reportRoute = url.pathname === '/api/abuse/reports';
     const caseList = url.pathname === '/api/instance-admin/abuse/cases';
     const caseAction = /^\/api\/instance-admin\/abuse\/cases\/([^/]+)\/resolve$/.exec(url.pathname);
+    const appealRoute = url.pathname === '/api/abuse/appeals';
+    const appealList = url.pathname === '/api/instance-admin/abuse/appeals';
+    const appealAnswer = /^\/api\/instance-admin\/abuse\/appeals\/([^/]+)\/answer$/.exec(url.pathname);
     const disabledList = url.pathname === '/api/instance-admin/abuse/disabled';
     const reinstate = /^\/api\/instance-admin\/abuse\/disabled\/([^/]+)\/([^/]+)\/reinstate$/.exec(url.pathname);
-    if (!reportRoute && !caseList && !caseAction && !disabledList && !reinstate) return false;
+    if (!reportRoute && !caseList && !caseAction && !disabledList && !reinstate
+      && !appealRoute && !appealList && !appealAnswer) return false;
 
     const requestId = uid('req');
     res.setHeader('X-Request-Id', requestId);
@@ -357,6 +570,19 @@ export function createAbuseReportsApiHandler({ config, db, isInstanceAdmin }) {
       }
 
       const user = requireUser(db, req);
+
+      // An appeal is filed by the customer, not by an operator, so it is
+      // authorized before the instance-admin gate below.
+      if (appealRoute) {
+        if (method !== 'POST') throw httpError(405, 'Method not allowed.', 'METHOD_NOT_ALLOWED');
+        if (!originAllowed(req, config.baseUrl)) throw httpError(403, 'Request origin is not allowed.', 'CSRF_BLOCKED');
+        const body = await readJson(req);
+        const appeal = appealDisable(db, {
+          orgSlug: String(body.org ?? ''), repoSlug: String(body.repo ?? ''), body: body.body, userId: user.id,
+        });
+        return sendJson(res, 201, { appeal, requestId });
+      }
+
       if (!isInstanceAdmin(config, user)) throw httpError(403, 'KukGit instance administrator access is required.', 'INSTANCE_ADMIN_REQUIRED');
 
       if (caseList && method === 'GET') {
@@ -365,12 +591,15 @@ export function createAbuseReportsApiHandler({ config, db, isInstanceAdmin }) {
       if (disabledList && method === 'GET') {
         return sendJson(res, 200, { repositories: disabledRepositories(db) });
       }
+      if (appealList && method === 'GET') {
+        return sendJson(res, 200, { appeals: listAbuseAppeals(db, { status: url.searchParams.get('status') ?? 'open' }) });
+      }
       if (method !== 'POST') throw httpError(405, 'Method not allowed.', 'METHOD_NOT_ALLOWED');
       if (!originAllowed(req, config.baseUrl)) throw httpError(403, 'Request origin is not allowed.', 'CSRF_BLOCKED');
 
       if (caseAction) {
         const body = await readJson(req);
-        const record = resolveAbuseCase(db, {
+        const record = resolveAbuseCase(db, config, {
           caseId: decodeURIComponent(caseAction[1]),
           action: String(body.action ?? ''),
           resolution: body.resolution,
@@ -380,13 +609,20 @@ export function createAbuseReportsApiHandler({ config, db, isInstanceAdmin }) {
       }
       if (reinstate) {
         const body = await readJson(req);
-        const result = reinstateRepository(db, {
+        const result = reinstateRepository(db, config, {
           orgSlug: decodeURIComponent(reinstate[1]),
           repoSlug: decodeURIComponent(reinstate[2]),
           reason: body.reason,
           userId: user.id,
         });
         return sendJson(res, 200, { ...result, requestId });
+      }
+      if (appealAnswer) {
+        const body = await readJson(req);
+        const answered = answerAppeal(db, config, {
+          appealId: decodeURIComponent(appealAnswer[1]), answer: body.answer, userId: user.id,
+        });
+        return sendJson(res, 200, { appeal: answered, requestId });
       }
       throw httpError(404, 'Unknown abuse route.', 'ABUSE_ROUTE_NOT_FOUND');
     } catch (error) {

@@ -8,9 +8,13 @@ import { openDatabase, seedCore, uid } from '../src/db.mjs';
 import { getEffectiveRepositoryAccess, migrateRepositoryAccess, requireRepositoryAccess } from '../src/repository-access.mjs';
 import { surfaceForRequest } from '../src/rate-limit.mjs';
 import { handleGitHttp, repositoryDisabled } from '../src/git-http.mjs';
+import { listNotifications } from '../src/notifications.mjs';
 import {
+  answerAppeal,
+  appealDisable,
   disabledRepositories,
   fileAbuseReport,
+  listAbuseAppeals,
   listAbuseCases,
   migrateAbuseReports,
   reinstateRepository,
@@ -126,7 +130,7 @@ test('disabling makes a repository unreachable for everybody, owners included', 
   report(context);
   const [record] = listAbuseCases(context.db);
 
-  resolveAbuseCase(context.db, {
+  resolveAbuseCase(context.db, context.config, {
     caseId: record.id, action: 'disable', resolution: 'Confirmed phishing page served from the default branch.', userId: context.ownerId,
   });
 
@@ -134,14 +138,115 @@ test('disabling makes a repository unreachable for everybody, owners included', 
   assert.equal(access.permission, 'none');
   assert.deepEqual(access.sources, []);
   assert.match(access.disabled.reason, /Confirmed phishing/);
-  assert.throws(() => requireRepositoryAccess(context.db, context.ownerId, { orgSlug: 'acme', repoSlug: 'app' }), /permission is required/);
+  // A member is told what happened and why. A repository that stops working with
+  // no message is indistinguishable from an outage, and its owner is the only
+  // person who can fix what caused it.
+  assert.throws(
+    () => requireRepositoryAccess(context.db, context.ownerId, { orgSlug: 'acme', repoSlug: 'app' }),
+    /disabled pending an abuse review\. Confirmed phishing/,
+  );
+  // A stranger gets the same 404 they would get for a private repository.
+  // "Disabled for abuse" is not a fact to hand to somebody passing by.
+  const stranger = uid('usr');
+  context.db.prepare('INSERT INTO users (id, email, password_hash, display_name) VALUES (?, ?, ?, ?)')
+    .run(stranger, 'stranger@example.com', 'x', 'Stranger');
+  assert.throws(
+    () => requireRepositoryAccess(context.db, stranger, { orgSlug: 'acme', repoSlug: 'app' }),
+    /Repository not found/,
+  );
   assert.equal(disabledRepositories(context.db)[0].repoSlug, 'app');
+});
+
+test('the owners are told, with the operator\'s reason in full', async (t) => {
+  const context = await setup(t);
+  report(context);
+  resolveAbuseCase(context.db, context.config, {
+    caseId: listAbuseCases(context.db)[0].id,
+    action: 'disable',
+    resolution: 'Confirmed phishing page served from the default branch.',
+    userId: context.ownerId,
+  });
+
+  const [notice] = listNotifications(context.db, context.ownerId).notifications;
+  assert.match(notice.title, /acme\/app has been disabled/);
+  // Verbatim, because "policy violation" leaves somebody unable to fix
+  // anything — and they are the only person who can.
+  assert.match(notice.body, /Confirmed phishing page served from the default branch\./);
+  assert.match(notice.body, /Nothing has been deleted/);
+  assert.match(notice.body, /appeal/);
+
+  reinstateRepository(context.db, context.config, {
+    orgSlug: 'acme', repoSlug: 'app', reason: 'The owner removed the page within the hour.', userId: context.ownerId,
+  });
+  assert.match(listNotifications(context.db, context.ownerId).notifications[0].title, /is available again/);
+});
+
+test('an appeal reaches an operator even though the repository is disabled', async (t) => {
+  const context = await setup(t);
+  report(context);
+  resolveAbuseCase(context.db, context.config, {
+    caseId: listAbuseCases(context.db)[0].id, action: 'disable', resolution: 'Confirmed phishing page served from the default branch.', userId: context.ownerId,
+  });
+
+  // Authorized on the organization, not the repository. A route that resolved
+  // repository access would be refused by the very disable it exists to answer.
+  const appeal = appealDisable(context.db, {
+    orgSlug: 'acme', repoSlug: 'app', body: 'That page is a security training exercise, documented in the README since March.', userId: context.ownerId,
+  });
+  assert.equal(appeal.status, 'open');
+  assert.equal(listAbuseAppeals(context.db)[0].repository, 'acme/app');
+
+  // Filing ten does not make anybody read it faster.
+  assert.throws(() => appealDisable(context.db, {
+    orgSlug: 'acme', repoSlug: 'app', body: 'Asking again in case somebody missed the first one entirely.', userId: context.ownerId,
+  }), /already open/);
+
+  answerAppeal(context.db, context.config, {
+    appealId: appeal.id, answer: 'The README does document it, but the page still collects live credentials.', userId: context.ownerId,
+  });
+  assert.equal(listAbuseAppeals(context.db, { status: 'open' }).length, 0);
+  assert.match(listNotifications(context.db, context.ownerId).notifications[0].title, /appeal about .* has been answered/);
+});
+
+test('reinstating answers the open appeal rather than leaving somebody waiting', async (t) => {
+  const context = await setup(t);
+  report(context);
+  resolveAbuseCase(context.db, context.config, {
+    caseId: listAbuseCases(context.db)[0].id, action: 'disable', resolution: 'Confirmed phishing page served from the default branch.', userId: context.ownerId,
+  });
+  appealDisable(context.db, {
+    orgSlug: 'acme', repoSlug: 'app', body: 'That page is a security training exercise, documented in the README since March.', userId: context.ownerId,
+  });
+
+  reinstateRepository(context.db, context.config, {
+    orgSlug: 'acme', repoSlug: 'app', reason: 'The appeal is right; the page is a documented exercise.', userId: context.ownerId,
+  });
+  const [answered] = listAbuseAppeals(context.db, { status: 'all' });
+  // Waiting for a reply to a question already decided in your favour is the
+  // worst outcome available here.
+  assert.equal(answered.status, 'answered');
+  assert.match(answered.answer, /documented exercise/);
+});
+
+test('only an organization admin may appeal', async (t) => {
+  const context = await setup(t);
+  report(context);
+  resolveAbuseCase(context.db, context.config, {
+    caseId: listAbuseCases(context.db)[0].id, action: 'disable', resolution: 'Confirmed phishing page served from the default branch.', userId: context.ownerId,
+  });
+  const stranger = uid('usr');
+  context.db.prepare('INSERT INTO users (id, email, password_hash, display_name) VALUES (?, ?, ?, ?)')
+    .run(stranger, 'stranger@example.com', 'x', 'Stranger');
+
+  assert.throws(() => appealDisable(context.db, {
+    orgSlug: 'acme', repoSlug: 'app', body: 'I would like this repository back even though it is not mine.', userId: stranger,
+  }), /admin access is required/);
 });
 
 test('a disabled repository comes back, and the bytes were never touched', async (t) => {
   const context = await setup(t);
   report(context);
-  resolveAbuseCase(context.db, {
+  resolveAbuseCase(context.db, context.config, {
     caseId: listAbuseCases(context.db)[0].id, action: 'disable', resolution: 'Confirmed phishing page served from the default branch.', userId: context.ownerId,
   });
   // The row is still there with everything on it. The alternative to a
@@ -149,7 +254,7 @@ test('a disabled repository comes back, and the bytes were never touched', async
   // strength of a report form.
   assert.equal(context.db.prepare('SELECT name FROM repositories WHERE id = ?').get(context.repositoryId).name, 'App');
 
-  reinstateRepository(context.db, {
+  reinstateRepository(context.db, context.config, {
     orgSlug: 'acme', repoSlug: 'app', reason: 'The owner removed the page and the report was about a fork.', userId: context.ownerId,
   });
   assert.equal(getEffectiveRepositoryAccess(context.db, { userId: context.ownerId, orgSlug: 'acme', repoSlug: 'app' }).permission, 'admin');
@@ -163,14 +268,14 @@ test('every outcome needs writing down, including a dismissal', async (t) => {
 
   // "We looked and it was fine" is the sentence somebody needs when the same
   // repository is reported again next month.
-  assert.throws(() => resolveAbuseCase(context.db, { caseId: record.id, action: 'dismiss', resolution: 'no', userId: context.ownerId }), /at least 20 characters/);
-  assert.throws(() => resolveAbuseCase(context.db, { caseId: record.id, action: 'delete', resolution: 'A perfectly adequate written outcome.', userId: context.ownerId }), /Action must be one of/);
+  assert.throws(() => resolveAbuseCase(context.db, context.config, { caseId: record.id, action: 'dismiss', resolution: 'no', userId: context.ownerId }), /at least 20 characters/);
+  assert.throws(() => resolveAbuseCase(context.db, context.config, { caseId: record.id, action: 'delete', resolution: 'A perfectly adequate written outcome.', userId: context.ownerId }), /Action must be one of/);
 
-  const dismissed = resolveAbuseCase(context.db, {
+  const dismissed = resolveAbuseCase(context.db, context.config, {
     caseId: record.id, action: 'dismiss', resolution: 'The page is a security training exercise documented in the README.', userId: context.ownerId,
   });
   assert.equal(dismissed.status, 'dismissed');
-  assert.throws(() => resolveAbuseCase(context.db, { caseId: record.id, action: 'disable', resolution: 'Changing my mind after the fact.', userId: context.ownerId }), /already resolved/);
+  assert.throws(() => resolveAbuseCase(context.db, context.config, { caseId: record.id, action: 'disable', resolution: 'Changing my mind after the fact.', userId: context.ownerId }), /already resolved/);
   assert.equal(listAbuseCases(context.db, { status: 'open' }).length, 0);
   assert.equal(listAbuseCases(context.db, { status: 'all' }).length, 1);
 });
@@ -203,7 +308,7 @@ test('a disabled public repository is refused by Git itself, with no credential 
   const context = await setup(t);
   context.db.prepare("UPDATE repositories SET visibility = 'public' WHERE id = ?").run(context.repositoryId);
   report(context);
-  resolveAbuseCase(context.db, {
+  resolveAbuseCase(context.db, context.config, {
     caseId: listAbuseCases(context.db)[0].id, action: 'disable', resolution: 'Confirmed phishing page served from the default branch.', userId: context.ownerId,
   });
 
