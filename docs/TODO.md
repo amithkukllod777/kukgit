@@ -161,7 +161,8 @@ not the boundary being trusted. Those items stay in scope here.
 - [ ] broader capacity and queue diagnostics in Instance Admin
 - [ ] maintenance scheduling and operator approval records
 - [ ] status page and incident timeline
-- [ ] tenant export and verified deletion procedures
+- [x] verified tenant deletion — [TENANT_DELETION.md](TENANT_DELETION.md)
+- [ ] tenant export, so a deletion is preceded by data the customer keeps
 - [ ] support escalation without impersonation
 
 ### Security and abuse readiness

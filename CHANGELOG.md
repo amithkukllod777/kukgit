@@ -34,6 +34,40 @@
 
 ### Added
 
+- Verified tenant deletion (`src/tenant-lifecycle.mjs`): an organization can be
+  removed, and the removal can be **proved**.
+  - the table list is **derived from the schema**, not written down. A
+    hand-maintained list is correct the day it is written and wrong by the next
+    migration, and the failure is silent — the tenant is deleted, the report says
+    complete, and rows nobody enumerated are still there.
+  - an **unclassified table fails the deletion**. A table nobody classified is
+    not evidence of a clean deletion; it is evidence that nobody looked.
+  - **the derivation found two real gaps on its first run.** `secrets` is scoped
+    by `(scope, scope_id)` with no foreign key, so no graph can see it — left
+    alone, deleting an organization would have left its encrypted credentials in
+    the database forever. And `repositories` linked through the nullable
+    `deleted_from_org_id` rather than `organization_id NOT NULL`, because the
+    walk took the first matching foreign key; every table reachable through
+    repositories was then scoped by a column that is null for every live
+    repository, and a deletion would have reported success having removed one
+    row. Nullable links are now never preferred over `NOT NULL` ones.
+  - a **seven-day wait** before execution, cancellable throughout. Deletion is
+    the one operation with no undo, and the most common reason to want one
+    reversed is that it was a mistake noticed within the hour.
+  - a census before and after, and `complete` is true only when every count is
+    zero and nothing went unclassified. Otherwise the request is marked `failed`
+    and the evidence is kept.
+  - the deletion record outlives the tenant and deliberately has no foreign key
+    to it — destroying the record along with the tenant would leave nothing to
+    show for it
+  - instance administrator only. An organization owner may ask; only the operator
+    running the instance carries it out.
+  - repository bytes, LFS objects and user accounts are explicitly **not**
+    removed here, each with a written reason — content-addressed objects are
+    shared between tenants, and deleting one by tenant destroys somebody else's
+    data along with your own
+
+
 - `npm run scan` — finds credentials committed **before** scanning existed. Push
   scanning only sees what a push introduced, so a repository migrated in from
   elsewhere would show an empty findings list and look clean.

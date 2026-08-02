@@ -559,6 +559,22 @@ all `self` — the token identifies exactly one job and there is no job id in th
 path to point elsewhere. Reader routes need repository read; cancelling needs
 write. Read [Build Logs](BUILD_LOGS.md).
 
+## Tenant deletion
+
+`src/tenant-lifecycle.mjs`
+
+```text
+GET  /api/instance-admin/tenants/:slug/census          What a deletion would destroy
+POST /api/instance-admin/tenants/deletions             Schedule one (7-day wait)
+POST /api/instance-admin/tenants/deletions/:id/cancel  Cancel while it waits
+GET  /api/instance-admin/tenants/deletions             History and verification reports
+```
+
+Instance administrator only. The table list is **derived from the schema** rather
+than written down, so a table added later is included automatically or reported
+as unclassified — and an unclassified table fails the deletion. Read
+[Tenant Deletion](TENANT_DELETION.md).
+
 ## Push protection
 
 `src/push-protection.mjs`
