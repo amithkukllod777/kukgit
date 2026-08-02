@@ -575,6 +575,22 @@ than written down, so a table added later is included automatically or reported
 as unclassified — and an unclassified table fails the deletion. Read
 [Tenant Deletion](TENANT_DELETION.md).
 
+## Tenant export
+
+`src/tenant-export.mjs`
+
+```text
+GET  /api/instance-admin/tenants/exports               What has been exported and whether it verified
+POST /api/instance-admin/tenants/exports/:id/verify    Open the archive and read it back
+```
+
+Instance administrator only. Exports are **created from the command line**
+(`npm run export -- --org acme`), not over HTTP: copying every repository and
+every large file a tenant owns takes minutes to hours, and a request that runs
+that long times out leaving a half-written archive. A deletion refuses to
+execute until a verified export has been taken since it was requested. Read
+[Tenant Export](TENANT_EXPORT.md).
+
 ## Push protection
 
 `src/push-protection.mjs`

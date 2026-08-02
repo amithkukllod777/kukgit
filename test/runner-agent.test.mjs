@@ -121,7 +121,11 @@ test('an aborted step is stopped and reported as cancelled, not failed', async (
     script: 'sleep 30',
     cwd, env: { PATH: process.env.PATH }, timeoutMs: 30_000, signal: controller.signal, onOutput: () => {},
   });
-  assert.equal(result.cancelled, true);
+  // The reason is in the assertion message because this test has failed once
+  // under heavy parallel load with `cancelled` undefined, and every path that
+  // produces that carries a different reason — a spawn that never started, a
+  // timeout, a plain exit. Without it the next occurrence is a mystery again.
+  assert.equal(result.cancelled, true, `reason: ${result.reason}`);
   assert.equal(result.reason, 'cancelled');
 });
 

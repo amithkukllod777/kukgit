@@ -162,7 +162,9 @@ not the boundary being trusted. Those items stay in scope here.
 - [ ] maintenance scheduling and operator approval records
 - [ ] status page and incident timeline
 - [x] verified tenant deletion — [TENANT_DELETION.md](TENANT_DELETION.md)
-- [ ] tenant export, so a deletion is preceded by data the customer keeps
+- [x] tenant export, so a deletion is preceded by data the customer keeps —
+      `npm run export` and a gate on deletion, [TENANT_EXPORT.md](TENANT_EXPORT.md)
+- [ ] tenant import, so an export can be loaded back into an instance
 - [ ] support escalation without impersonation
 
 ### Security and abuse readiness

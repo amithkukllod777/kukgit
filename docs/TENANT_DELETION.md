@@ -114,11 +114,29 @@ organization.
 Each of these is in the `unreachable` list with its reason, which is how they are
 distinguished from something nobody thought about.
 
+## The export it will not run without
+
+```text
+No verified export of 'acme' has been taken since this deletion was requested.
+Run: npm run export -- --org acme
+```
+
+Deletion is preceded by a verified export the customer keeps — see
+[Tenant Export](TENANT_EXPORT.md). Without one, "we deleted it" and "you lost it"
+are the same event.
+
+Required **since the request**, not merely existing: an export from six months
+ago describes a tenant that has changed since. And required to be *verified* —
+an archive nobody has opened is a belief, not a copy.
+
+An operator can execute without one. That override is a separate flag from the
+one that skips the seven-day wait, because skipping the wait is somebody in a
+hurry and skipping the export is the customer losing their data. It is recorded
+in `verification.exportWaived` beside the proof of deletion, along with the
+archive and its checksum when there was one.
+
 ## Not done yet
 
-- **Tenant export.** Deletion should be preceded by a verified export the
-  customer keeps. Until that exists, "we deleted it" and "you lost it" are the
-  same event, and this should not be run against a tenant who wants their data.
 - **Repository byte removal in the same operation.** Today the metadata goes and
   the bare repositories are removed separately through the lifecycle.
 - **Scheduled execution.** Nothing runs a due deletion automatically yet; an
@@ -129,4 +147,5 @@ distinguished from something nobody thought about.
 
 - [Repository Lifecycle](REPOSITORY_LIFECYCLE.md) — how repository bytes are removed
 - [Operations Boundary](OPERATIONS_BOUNDARY.md) — where the operator surface sits
-- [Backups and Restore](BACKUPS_AND_RESTORE.md) — the export that should precede this
+- [Tenant Export](TENANT_EXPORT.md) — the export this will not run without
+- [Backups and Restore](BACKUPS_AND_RESTORE.md) — the instance-wide equivalent

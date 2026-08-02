@@ -55,6 +55,7 @@ const NEVER_TENANT_SCOPED = new Map([
   // found is the evidence the deletion happened — destroying it along with the
   // tenant would leave nothing to show for it.
   ['tenant_deletion_requests', 'the record of the deletion itself, kept as evidence'],
+  ['tenant_exports', 'the record of what the customer was handed, kept as evidence'],
 ]);
 
 function tableNames(db) {
@@ -141,7 +142,7 @@ export function tenantTableGraph(db) {
   };
 }
 
-function selectorFor(entry) {
+function selectorFor(entry, graph) {
   if (entry.polymorphic) {
     const sql = POLYMORPHIC_TENANT_TABLES.get(entry.table);
     return { sql, params: (sql.match(/\?/g) ?? []).length };
@@ -151,19 +152,33 @@ function selectorFor(entry) {
   // the ones around it and can be read on its own.
   if (!entry.via) return { sql: `${entry.column} = ?`, params: 1 };
   return {
-    sql: `${entry.column} IN (SELECT ${entry.via.column} FROM ${entry.via.table} WHERE ${subSelector(entry.via.table)})`,
+    sql: `${entry.column} IN (SELECT ${entry.via.column} FROM ${entry.via.table} WHERE ${subSelector(entry.via.table, graph)})`,
     params: 1,
   };
 }
 
-let graphCache = null;
-
-function subSelector(table) {
+function subSelector(table, graph) {
   if (table === 'organizations') return 'id = ?';
-  const entry = graphCache?.deleteOrder.find((candidate) => candidate.table === table);
+  const entry = graph?.deleteOrder.find((candidate) => candidate.table === table);
   if (!entry) return '1 = 0';
   if (!entry.via) return `${entry.column} = ?`;
-  return `${entry.column} IN (SELECT ${entry.via.column} FROM ${entry.via.table} WHERE ${subSelector(entry.via.table)})`;
+  return `${entry.column} IN (SELECT ${entry.via.column} FROM ${entry.via.table} WHERE ${subSelector(entry.via.table, graph)})`;
+}
+
+/**
+ * The one place a "rows this tenant owns" clause is built.
+ *
+ * The census, the deletion and the export all read it. That is what makes an
+ * export and a deletion cover the same rows by construction rather than by two
+ * lists agreeing today: if a table is exported it is deleted, and if it is
+ * deleted it was exported.
+ */
+export function tenantSelectors(db) {
+  const graph = tenantTableGraph(db);
+  return {
+    graph,
+    selectors: graph.deleteOrder.map((entry) => ({ ...entry, ...selectorFor(entry, graph) })),
+  };
 }
 
 /**
@@ -174,22 +189,21 @@ function subSelector(table) {
  * report saying so rather than the deletion claiming success.
  */
 export function tenantRowCensus(db, organizationId) {
-  graphCache = tenantTableGraph(db);
+  const { graph, selectors } = tenantSelectors(db);
   const counts = {};
   let total = 0;
-  for (const entry of graphCache.deleteOrder) {
-    const selector = selectorFor(entry);
+  for (const selector of selectors) {
     try {
-      const count = Number(db.prepare(`SELECT COUNT(*) AS count FROM ${entry.table} WHERE ${selector.sql}`)
+      const count = Number(db.prepare(`SELECT COUNT(*) AS count FROM ${selector.table} WHERE ${selector.sql}`)
         .get(...Array(selector.params).fill(organizationId)).count);
-      if (count) { counts[entry.table] = count; total += count; }
+      if (count) { counts[selector.table] = count; total += count; }
     } catch (error) {
       // A table whose linkage cannot be queried is reported, never skipped.
-      counts[entry.table] = { error: error.message };
+      counts[selector.table] = { error: error.message };
     }
   }
   const organization = db.prepare('SELECT COUNT(*) AS count FROM organizations WHERE id = ?').get(organizationId).count;
-  return { organizationId, total, organizationRows: Number(organization), counts, unclassified: graphCache.unclassified };
+  return { organizationId, total, organizationRows: Number(organization), counts, unclassified: graph.unclassified };
 }
 
 export function migrateTenantLifecycle(db) {
@@ -291,24 +305,51 @@ export function listTenantDeletions(db, { status = null } = {}) {
  * content-addressed objects that another tenant shares is a way to destroy
  * somebody else's data while destroying your own.
  */
-export function executeTenantDeletion(db, { requestId, now = new Date(), force = false }) {
+/**
+ * Finds the export that makes this deletion survivable.
+ *
+ * Required to be taken **after the request was made**, not merely to exist. An
+ * export from six months ago is a copy of a tenant that no longer exists, and
+ * handing it over would be a worse outcome than admitting there is none.
+ *
+ * A database that predates the export feature has no table at all, which is
+ * treated as "no export" rather than as permission to skip the check.
+ */
+function verifiedExportSince(db, organizationId, since) {
+  const table = db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'tenant_exports'").get();
+  if (!table) return null;
+  return db.prepare(`
+    SELECT id, archive_path AS archivePath, archive_sha256 AS archiveSha256, archive_bytes AS archiveBytes, created_at AS createdAt
+    FROM tenant_exports
+    WHERE organization_id = ? AND complete = 1 AND verified_at IS NOT NULL AND created_at >= ?
+    ORDER BY created_at DESC, rowid DESC LIMIT 1
+  `).get(organizationId, since) ?? null;
+}
+
+export function executeTenantDeletion(db, { requestId, now = new Date(), force = false, withoutExport = false }) {
   const request = db.prepare("SELECT * FROM tenant_deletion_requests WHERE id = ? AND status = 'scheduled'").get(requestId);
   if (!request) throw httpError(404, 'No scheduled deletion with that id.', 'DELETION_NOT_SCHEDULED');
   if (!force && request.execute_after > now.toISOString()) {
     throw httpError(409, `This deletion is not due until ${request.execute_after}.`, 'DELETION_NOT_DUE');
   }
 
+  // Two overrides, deliberately separate. Skipping the wait is an operator in a
+  // hurry; skipping the export is the customer losing their data. One flag for
+  // both would let the second happen while somebody meant the first.
+  const exported = verifiedExportSince(db, request.organization_id, request.requested_at);
+  if (!exported && !withoutExport) {
+    throw httpError(409, `No verified export of '${request.organization_slug}' has been taken since this deletion was requested. Run: npm run export -- --org ${request.organization_slug}`, 'TENANT_EXPORT_REQUIRED');
+  }
+
   const organizationId = request.organization_id;
-  const graph = tenantTableGraph(db);
-  graphCache = graph;
+  const { graph, selectors } = tenantSelectors(db);
   const deleted = {};
 
   const run = db.transaction(() => {
-    for (const entry of graph.deleteOrder) {
-      const selector = selectorFor(entry);
-      const changes = db.prepare(`DELETE FROM ${entry.table} WHERE ${selector.sql}`)
+    for (const selector of selectors) {
+      const changes = db.prepare(`DELETE FROM ${selector.table} WHERE ${selector.sql}`)
         .run(...Array(selector.params).fill(organizationId)).changes;
-      if (changes) deleted[entry.table] = changes;
+      if (changes) deleted[selector.table] = changes;
     }
     // The tenant row last, so every child is gone before the thing they point at.
     const organization = db.prepare('DELETE FROM organizations WHERE id = ?').run(organizationId).changes;
@@ -325,6 +366,12 @@ export function executeTenantDeletion(db, { requestId, now = new Date(), force =
     // evidence that nobody looked.
     unclassifiedTables: graph.unclassified,
     complete: after.total === 0 && after.organizationRows === 0 && graph.unclassified.length === 0,
+    // What the customer keeps, or a record that they were given nothing. A
+    // waived export is the single most consequential decision anybody makes
+    // here, so it is written down beside the proof of deletion rather than
+    // living only in whoever typed the flag.
+    export: exported,
+    exportWaived: !exported,
   };
 
   db.prepare(`
