@@ -90,13 +90,12 @@ whole point of scheduling.
   eventually do it during an incident.
 - **No notification.** The window is visible on request; it should arrive by
   email to organization owners when scheduled and when it changes.
-- **No public status page**, so a customer who cannot sign in cannot see the
-  window. That is the next item, and it is the one that matters during a real
-  outage.
 - **No per-tenant windows.** Every window here is instance-wide.
 
 ## Related
 
+- [Status Page](STATUS_PAGE.md) — where a window is announced to anybody who
+  cannot sign in
 - [Operations Boundary](OPERATIONS_BOUNDARY.md) — severity levels and who is
   told what
 - [Backups and Restore](BACKUPS_AND_RESTORE.md) — where the maintenance switch

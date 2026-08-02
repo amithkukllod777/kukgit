@@ -47,6 +47,8 @@ const NEVER_TENANT_SCOPED = new Map([
   ['email_suppressions', 'belongs to an email address'],
   ['job_leases', 'instance coordination state with a lifetime in seconds'],
   ['maintenance_windows', 'instance-wide downtime, not owned by any one tenant'],
+  ['status_incidents', 'published to the public status page about the instance, not a tenant'],
+  ['status_incident_updates', 'belongs to a status incident'],
   ['kukgit_schema_migrations', 'schema history for the instance'],
   ['organizations', 'the tenant row itself, removed last'],
   ['lfs_objects', 'content-addressed and shared; removed by reference count'],

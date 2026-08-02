@@ -162,7 +162,8 @@ not the boundary being trusted. Those items stay in scope here.
 - [x] maintenance scheduling and operator approval records — two-operator
       approval, announced windows, planned against actual,
       [MAINTENANCE_WINDOWS.md](MAINTENANCE_WINDOWS.md)
-- [ ] status page and incident timeline
+- [x] status page and incident timeline — unauthenticated `/status`, derived
+      banner, append-only timeline, [STATUS_PAGE.md](STATUS_PAGE.md)
 - [x] verified tenant deletion — [TENANT_DELETION.md](TENANT_DELETION.md)
 - [x] tenant export, so a deletion is preceded by data the customer keeps —
       `npm run export` and a gate on deletion, [TENANT_EXPORT.md](TENANT_EXPORT.md)

@@ -89,6 +89,7 @@ import { createTenantExportApiHandler, migrateTenantExport } from './src/tenant-
 import { migrateTenantImport } from './src/tenant-import.mjs';
 import { createSupportAccessApiHandler, migrateSupportAccess, registerSupportOperators } from './src/support-access.mjs';
 import { createMaintenanceWindowsApiHandler, migrateMaintenanceWindows } from './src/maintenance-windows.mjs';
+import { createStatusPageApiHandler, migrateStatusPage } from './src/status-page.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
@@ -163,6 +164,7 @@ withSchemaLock(db, () => {
   migrateRepositoryAccess(db);
   migrateSupportAccess(db);
   migrateMaintenanceWindows(db);
+  migrateStatusPage(db);
   migrateRepositoryInvitations(db);
   migrateExternalAccessReviews(db);
   migrateExternalAccessExpiryGuard(db);
@@ -276,6 +278,9 @@ const supportAccessApi = createSupportAccessApiHandler({ config, db, isInstanceA
 // had. The guard lets the window routes through, or turning maintenance off
 // would be refused by maintenance mode.
 const maintenanceWindowsApi = createMaintenanceWindowsApiHandler({ config, db, isInstanceAdmin });
+// `/status` and `/api/status` answer without a session. A status page that
+// needs a login is useless in the one case it exists for.
+const statusPageApi = createStatusPageApiHandler({ config, db, isInstanceAdmin });
 // Registered so a support grant can be honoured at all. Without this the
 // resolver has no way to tell an operator from anybody else, and it fails
 // closed — which is the right default for every other embedding of this code.
@@ -319,6 +324,7 @@ async function dispatch(req, res) {
   if (await externalLifecycleGuard(req, res)) return;
   if (await supportAccessApi(req, res)) return;
   if (await maintenanceWindowsApi(req, res)) return;
+  if (await statusPageApi(req, res)) return;
   if (await repositoryLifecycleApi(req, res)) return;
   if (await sshKeysApi(req, res)) return;
   if (await externalAccessPrivacyApi(req, res)) return;
