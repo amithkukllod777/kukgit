@@ -84,6 +84,7 @@ import {
   scanPushedContent,
 } from './src/secret-scanning.mjs';
 import { createPushProtectionApiHandler, markBypassesUsed, migratePushProtection } from './src/push-protection.mjs';
+import { createTenantLifecycleApiHandler, migrateTenantLifecycle } from './src/tenant-lifecycle.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
@@ -181,6 +182,7 @@ withSchemaLock(db, () => {
   migrateNotificationFanout(db);
   migrateSecretScanning(db);
   migratePushProtection(db);
+  migrateTenantLifecycle(db);
   migrateEmailProviderEvents(db);
 });
 
@@ -234,6 +236,12 @@ const workflowStorageApi = createWorkflowStorageApiHandler({ config, db });
 const workflowTriggersApi = createWorkflowTriggersApiHandler({ config, db });
 const secretScanningApi = createSecretScanningApiHandler({ config, db });
 const pushProtectionApi = createPushProtectionApiHandler({ config, db });
+// Deleting a tenant destroys other people's work. An organization owner may ask;
+// only the operator running the instance carries it out, and the record of who
+// did which is the reason that distinction is worth keeping.
+const tenantLifecycleApi = createTenantLifecycleApiHandler({
+  config, db, isInstanceAdmin: (settings, user) => instanceAdminEmails(settings).includes(String(user.email || '').toLowerCase()),
+});
 const workflowLogsApi = createWorkflowLogsApiHandler({ config, db });
 const runnersApi = createRunnersApiHandler({ config, db });
 const tokenApi = createTokenApiHandler({ config, db });
@@ -270,6 +278,7 @@ async function dispatch(req, res) {
   if (await workflowTriggersApi(req, res)) return;
   if (await secretScanningApi(req, res)) return;
   if (await pushProtectionApi(req, res)) return;
+  if (await tenantLifecycleApi(req, res)) return;
   if (await workflowLogsApi(req, res)) return;
   if (await runnersApi(req, res)) return;
   if (await instanceAdminApi(req, res)) return;
