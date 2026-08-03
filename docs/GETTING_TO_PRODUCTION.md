@@ -30,7 +30,9 @@ done
 ```
 
 **Generate each one separately.** Reusing a key means one compromise opens more
-than one kind of stored material.
+than one kind of stored material — and `npm run deploy:check` fails if two of
+them are the same value, because pasting one result five times is exactly how
+this goes wrong and it looks correct in an environment file.
 
 `KUKGIT_SECRETS_ENCRYPTION_KEY` deserves separate handling: backups contain the
 ciphertext, not the key. A restored instance needs the same key, so store it

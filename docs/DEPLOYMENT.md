@@ -112,6 +112,15 @@ retention and email worker tuning.
 ## Verify configuration before starting
 
 ```bash
+npm run deploy:check
+```
+
+One command, run on the server with the environment KukGit will start with. It
+exits non-zero if anything failed, so it can gate a deploy, and every failure
+carries the line that fixes it. See [DEPLOY_CHECK.md](DEPLOY_CHECK.md).
+
+
+```bash
 npm run doctor
 ```
 
