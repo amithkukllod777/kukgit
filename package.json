@@ -22,6 +22,7 @@
     "export": "node scripts/tenant-export.mjs",
     "import": "node scripts/tenant-import.mjs",
     "status": "node scripts/status.mjs",
+    "deploy:check": "node scripts/deploy-check.mjs",
     "database": "node scripts/database.mjs",
     "database:runtime-write-surface": "node scripts/database.mjs runtime-write-surface",
     "database:postgresql-import": "node scripts/postgresql-import.mjs",
