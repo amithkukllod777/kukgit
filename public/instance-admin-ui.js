@@ -1,4 +1,17 @@
 const KG_ADMIN_API = '/api/instance-admin';
+
+/**
+ * Panel sections rendered by other modules. This one still owns the navigation
+ * and the shell; it just must not paint the overview over somebody else's page.
+ */
+export const KG_ADMIN_DELEGATED = new Set([
+  'email-health',
+  'abuse',
+  'maintenance',
+  'status',
+  'support-access',
+  'blocked-content',
+]);
 let kgAdminStatus = null;
 let kgAdminStatusRequest = null;
 let kgAdminRenderKey = '';
@@ -372,6 +385,10 @@ async function renderKgAdminRoute() {
   const content = document.querySelector('.content');
   if (!content) return;
   const route = kgAdminRoute();
+  // Sections another module owns. Without this the overview renders into
+  // `.content` first and the section paints over it, so which one a visitor
+  // ends up looking at is a race between two observers.
+  if (KG_ADMIN_DELEGATED.has(route.segments[1])) return;
   const key = location.hash;
   if (kgAdminRenderKey === key && content.querySelector('.kg-admin-shell')) return;
   kgAdminRendering = true;

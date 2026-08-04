@@ -576,6 +576,25 @@ async function renderRepo() {
   return renderRepoCode(context);
 }
 
+/**
+ * Routes another module renders into `.content`.
+ *
+ * Without this they fall through to the reset below, which sends any route this
+ * file does not recognise back to the dashboard. That made the whole instance
+ * administration panel unreachable: the sidebar link set the hash, this
+ * function did not know the route, and the hash was put back before anything
+ * could paint. Typing the address or reloading the page did the same.
+ *
+ * The shell has to be rendered here regardless, because `.content` is what the
+ * owning module renders into and it does not exist until this runs.
+ */
+const EXTENSION_ROUTES = new Set(['instance-admin']);
+
+function renderExtensionRoute() {
+  app.innerHTML = shell('<div class="empty-state"><div class="empty-icon">⌘</div><h3>Loading…</h3></div>');
+  bindShell();
+}
+
 async function renderCurrentRoute() {
   state.route = parseRoute();
   try {
@@ -589,6 +608,7 @@ async function renderCurrentRoute() {
     if (first === 'organizations') return renderOrganizations();
     if (first === 'audit') return renderAudit();
     if (first === 'settings') return renderSettings();
+    if (EXTENSION_ROUTES.has(first)) return renderExtensionRoute();
     navigate('#/');
   } catch (error) {
     if (error.status === 401) { state.user = null; return renderLogin(); }
