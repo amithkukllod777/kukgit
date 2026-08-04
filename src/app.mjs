@@ -19,6 +19,7 @@ import {
 } from './git.mjs';
 import { handleGitHttp, isGitHttpPath } from './git-http.mjs';
 import { assertBranch, assertSlug, httpError, originAllowed, validateRemoteUrl } from './security.mjs';
+import { PUBLISHED_DEV_CREDENTIALS } from './config.mjs';
 import { KUKGIT_VERSION } from './version.mjs';
 
 const MIME = {
@@ -36,6 +37,27 @@ function sendJson(res, status, payload, headers = {}) {
 function sendNoContent(res, headers = {}) {
   res.writeHead(204, headers);
   res.end();
+}
+
+/**
+ * What the sign-in page is allowed to fill in for the caller.
+ *
+ * The starter founder account is published — README, `.env.example`, this
+ * repository. Printing it on the sign-in page is a convenience on a laptop and
+ * an advertisement on anything with a public address, so the page is told the
+ * credentials only when the instance is demonstrably still using them.
+ *
+ * Every condition has to hold, and each one alone is enough to withhold them:
+ * local auth mode, not production, and both values still the published ones. A
+ * deployment that changed either value gets nothing — the page then shows an
+ * empty form, which is the correct thing to show a stranger.
+ */
+export function signInHints(config) {
+  if (config.isProduction) return { demoAccount: null };
+  if (config.authMode !== 'local') return { demoAccount: null };
+  if (config.adminEmail !== PUBLISHED_DEV_CREDENTIALS.email) return { demoAccount: null };
+  if (config.adminPassword !== PUBLISHED_DEV_CREDENTIALS.password) return { demoAccount: null };
+  return { demoAccount: { ...PUBLISHED_DEV_CREDENTIALS } };
 }
 
 async function readJson(req, maxBytes = 1024 * 1024) {
@@ -148,6 +170,10 @@ export function createApp({ config, db }) {
 
       if (req.method === 'GET' && pathname === '/api/health') {
         return sendJson(res, 200, { status: 'ok', service: 'kukgit', version: KUKGIT_VERSION, uptimeSeconds: Math.floor(process.uptime()), requestId });
+      }
+
+      if (req.method === 'GET' && pathname === '/api/auth/sign-in-hints') {
+        return sendJson(res, 200, signInHints(config));
       }
 
       if (req.method === 'POST' && pathname === '/api/auth/login') {
