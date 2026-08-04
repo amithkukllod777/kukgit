@@ -19,6 +19,7 @@ export const KG_OPS_SECTIONS = [
   { id: 'status', label: 'Status', title: 'Status incidents', subtitle: 'What the public status page is saying right now.' },
   { id: 'support-access', label: 'Support access', title: 'Support access', subtitle: 'Time-bound grants into customer repositories.' },
   { id: 'blocked-content', label: 'Blocked content', title: 'Blocked content', subtitle: 'Content refused by hash, everywhere it appears.' },
+  { id: 'billing', label: 'Billing', title: 'Billing', subtitle: 'Subscriptions, provider events, and deliveries that were refused.' },
   { id: 'integrations', label: 'Integrations', title: 'Integrations', subtitle: 'Keys for email, payments and sign-in. Stored encrypted; never shown again.' },
 ];
 
@@ -396,6 +397,88 @@ async function renderBlockedContent(content, section) {
   });
 }
 
+// -------------------------------------------------------------- billing
+
+async function renderBilling(content, section) {
+  const [{ events, rejected, providers }, { organizations }] = await Promise.all([
+    request(`${KG_OPS_API}/billing/events`),
+    request(`${KG_OPS_API}/usage`),
+  ]);
+
+  const plans = organizations.map((entry) => `
+    <div class="kg-admin-row">
+      <div><b>${esc(entry.organization.slug)}</b><small>${esc(entry.organization.name)}</small></div>
+      <div>${badge(entry.plan.id)}</div>
+      <div class="kg-admin-meta">${entry.exceeded.length ? `over: ${esc(entry.exceeded.join(', '))}` : 'within limits'}</div>
+    </div>`).join('');
+
+  const eventRows = events.map((item) => `
+    <div class="kg-admin-event">
+      <b>${esc(item.provider)}</b> · ${esc(item.type)} · ${badge(item.outcome === 'applied' ? 'active' : item.outcome === 'ignored' ? 'private' : 'critical')}
+      <code>${esc(item.providerEventId)}
+${esc(when(item.receivedAt))}${item.outcome && item.outcome !== 'applied' ? `
+${esc(item.outcome)}` : ''}</code>
+    </div>`).join('');
+
+  // The whole point of this section. A provider being wired up for the first
+  // time fails in a handful of specific ways, and without this an operator sees
+  // a 400 at the provider's end and nothing at all at ours.
+  const rejectedRows = rejected.map((item) => `
+    <div class="kg-admin-event">
+      <b>${esc(item.provider)}</b> · ${esc(when(item.receivedAt))}
+      <code>${esc(item.reason)}
+body ${esc(item.bytes)} bytes${item.fingerprint ? `, fingerprint ${esc(item.fingerprint)}` : ''}</code>
+    </div>`).join('');
+
+  content.innerHTML = `<div class="kg-admin-shell">
+    ${hero(section)}
+    <section class="card">
+      <h2>Webhook endpoints</h2>
+      <p class="kg-admin-eyebrow">Registered providers: ${esc(providers.join(', ') || 'none')}. Secrets are set under Integrations.</p>
+      ${providers.map((name) => `<div class="kg-admin-event"><code>POST ${esc(location.origin)}/api/billing/webhooks/${esc(name)}</code></div>`).join('')}
+    </section>
+    <section class="card kg-admin-danger">
+      <h2>Refused deliveries</h2>
+      <p class="kg-admin-eyebrow">Recorded so a first wiring-up is something to look at rather than guess about. The body is never stored.</p>
+      ${rejected.length ? rejectedRows : empty('Nothing has been refused.')}
+    </section>
+    <section class="card">
+      <h2>Provider events</h2>
+      ${events.length ? eventRows : empty('No billing event has arrived.')}
+    </section>
+    <section class="card">
+      <h2>Record a subscription</h2>
+      <p class="kg-admin-eyebrow">For anything taken outside a provider — a bank transfer, a purchase order, a negotiated agreement. It is recorded as an event like any other and you are named in the audit row.</p>
+      <form class="kg-admin-note-form" data-ops-form="subscription">
+        <div class="kg-admin-toolbar">
+          <input class="input" name="orgSlug" placeholder="organization slug" required />
+          ${select('plan', ['free', 'team', 'business'], 'team')}
+          ${select('status', ['active', 'trialing', 'past_due', 'canceled'], 'active')}
+        </div>
+        <input class="input" name="reference" placeholder="Reference — the transfer or agreement this stands for" />
+        <button class="btn btn-primary" type="submit">Record subscription</button>
+      </form>
+    </section>
+    <section class="card">
+      <h2>Plans in force</h2>
+      ${organizations.length ? plans : empty('No organizations.')}
+    </section>
+  </div>`;
+
+  bind(content, async (key, form) => {
+    await request(`${KG_OPS_API}/billing/subscriptions`, {
+      method: 'POST',
+      body: {
+        orgSlug: form.orgSlug.value,
+        plan: form.plan.value,
+        status: form.status.value,
+        reference: form.reference.value || null,
+      },
+    });
+    return 'Subscription recorded';
+  });
+}
+
 // --------------------------------------------------------- integrations
 
 async function renderIntegrations(content, section) {
@@ -536,6 +619,7 @@ const RENDERERS = {
   status: renderStatus,
   'support-access': renderSupportAccess,
   'blocked-content': renderBlockedContent,
+  billing: renderBilling,
   integrations: renderIntegrations,
 };
 

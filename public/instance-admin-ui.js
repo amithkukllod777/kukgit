@@ -12,6 +12,7 @@ export const KG_ADMIN_DELEGATED = new Set([
   'support-access',
   'blocked-content',
   'integrations',
+  'billing',
 ]);
 let kgAdminStatus = null;
 let kgAdminStatusRequest = null;

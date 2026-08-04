@@ -105,6 +105,20 @@ function organizationFor(db, metadata) {
 }
 
 export const stripeAdapter = {
+  /** Why a delivery was refused. See the note on the Razorpay adapter. */
+  reject(raw, headers, { config, db }) {
+    if (!signingSecret(db, config)) return 'no webhook signing secret is configured for stripe';
+    const { timestamp, signatures } = parseHeader(headers?.[SIGNATURE_HEADER]);
+    if (!headers?.[SIGNATURE_HEADER]) return `no ${SIGNATURE_HEADER} header`;
+    if (!Number.isFinite(timestamp)) return `${SIGNATURE_HEADER} has no usable t= timestamp`;
+    if (!signatures.length) return `${SIGNATURE_HEADER} has no v1= signature`;
+    const drift = Math.floor(Date.now() / 1000) - timestamp;
+    if (Math.abs(drift) > TOLERANCE_SECONDS) {
+      return `timestamp is ${Math.abs(drift)}s ${drift > 0 ? 'old' : 'in the future'}, outside the ${TOLERANCE_SECONDS}s window`;
+    }
+    return 'signature does not match the configured signing secret';
+  },
+
   verify(raw, headers, { config, db }) {
     if (!verifyStripeSignature(raw, headers, signingSecret(db, config))) return null;
 
