@@ -487,6 +487,7 @@ const DELEGATED_PREFIXES = [
   '/api/instance-admin/blocked-content',
   '/api/instance-admin/usage',
   '/api/instance-admin/billing',
+  '/api/instance-admin/integrations',
 ];
 
 export function delegatedToAnotherHandler(pathname) {
