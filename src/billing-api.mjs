@@ -9,8 +9,10 @@ import {
   ingestBillingEvent,
   organizationInvoices,
   recordInvoice,
+  recordWebhookRejection,
   registeredProviders,
   subscriptionFor,
+  webhookRejections,
 } from './billing.mjs';
 
 const MAX_WEBHOOK_BYTES = 256 * 1024;
@@ -92,7 +94,15 @@ export function createBillingApiHandler({ config, db, isInstanceAdmin }) {
         // Verification first, and on the bytes. Anything that reads the payload
         // before this is trusting a stranger to tell it who they are.
         const verified = adapter.verify(raw, req.headers, { config, db });
-        if (!verified?.eventId) throw httpError(400, 'Webhook signature is not valid.', 'BILLING_SIGNATURE_INVALID');
+        if (!verified?.eventId) {
+          // Recorded before the refusal, so wiring a provider up for the first
+          // time is something an operator can look at rather than guess about.
+          const reason = typeof adapter.reject === 'function'
+            ? adapter.reject(raw, req.headers, { config, db })
+            : 'signature rejected';
+          recordWebhookRejection(db, { provider: name, reason, raw });
+          throw httpError(400, 'Webhook signature is not valid.', 'BILLING_SIGNATURE_INVALID');
+        }
 
         const change = adapter.normalize(verified, { db, config });
         const result = ingestBillingEvent(db, {
@@ -126,7 +136,11 @@ export function createBillingApiHandler({ config, db, isInstanceAdmin }) {
 
       if (operatorEvents) {
         if (method !== 'GET') throw httpError(405, 'Method not allowed.', 'METHOD_NOT_ALLOWED');
-        return sendJson(res, 200, { events: billingEvents(db, {}), providers: registeredProviders() });
+        return sendJson(res, 200, {
+          events: billingEvents(db, {}),
+          rejected: webhookRejections(db, {}),
+          providers: registeredProviders(),
+        });
       }
 
       if (method !== 'POST') throw httpError(405, 'Method not allowed.', 'METHOD_NOT_ALLOWED');

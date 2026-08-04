@@ -60,6 +60,10 @@ const NEVER_TENANT_SCOPED = new Map([
   // them would hand every customer the keys to the business.
   ['instance_settings', 'the instance\'s own integration credentials'],
   ['instance_integration_state', 'which of the instance\'s integrations are switched on'],
+  // Unverified deliveries to the instance's own webhook URL. They name no
+  // tenant — that is the point, since a refused delivery is one we could not
+  // attribute — and the body is never kept.
+  ['billing_webhook_rejections', 'refused webhook deliveries to the instance, attributed to no tenant'],
   ['status_incident_updates', 'belongs to a status incident'],
   ['kukgit_schema_migrations', 'schema history for the instance'],
   ['organizations', 'the tenant row itself, removed last'],

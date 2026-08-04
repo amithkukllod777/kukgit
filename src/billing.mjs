@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { audit, uid } from './db.mjs';
 import { httpError } from './security.mjs';
 import { PLANS, PURCHASABLE_PLANS, planFor } from './plans.mjs';
@@ -32,6 +33,9 @@ const INVOICE_STATUSES = ['draft', 'open', 'paid', 'void', 'uncollectible'];
  * reach a human and short enough that it is not a free plan.
  */
 export const GRACE_DAYS = 14;
+
+/** How many refused deliveries are kept. Enough to debug a wiring session. */
+const REJECTION_LIMIT = 200;
 
 const providers = new Map();
 
@@ -111,6 +115,17 @@ export function migrateBilling(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_billing_invoices_org
       ON billing_invoices(organization_id, period DESC);
+
+    CREATE TABLE IF NOT EXISTS billing_webhook_rejections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      body_fingerprint TEXT,
+      body_bytes INTEGER NOT NULL DEFAULT 0,
+      received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_billing_rejections_recent
+      ON billing_webhook_rejections(received_at DESC);
   `);
 }
 
@@ -274,6 +289,45 @@ export function ingestBillingEvent(db, { provider, providerEventId, type, change
       .run(`failed: ${error.code || error.message}`, id);
     throw error;
   }
+}
+
+/**
+ * A delivery that did not verify.
+ *
+ * Kept because otherwise there is nothing to look at. A webhook refused for a
+ * mistyped secret answers 400 and leaves no trace, and the operator wiring up a
+ * provider for the first time has no way to tell that from a URL the provider
+ * never reached.
+ *
+ * The body is never stored — it is unverified input from a stranger, and it is
+ * exactly where a real provider would have put customer data. What is kept is a
+ * fingerprint, so a retry of the same rejected delivery is recognisable, and its
+ * size.
+ */
+export function recordWebhookRejection(db, { provider, reason, raw, now = new Date() }) {
+  const fingerprint = raw?.length
+    ? crypto.createHash('sha256').update(raw).digest('hex').slice(0, 12)
+    : null;
+  db.prepare(`
+    INSERT INTO billing_webhook_rejections (provider, reason, body_fingerprint, body_bytes, received_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(String(provider), String(reason).slice(0, 200), fingerprint, raw?.length ?? 0, now.toISOString());
+
+  // Bounded, because this endpoint is reachable by anybody and a table that
+  // grows on request is a way to fill the disk.
+  db.prepare(`
+    DELETE FROM billing_webhook_rejections WHERE id NOT IN (
+      SELECT id FROM billing_webhook_rejections ORDER BY id DESC LIMIT ?
+    )
+  `).run(REJECTION_LIMIT);
+  return { reason };
+}
+
+export function webhookRejections(db, { limit = 50 } = {}) {
+  return db.prepare(`
+    SELECT provider, reason, body_fingerprint AS fingerprint, body_bytes AS bytes, received_at AS receivedAt
+    FROM billing_webhook_rejections ORDER BY id DESC LIMIT ?
+  `).all(limit);
 }
 
 export function recordInvoice(db, {

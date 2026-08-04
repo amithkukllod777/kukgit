@@ -77,6 +77,27 @@ function periodFromSeconds(seconds) {
 }
 
 export const razorpayAdapter = {
+  /**
+   * Why a delivery was refused, for the operator looking at it afterwards.
+   *
+   * Called only after `verify` has already said no, and it says nothing the
+   * caller did not send — a stranger learns whether their own signature was
+   * malformed, which they can see anyway.
+   */
+  reject(raw, headers, { config, db }) {
+    if (!webhookSecret(db, config)) return 'no webhook secret is configured for razorpay';
+    const signature = String(headers?.[SIGNATURE_HEADER] ?? '');
+    if (!signature) return `no ${SIGNATURE_HEADER} header`;
+    if (!/^[0-9a-f]{64}$/i.test(signature)) return `${SIGNATURE_HEADER} is not 64 hex characters`;
+    // The signature before the event id. When both are wrong the signature is
+    // the one worth saying, because a missing header is visible to whoever sent
+    // it and a wrong secret is not.
+    if (!verifyRazorpaySignature(raw, headers, webhookSecret(db, config))) {
+      return 'signature does not match the configured webhook secret';
+    }
+    return `no ${EVENT_HEADER} header`;
+  },
+
   verify(raw, headers, { config, db }) {
     if (!verifyRazorpaySignature(raw, headers, webhookSecret(db, config))) return null;
 

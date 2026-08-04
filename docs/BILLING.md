@@ -200,6 +200,33 @@ does that. `invoice.payment_failed` moves the subscription to `past_due`, which
 opens the grace period rather than taking the plan away. Amounts are Stripe's
 minor units already: cents in USD, paise in INR, converted nowhere.
 
+## When a delivery is refused
+
+A webhook that does not verify answers `400` — and is **recorded**, because
+otherwise there is nothing to look at. Wiring a provider up for the first time
+fails in a small number of specific ways, and an operator who can only see the
+provider's end of it has no way to tell a mistyped secret from a URL the
+provider never reached.
+
+Instance Admin → **Billing** shows them, newest first, with a reason that names
+the actual mistake:
+
+```
+no webhook secret is configured for razorpay
+no x-razorpay-signature header
+x-razorpay-signature is not 64 hex characters
+signature does not match the configured webhook secret
+timestamp is 4000s old, outside the 300s window
+```
+
+**The body is never stored.** It is unverified input from a stranger, and it is
+exactly where a real provider would have put customer data. What is kept is a
+12-character fingerprint — so a provider retrying the same refused delivery is
+recognisable as one problem rather than read as several — and its size.
+
+The table keeps the last 200. Anybody can reach that URL, and a table that grows
+on request is a way to fill the disk.
+
 ## What this does not do
 
 - **No checkout.** Nothing creates a Razorpay subscription or generates a
