@@ -127,10 +127,23 @@ function serveStatic(req, res, config, pathname) {
     return fs.createReadStream(fallback).pipe(res);
   }
   const stat = fs.statSync(target);
+  const etag = `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
+  // Images are addressed by a name that changes when the image does. The
+  // application code is not: `app.js` keeps its URL across every deploy, so a
+  // plain max-age meant a browser held the old file for an hour and never asked
+  // — including for a fix to what that file shows a signed-out visitor. These
+  // revalidate instead, which costs a 304 and lands a deploy immediately.
+  const longLived = requested.startsWith('assets/');
+  const cacheControl = longLived ? 'public, max-age=3600' : 'no-cache';
+  if (req.headers['if-none-match'] === etag) {
+    res.writeHead(304, { ETag: etag, 'Cache-Control': cacheControl });
+    return res.end();
+  }
   res.writeHead(200, {
     'Content-Type': MIME[path.extname(target).toLowerCase()] ?? 'application/octet-stream',
     'Content-Length': stat.size,
-    'Cache-Control': requested === 'index.html' ? 'no-cache' : 'public, max-age=3600',
+    'Cache-Control': cacheControl,
+    ETag: etag,
     'X-Content-Type-Options': 'nosniff',
   });
   fs.createReadStream(target).pipe(res);
