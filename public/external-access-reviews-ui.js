@@ -179,12 +179,24 @@ function lifecycleMarkup(route, data, history) {
   </section>`;
 }
 
+/**
+ * Keys we have a definitive answer for.
+ *
+ * 401, 403 and 404 are answers. Asking again will get the same one, and the
+ * success guards below cannot cover them because they test for an element that
+ * a failed load never renders. Cleared on navigation, where the answer can
+ * legitimately differ.
+ */
+const kgReviewAnswered = new Set();
+const kgLifecycleAnswered = new Set();
+
 async function loadRepositoryLifecycle(force = false) {
   const route = kgRepoSettingsRoute();
   if (!route || kgLifecycleBusy) return;
   installInvitationAccessDurationField();
   const key = `${route.org}/${route.repo}/${location.hash}`;
   if (!force && kgExternalLifecycleKey === key && document.querySelector('#kg-external-access-lifecycle')) return;
+  if (!force && kgLifecycleAnswered.has(key)) return;
   const content = document.querySelector('.content');
   if (!content) return;
   kgLifecycleBusy = true;
@@ -201,7 +213,10 @@ async function loadRepositoryLifecycle(force = false) {
     kgExternalLifecycleKey = key;
     bindRepositoryLifecycle(route);
   } catch (error) {
-    if (![401, 403, 404].includes(error.status)) console.error('[KukGit] external access lifecycle', error);
+    // Same rule as the campaign panel: an answer we are not going to get a
+    // different reply to must be remembered, or every DOM change asks again.
+    if ([401, 403, 404].includes(error.status)) kgLifecycleAnswered.add(key);
+    else console.error('[KukGit] external access lifecycle', error);
   } finally {
     kgLifecycleBusy = false;
   }
@@ -280,6 +295,11 @@ async function loadCampaignPanel(force = false) {
   const org = collaboration.dataset.org;
   const key = `${org}/${location.hash}`;
   if (!force && kgReviewCampaignKey === key && document.querySelector('#kg-external-access-reviews')) return;
+  // The guard above needs the rendered element, which only exists on success.
+  // A 404 renders nothing, so without this the answer is asked for again on
+  // every DOM change — observed as the same request forty-two times in two
+  // seconds, ending at the rate limiter.
+  if (!force && kgReviewAnswered.has(key)) return;
   kgCampaignBusy = true;
   try {
     const data = await kgRequest(`${KG_EXTERNAL_ACCESS_API}/${encodeURIComponent(org)}/reviews`);
@@ -289,7 +309,12 @@ async function loadCampaignPanel(force = false) {
     kgReviewCampaignKey = key;
     bindCampaignPanel(org);
   } catch (error) {
-    if (![401, 403, 404].includes(error.status)) console.error('[KukGit] external access campaigns', error);
+    // 401, 403 and 404 are answers, not failures to retry. Leaving the key
+    // unset meant asking again on every DOM change and never getting a
+    // different reply — the same mistake as caching a signed-out 401 as "no",
+    // in the opposite direction.
+    if ([401, 403, 404].includes(error.status)) kgReviewAnswered.add(key);
+    else console.error('[KukGit] external access campaigns', error);
   } finally {
     kgCampaignBusy = false;
   }
@@ -352,9 +377,22 @@ async function openCampaign(org, campaignId) {
   }
 }
 
+/**
+ * Coalesce mutations into one tick.
+ *
+ * Without the guard, every DOM change queued another pass — and each pass
+ * fetches, and each fetch changes the DOM. On a page where the fetch answers
+ * 404 the loop never settles: observed as the same request forty-two times in
+ * two seconds, followed by the rate limiter refusing the whole page.
+ */
+let kgReviewRenderQueued = false;
+
 function scheduleKgExternalReviewRender() {
   installInvitationAccessDurationField();
+  if (kgReviewRenderQueued) return;
+  kgReviewRenderQueued = true;
   queueMicrotask(() => {
+    kgReviewRenderQueued = false;
     loadRepositoryLifecycle();
     loadCampaignPanel();
   });
@@ -365,6 +403,8 @@ installInvitationDurationTransport();
 window.addEventListener('hashchange', () => {
   kgExternalLifecycleKey = '';
   kgReviewCampaignKey = '';
+  kgReviewAnswered.clear();
+  kgLifecycleAnswered.clear();
   scheduleKgExternalReviewRender();
 });
 new MutationObserver(scheduleKgExternalReviewRender).observe(document.documentElement, { childList: true, subtree: true });
