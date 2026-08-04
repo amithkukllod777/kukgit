@@ -104,6 +104,10 @@ export function migrateInstanceSettings(db) {
   `);
 }
 
+function settingsTableExists(db) {
+  return Boolean(db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'instance_settings'").get());
+}
+
 function definition(integration, field) {
   const entry = INTEGRATIONS[integration];
   if (!entry) throw httpError(404, 'Unknown integration.', 'INTEGRATION_UNKNOWN');
@@ -197,6 +201,10 @@ export function setIntegrationEnabled(db, { integration, enabled, actorId = null
 export function instanceSetting(db, config, integration, field) {
   const { field: known } = definition(integration, field);
   if (known.env && process.env[known.env]) return process.env[known.env];
+  // Asked from modules that do not own this table and may run before its
+  // migration — email delivery, billing. Not configured is a real answer and a
+  // better one than a crash inside somebody else's feature.
+  if (!settingsTableExists(db)) return null;
 
   const row = db.prepare('SELECT value_plain, value_ciphertext FROM instance_settings WHERE integration = ? AND field = ?')
     .get(integration, field);
@@ -215,6 +223,8 @@ export function integrationCredentials(db, config, integration) {
 }
 
 export function integrationEnabled(db, integration) {
+  const table = db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'instance_integration_state'").get();
+  if (!table) return false;
   const row = db.prepare('SELECT enabled FROM instance_integration_state WHERE integration = ?').get(integration);
   return Boolean(row?.enabled);
 }
