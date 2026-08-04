@@ -93,6 +93,26 @@ function navigate(route) {
   location.hash = route.startsWith('#') ? route : `#${route}`;
 }
 
+/**
+ * Fill in the starter credentials, but only if the server says this instance is
+ * still using them. The account is published, so a page that prints it on a
+ * public address is handing it out; anything other than a clear yes leaves the
+ * form empty, which is what a stranger should see.
+ */
+async function fillDemoAccount() {
+  let demoAccount = null;
+  try { ({ demoAccount } = await api('/api/auth/sign-in-hints')); }
+  catch { return; }
+  if (!demoAccount) return;
+  const form = document.querySelector('#login-form');
+  if (!form) return;
+  form.querySelector('input[name="email"]').value = demoAccount.email;
+  form.querySelector('input[name="password"]').value = demoAccount.password;
+  const box = form.querySelector('#login-demo');
+  box.innerHTML = `<b>Local development account</b><br />Email: ${escapeHtml(demoAccount.email)}<br />Password: ${escapeHtml(demoAccount.password)}<br /><span>Change these values before any public deployment.</span>`;
+  box.hidden = false;
+}
+
 function renderLogin() {
   app.innerHTML = `
     <main class="login-page">
@@ -113,13 +133,14 @@ function renderLogin() {
         <form class="login-card" id="login-form">
           <h2>Welcome to KukGit</h2>
           <p>Sign in with your KukGit development account. Kuklabs Account integration is planned in the next identity milestone.</p>
-          <div class="field"><label>Email address</label><input class="input" name="email" type="email" autocomplete="username" value="admin@kuklabs.local" required /></div>
-          <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="current-password" value="KukGit@2026" required /></div>
-          <div class="login-demo"><b>Local development account</b><br />Email: admin@kuklabs.local<br />Password: KukGit@2026<br /><span>Change these values before any public deployment.</span></div>
+          <div class="field"><label>Email address</label><input class="input" name="email" type="email" autocomplete="username" required /></div>
+          <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="current-password" required /></div>
+          <div class="login-demo" id="login-demo" hidden></div>
           <button class="btn btn-primary btn-block" type="submit">Sign in to KukGit <span>→</span></button>
         </form>
       </section>
     </main>`;
+  fillDemoAccount();
   document.querySelector('#login-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const button = event.currentTarget.querySelector('button');

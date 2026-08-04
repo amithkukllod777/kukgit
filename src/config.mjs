@@ -4,6 +4,17 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 
+/**
+ * The founder account a checkout starts with. Published in this repository, in
+ * `.env.example` and in the README — which is exactly why nothing may show it
+ * to a caller unless the instance is still using it. See
+ * `signInHints` in `src/app.mjs`.
+ */
+export const PUBLISHED_DEV_CREDENTIALS = Object.freeze({
+  email: 'admin@kuklabs.local',
+  password: 'KukGit@2026',
+});
+
 function booleanValue(value, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
   return String(value).toLowerCase() === 'true';
@@ -256,8 +267,8 @@ export function loadConfig(overrides = {}) {
     realtimeMaxConnectionsPerUser,
     realtimeMaxConnections,
     realtimeMaxMessageBytes,
-    adminEmail: overrides.adminEmail ?? process.env.KUKGIT_ADMIN_EMAIL ?? 'admin@kuklabs.local',
-    adminPassword: overrides.adminPassword ?? process.env.KUKGIT_ADMIN_PASSWORD ?? 'KukGit@2026',
+    adminEmail: overrides.adminEmail ?? process.env.KUKGIT_ADMIN_EMAIL ?? PUBLISHED_DEV_CREDENTIALS.email,
+    adminPassword: overrides.adminPassword ?? process.env.KUKGIT_ADMIN_PASSWORD ?? PUBLISHED_DEV_CREDENTIALS.password,
     adminName: overrides.adminName ?? process.env.KUKGIT_ADMIN_NAME ?? 'Amit Kumar Kuklod',
     gitToken: overrides.gitToken ?? process.env.KUKGIT_DEV_GIT_TOKEN ?? 'kukgit-dev-token-change-me',
     webhookEncryptionKey: overrides.webhookEncryptionKey ?? process.env.KUKGIT_WEBHOOK_ENCRYPTION_KEY ?? (isProduction ? '' : 'kukgit-development-webhook-key-change-me'),
