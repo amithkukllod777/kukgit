@@ -14,6 +14,8 @@ import { createStatusPageApiHandler, migrateStatusPage } from '../src/status-pag
 import { createSupportAccessApiHandler, migrateSupportAccess } from '../src/support-access.mjs';
 import { createDangerousFilesApiHandler, migrateDangerousFiles } from '../src/dangerous-files.mjs';
 import { migrateUsageHistory } from '../src/usage-history.mjs';
+import { migrateBilling } from '../src/billing.mjs';
+import { createBillingApiHandler } from '../src/billing-api.mjs';
 import { createUsageApiHandler } from '../src/usage-api.mjs';
 
 /**
@@ -40,7 +42,7 @@ async function instance(t) {
   const db = openDatabase(config);
   t.after(() => db.close());
   seedCore(db, config);
-  for (const migrate of [migrateAbuseReports, migrateMaintenanceWindows, migrateStatusPage, migrateSupportAccess, migrateDangerousFiles, migrateUsageHistory]) {
+  for (const migrate of [migrateAbuseReports, migrateMaintenanceWindows, migrateStatusPage, migrateSupportAccess, migrateDangerousFiles, migrateUsageHistory, migrateBilling]) {
     migrate(db);
   }
 
@@ -53,6 +55,7 @@ async function instance(t) {
     createAbuseReportsApiHandler({ config, db, isInstanceAdmin }),
     createDangerousFilesApiHandler({ config, db, isInstanceAdmin }),
     createUsageApiHandler({ config, db, isInstanceAdmin }),
+    createBillingApiHandler({ config, db, isInstanceAdmin }),
   ];
   const app = createApp({ config, db });
 
@@ -84,6 +87,7 @@ const OPERATOR_ROUTES = [
   '/api/instance-admin/blocked-content',
   '/api/instance-admin/usage',
   '/api/instance-admin/usage/history',
+  '/api/instance-admin/billing/events',
 ];
 
 test('every operator route reaches the handler that owns it', async (t) => {
