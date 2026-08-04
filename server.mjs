@@ -94,6 +94,8 @@ import { createAbuseReportsApiHandler, migrateAbuseReports } from './src/abuse-r
 import { createDangerousFilesApiHandler, migrateDangerousFiles } from './src/dangerous-files.mjs';
 import { createUsageApiHandler } from './src/usage-api.mjs';
 import { migrateUsageHistory, startUsagePeriodWorker, startUsageSampleWorker } from './src/usage-history.mjs';
+import { migrateBilling, startBillingGraceWorker } from './src/billing.mjs';
+import { createBillingApiHandler } from './src/billing-api.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
@@ -292,7 +294,9 @@ const statusPageApi = createStatusPageApiHandler({ config, db, isInstanceAdmin }
 const abuseReportsApi = createAbuseReportsApiHandler({ config, db, isInstanceAdmin });
 const dangerousFilesApi = createDangerousFilesApiHandler({ config, db, isInstanceAdmin });
 migrateUsageHistory(db);
+migrateBilling(db);
 const usageApi = createUsageApiHandler({ config, db, isInstanceAdmin });
+const billingApi = createBillingApiHandler({ config, db, isInstanceAdmin });
 // Registered so a support grant can be honoured at all. Without this the
 // resolver has no way to tell an operator from anybody else, and it fails
 // closed — which is the right default for every other embedding of this code.
@@ -340,6 +344,7 @@ async function dispatch(req, res) {
   if (await abuseReportsApi(req, res)) return;
   if (await dangerousFilesApi(req, res)) return;
   if (await usageApi(req, res)) return;
+  if (await billingApi(req, res)) return;
   if (await repositoryLifecycleApi(req, res)) return;
   if (await sshKeysApi(req, res)) return;
   if (await externalAccessPrivacyApi(req, res)) return;
@@ -382,6 +387,7 @@ const stopOperationalNotificationWorker = startOperationalNotificationWorker(db,
 const stopExternalAccessReviewWorker = startExternalAccessReviewWorker(db, config);
 const stopUsageSampleWorker = startUsageSampleWorker(db, config);
 const stopUsagePeriodWorker = startUsagePeriodWorker(db, config);
+const stopBillingGraceWorker = startBillingGraceWorker(db);
 // Counts in-flight requests so a shutdown can wait for them. Outermost, so it
 // sees every request including the ones a guard rejects.
 const trackedDispatch = createRequestTracker({ next: identityDispatch });
@@ -452,6 +458,7 @@ async function shutdown(signal) {
   stopStorageRetentionWorker();
   stopUsageSampleWorker();
   stopUsagePeriodWorker();
+  stopBillingGraceWorker();
   stopScheduleWorker();
   stopOperationalNotificationWorker();
   stopExternalAccessReviewWorker();
