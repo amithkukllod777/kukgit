@@ -13,6 +13,7 @@ import { createMaintenanceWindowsApiHandler, migrateMaintenanceWindows } from '.
 import { createStatusPageApiHandler, migrateStatusPage } from '../src/status-page.mjs';
 import { createSupportAccessApiHandler, migrateSupportAccess } from '../src/support-access.mjs';
 import { createDangerousFilesApiHandler, migrateDangerousFiles } from '../src/dangerous-files.mjs';
+import { createUsageApiHandler } from '../src/usage-api.mjs';
 
 /**
  * The handler chain in the order `server.mjs` runs it.
@@ -50,6 +51,7 @@ async function instance(t) {
     createStatusPageApiHandler({ config, db, isInstanceAdmin }),
     createAbuseReportsApiHandler({ config, db, isInstanceAdmin }),
     createDangerousFilesApiHandler({ config, db, isInstanceAdmin }),
+    createUsageApiHandler({ config, db, isInstanceAdmin }),
   ];
   const app = createApp({ config, db });
 
@@ -79,6 +81,7 @@ const OPERATOR_ROUTES = [
   '/api/instance-admin/status/incidents',
   '/api/instance-admin/support-access',
   '/api/instance-admin/blocked-content',
+  '/api/instance-admin/usage',
 ];
 
 test('every operator route reaches the handler that owns it', async (t) => {
