@@ -91,7 +91,7 @@ export function createBillingApiHandler({ config, db, isInstanceAdmin }) {
         const raw = await readRaw(req);
         // Verification first, and on the bytes. Anything that reads the payload
         // before this is trusting a stranger to tell it who they are.
-        const verified = adapter.verify(raw, req.headers, config);
+        const verified = adapter.verify(raw, req.headers, { config, db });
         if (!verified?.eventId) throw httpError(400, 'Webhook signature is not valid.', 'BILLING_SIGNATURE_INVALID');
 
         const change = adapter.normalize(verified, { db, config });

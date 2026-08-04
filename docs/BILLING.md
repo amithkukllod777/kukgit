@@ -37,7 +37,7 @@ decides what an organization is entitled to.
 An adapter implements two functions and touches no database:
 
 ```js
-verify(rawBody, headers, config)   // → { eventId, type, payload } or null
+verify(rawBody, headers, { config, db })  // → { eventId, type, payload } or null
 normalize(verified, { db, config })// → { organizationId, plan, status, … } or null
 ```
 
@@ -109,11 +109,61 @@ What is kept is the reference the provider issued, the event id, the type and
 the outcome. The audit row carries the plan change and nothing else — it is read
 by more people than a billing record is.
 
+## Razorpay
+
+```
+Webhook URL   https://git.kuklabs.com/api/billing/webhooks/razorpay
+Secret        Instance Admin → Integrations → Razorpay → Webhook secret
+```
+
+Razorpay signs the body with HMAC-SHA256 and the webhook secret, hex encoded, in
+`x-razorpay-signature`. It also sends **`x-razorpay-event-id`**, stable across
+its retries — that is what the core deduplicates on. Hashing the body instead
+would make a retry look new whenever Razorpay changed a byte of it, which is the
+opposite of what deduplication is for.
+
+**A missing secret verifies nothing rather than everything.** An instance that
+has not been configured refuses the webhook; it does not accept any body that
+arrives at the URL.
+
+Which organization and which plan come from the subscription's `notes`, which
+Razorpay carries unchanged from creation to every later event:
+
+```json
+"notes": { "kukgit_org": "kuklabs", "kukgit_plan": "team" }
+```
+
+A note naming an organization that does not exist resolves to nothing rather
+than to the first row — a webhook must not be able to pick a customer by being
+wrong. `founder` in a note is refused like any other route to the unlimited
+plan.
+
+| Razorpay event | Status |
+| --- | --- |
+| `subscription.activated`, `.charged`, `.resumed` | `active` |
+| `subscription.authenticated` | `trialing` |
+| `subscription.pending`, `.halted`, `.paused` | `past_due` |
+| `subscription.cancelled`, `.completed`, `.expired` | `canceled` |
+
+`pending` is a charge that failed and will be retried; `halted` is Razorpay
+giving up. Both are `past_due` here — the customer's payment has not gone
+through, and the grace period is what decides how long that is survivable, not
+the difference between those two names.
+
+`subscription.charged` also records an invoice. Razorpay reports **paise**,
+which is already the minor unit, so nothing is converted. If the invoice cannot
+be recorded the plan change still applies: the customer paid, and refusing to
+activate them over our own bookkeeping would be punishing them for it.
+
+The adapter is registered whether or not it is configured. A `404` would tell a
+stranger which providers an instance has set up.
+
 ## What this does not do
 
-- **No provider adapters yet.** The registry, the verification contract and the
-  webhook route exist; Razorpay and Stripe are the next change. Until then the
-  only working path is the operator one.
+- **No Stripe adapter yet.**
+- **No checkout.** Nothing creates a Razorpay subscription or generates a
+  payment link, so the `notes` above have to be set by whatever does — today,
+  the Razorpay dashboard.
 - **No prices.** Nothing here knows what a plan costs. With a provider, the
   provider holds the price; without one, the operator types the amount.
 - **No checkout.** Nothing generates a payment link or a hosted page.

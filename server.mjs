@@ -96,6 +96,8 @@ import { createUsageApiHandler } from './src/usage-api.mjs';
 import { migrateUsageHistory, startUsagePeriodWorker, startUsageSampleWorker } from './src/usage-history.mjs';
 import { migrateBilling, startBillingGraceWorker } from './src/billing.mjs';
 import { createBillingApiHandler } from './src/billing-api.mjs';
+import { registerBillingProvider } from './src/billing.mjs';
+import { razorpayAdapter } from './src/billing-razorpay.mjs';
 import { createInstanceSettingsApiHandler, migrateInstanceSettings } from './src/instance-settings.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
@@ -298,6 +300,10 @@ migrateUsageHistory(db);
 migrateBilling(db);
 const usageApi = createUsageApiHandler({ config, db, isInstanceAdmin });
 migrateInstanceSettings(db);
+// Registered whether or not it is configured: the adapter refuses a webhook
+// with no secret, and a 404 here would tell a stranger which providers an
+// instance has set up.
+registerBillingProvider('razorpay', razorpayAdapter);
 const billingApi = createBillingApiHandler({ config, db, isInstanceAdmin });
 const instanceSettingsApi = createInstanceSettingsApiHandler({ config, db, isInstanceAdmin });
 // Registered so a support grant can be honoured at all. Without this the
