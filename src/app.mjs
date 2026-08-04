@@ -20,6 +20,7 @@ import {
 import { handleGitHttp, isGitHttpPath } from './git-http.mjs';
 import { assertBranch, assertSlug, httpError, originAllowed, validateRemoteUrl } from './security.mjs';
 import { PUBLISHED_DEV_CREDENTIALS } from './config.mjs';
+import { assertWithinPlan } from './plan-limits.mjs';
 import { KUKGIT_VERSION } from './version.mjs';
 
 const MIME = {
@@ -256,6 +257,9 @@ export function createApp({ config, db }) {
         const slug = assertSlug(body.slug, 'repository slug');
         const org = requireOrg(db, user, orgSlug, 'maintainer');
         if (findRepo(db, orgSlug, slug)) throw httpError(409, 'A repository with this name already exists.');
+        // Before the bare repository exists on disk, so a refusal leaves
+        // nothing behind to clean up.
+        assertWithinPlan(db, config, { organizationId: org.id, resource: 'repositories' });
         const visibility = ['public', 'private', 'internal'].includes(body.visibility) ? body.visibility : 'private';
         const repoId = uid('repo');
         createBareRepository(config, orgSlug, slug);

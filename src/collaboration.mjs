@@ -8,6 +8,7 @@ import {
   originAllowed,
   randomToken,
 } from './security.mjs';
+import { assertWithinPlan } from './plan-limits.mjs';
 
 const INVITATION_PREFIX = 'kgi_';
 const INVITABLE_ROLES = new Set(['admin', 'maintainer', 'developer', 'viewer']);
@@ -260,6 +261,10 @@ function acceptInvitation(db, user, token) {
       db.prepare('UPDATE org_members SET role = ? WHERE organization_id = ? AND user_id = ?')
         .run(role, invitation.organization_id, user.id);
     } else {
+      // Only a new member takes a seat. Somebody already in the organization
+      // accepting a second invitation changes their role and must not be
+      // refused for it.
+      assertWithinPlan(db, null, { organizationId: invitation.organization_id, resource: 'seats' });
       db.prepare('INSERT INTO org_members (organization_id, user_id, role) VALUES (?, ?, ?)')
         .run(invitation.organization_id, user.id, role);
     }

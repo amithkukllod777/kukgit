@@ -8,7 +8,7 @@ GET /api/orgs/:slug/usage             # any member of that organization
 GET /api/instance-admin/usage         # every organization, for an operator
 ```
 
-This is the measurement layer. It bills nobody and blocks nobody — see
+Measurement and enforcement. It bills nobody — see
 [What this does not do](#what-this-does-not-do).
 
 ## Why this exists first
@@ -104,11 +104,45 @@ cannot otherwise see, and the person who fills the disk is rarely the person who
 bought the plan. An organization the caller is not in returns `404`, the same as
 one that does not exist — otherwise the endpoint enumerates customers.
 
+## Enforcement
+
+Two rules shape all of it.
+
+**Only growth is refused.** Clone, fetch, pull, read, browse and download all
+continue when an organization is over its limit. What stops is adding: a new
+repository, a new member, a new Git LFS object. A customer locked out of code
+they have already pushed has lost work over an invoice, and no limit is worth
+that. It is also what makes a downgrade survivable — what exists stays.
+
+**The check is cheap, or it is not on the hot path.** Seats, repositories and
+collaborators are one `COUNT(*)`. Storage needs the directory walk, so it is
+cached for sixty seconds and enforced where the size is known before the bytes
+arrive.
+
+A refusal is **`402 Payment Required`**, code `PLAN_LIMIT_EXCEEDED`. Not `403`:
+that would say the caller is not allowed to do this at all, and send somebody
+looking for a permissions problem that does not exist. The request is well
+formed and authorized; the plan does not cover it.
+
+| Enforced at | Limit |
+| --- | --- |
+| `POST /api/repos` | repositories — before the bare repository is created, so a refusal leaves nothing behind |
+| Invitation acceptance | seats — only for somebody who is not already a member; an existing member changing role takes no new seat |
+| Git LFS batch `upload` | storage — the size is declared before the bytes arrive, and an object already held is not charged again |
+
+The cached storage figure is dropped the moment an upload commits. Without that,
+an organization could push past its limit once every cache window.
+
+### Not enforced yet
+
+- **Git pack size on push.** The size is not known until the pack has arrived,
+  and measuring the repository on every push is the walk on the hot path. It
+  needs a cheaper measure, and until then a plain `git push` is not limited.
+- **CI minutes.** The limit is measured and reported; no job is refused for it.
+- **External collaborators.** Measured and reported, not enforced.
+
 ## What this does not do
 
-- **No enforcement.** Nothing is blocked for being over a limit. Being over is
-  reported and named, and that is all. Enforcement lands next, separately, so a
-  mistake in measurement cannot lock a customer out of their own repositories.
 - **No billing.** No prices, no invoices, no payment provider, no plan changes.
   `organizations.plan` is still set by hand. There is deliberately no endpoint
   that writes it: until money changes hands somewhere, an endpoint that could

@@ -5,6 +5,7 @@ import { currentUser, requireUser } from './auth.mjs';
 import { audit, uid } from './db.mjs';
 import { authorizeGitCredential, repositoryDisabled } from './git-http.mjs';
 import { assertContentAllowed } from './dangerous-files.mjs';
+import { assertWithinPlan, planUsageChanged } from './plan-limits.mjs';
 import { permissionAtLeast, requireRepositoryAccess } from './repository-access.mjs';
 import { httpError, originAllowed } from './security.mjs';
 import { createObjectStorage, digestObject } from './object-storage.mjs';
@@ -359,6 +360,13 @@ function processBatchObject(db, config, repository, operation, auth, object) {
   }
 
   checkQuota(db, config, repository, oid, size);
+  // The plan limit is a different question from the per-repository quota above:
+  // that one is the operator's ceiling for their instance, this one is what the
+  // organization bought. An object already held is not new storage, so it is
+  // not charged for again.
+  if (!existing) {
+    assertWithinPlan(db, config, { organizationId: repository.organizationId, resource: 'storageBytes', adding: size });
+  }
   if (existing) {
     attachObject(db, repository.id, oid, auth.userId);
     db.prepare('DELETE FROM lfs_pending_uploads WHERE repository_id = ? AND oid = ?').run(repository.id, oid);
@@ -468,6 +476,9 @@ async function handleUpload(req, res, { config, db, repository, oid }) {
     attachObject(db, repository.id, oid, auth.userId);
     db.prepare('DELETE FROM lfs_pending_uploads WHERE repository_id = ? AND oid = ?').run(repository.id, oid);
     db.exec('COMMIT');
+    // The cached storage figure is now wrong by exactly this object. Without
+    // this an organization could push past its limit once every cache window.
+    planUsageChanged(repository.organizationId);
   } catch (error) {
     try { db.exec('ROLLBACK'); } catch {}
     if (!objectRecord(db, oid)) await lfsStorage(config).remove(stored.key).catch(() => {});
