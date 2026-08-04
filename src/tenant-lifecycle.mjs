@@ -55,6 +55,11 @@ const NEVER_TENANT_SCOPED = new Map([
   ['abuse_reports', 'belongs to an abuse case'],
   ['abuse_appeals', 'the customer\'s reply to a moderation decision, kept with it'],
   ['blocked_content', 'a hash the instance refuses to serve, not owned by any tenant'],
+  // Credentials for the instance's own accounts with Resend, Razorpay, Stripe
+  // and the identity providers. Never a tenant's, and an export that carried
+  // them would hand every customer the keys to the business.
+  ['instance_settings', 'the instance\'s own integration credentials'],
+  ['instance_integration_state', 'which of the instance\'s integrations are switched on'],
   ['status_incident_updates', 'belongs to a status incident'],
   ['kukgit_schema_migrations', 'schema history for the instance'],
   ['organizations', 'the tenant row itself, removed last'],

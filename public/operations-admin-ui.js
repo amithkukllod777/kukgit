@@ -19,6 +19,7 @@ export const KG_OPS_SECTIONS = [
   { id: 'status', label: 'Status', title: 'Status incidents', subtitle: 'What the public status page is saying right now.' },
   { id: 'support-access', label: 'Support access', title: 'Support access', subtitle: 'Time-bound grants into customer repositories.' },
   { id: 'blocked-content', label: 'Blocked content', title: 'Blocked content', subtitle: 'Content refused by hash, everywhere it appears.' },
+  { id: 'integrations', label: 'Integrations', title: 'Integrations', subtitle: 'Keys for email, payments and sign-in. Stored encrypted; never shown again.' },
 ];
 
 const KG_OPS_IDS = new Set(KG_OPS_SECTIONS.map((section) => section.id));
@@ -395,6 +396,93 @@ async function renderBlockedContent(content, section) {
   });
 }
 
+// --------------------------------------------------------- integrations
+
+async function renderIntegrations(content, section) {
+  const { integrations } = await request(`${KG_OPS_API}/integrations`);
+
+  const field = (integration, item) => {
+    const state = item.set
+      ? `${badge(item.source === 'environment' ? 'environment' : 'set')}${item.fingerprint ? ` <code>${esc(item.fingerprint)}</code>` : ''}`
+      : badge('not set');
+    // A secret that is set shows a fingerprint and nothing else. There is no
+    // endpoint that returns the value, so there is nothing to reveal here.
+    const shown = item.secret ? '' : (item.value ? `<div class="kg-admin-event"><code>${esc(item.value)}</code></div>` : '');
+    const fromEnvironment = item.source === 'environment';
+    return `<article class="card kg-admin-card">
+      <header class="kg-admin-row">
+        <div><b>${esc(item.label)}</b><small>${item.secret ? 'secret' : 'not secret'} · ${state}</small></div>
+        <div class="kg-admin-toolbar">${item.set && !fromEnvironment ? `<button class="btn" data-ops-clear="${esc(integration)}:${esc(item.key)}">Clear</button>` : ''}</div>
+      </header>
+      ${shown}
+      ${fromEnvironment
+    ? `<div class="kg-admin-event"><code>Set by ${esc(item.environmentVariable)} in the environment. The console cannot change it while that is set.</code></div>`
+    : `<form class="kg-admin-note-form" data-ops-form="setting:${esc(integration)}:${esc(item.key)}">
+        <input class="input" name="value" type="${item.secret ? 'password' : 'text'}" autocomplete="off" placeholder="${item.set ? 'Replace this value' : 'Paste the value'}" required />
+        <button class="btn btn-primary" type="submit">${item.set ? 'Replace' : 'Save'}</button>
+      </form>`}
+    </article>`;
+  };
+
+  const cards = integrations.map((entry) => `
+    <section class="card">
+      <div class="kg-admin-row">
+        <div><h2>${esc(entry.label)}</h2><small>${esc(entry.summary)}</small></div>
+        <div class="kg-admin-toolbar">
+          ${badge(entry.complete ? 'complete' : 'incomplete')}
+          ${badge(entry.enabled ? 'enabled' : 'disabled')}
+          <button class="btn${entry.enabled ? '' : ' btn-primary'}" data-ops-toggle="${esc(entry.id)}:${entry.enabled ? 'off' : 'on'}">${entry.enabled ? 'Disable' : 'Enable'}</button>
+        </div>
+      </div>
+      ${entry.fields.map((item) => field(entry.id, item)).join('')}
+    </section>`).join('');
+
+  content.innerHTML = `<div class="kg-admin-shell">
+    ${hero(section)}
+    <section class="card">
+      <p class="kg-admin-eyebrow">A secret is stored encrypted and is never shown again — not here, not through any endpoint. What you get back is whether it is set, a fingerprint so two people can agree they mean the same key, and who set it. To change one, replace it.</p>
+      <p class="kg-admin-eyebrow">Where an environment variable is set, it wins and the console will not overwrite it. That is so an environment file cannot look authoritative while something else is quietly in charge.</p>
+    </section>
+    ${cards}
+  </div>`;
+
+  bind(content, async (key, form) => {
+    const [, integration, name] = key.split(':');
+    await request(`${KG_OPS_API}/integrations/${encodeURIComponent(integration)}/fields/${encodeURIComponent(name)}`, {
+      method: 'PUT', body: { value: form.value.value },
+    });
+    return 'Saved';
+  });
+
+  content.querySelectorAll('[data-ops-clear]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const [integration, name] = button.dataset.opsClear.split(':');
+      button.disabled = true;
+      try {
+        await request(`${KG_OPS_API}/integrations/${encodeURIComponent(integration)}/fields/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        toast('Done', 'Cleared');
+        kgOpsKey = '';
+        await renderKgOps();
+      } catch (error) { toast('Failed', error.message, 'error'); button.disabled = false; }
+    });
+  });
+
+  content.querySelectorAll('[data-ops-toggle]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const [integration, state] = button.dataset.opsToggle.split(':');
+      button.disabled = true;
+      try {
+        await request(`${KG_OPS_API}/integrations/${encodeURIComponent(integration)}/enabled`, {
+          method: 'PUT', body: { enabled: state === 'on' },
+        });
+        toast('Done', state === 'on' ? 'Enabled' : 'Disabled');
+        kgOpsKey = '';
+        await renderKgOps();
+      } catch (error) { toast('Failed', error.message, 'error'); button.disabled = false; }
+    });
+  });
+}
+
 // ------------------------------------------------------------ plumbing
 
 /**
@@ -448,6 +536,7 @@ const RENDERERS = {
   status: renderStatus,
   'support-access': renderSupportAccess,
   'blocked-content': renderBlockedContent,
+  integrations: renderIntegrations,
 };
 
 async function renderKgOps() {
