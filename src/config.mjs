@@ -251,7 +251,7 @@ export function loadConfig(overrides = {}) {
     },
     maintenancePath: path.resolve(overrides.maintenancePath ?? process.env.KUKGIT_MAINTENANCE_PATH ?? path.join(dataDir, 'maintenance.json')),
     backupLockPath: path.resolve(overrides.backupLockPath ?? process.env.KUKGIT_BACKUP_LOCK_PATH ?? path.join(dataDir, 'backup.lock')),
-    publicDir: path.join(root, 'public'),
+    publicDir: path.resolve(overrides.publicDir ?? process.env.KUKGIT_PUBLIC_DIR ?? path.join(root, 'public')),
     isProduction,
     cookieSecure,
     authMode,
