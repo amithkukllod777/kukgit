@@ -1,5 +1,6 @@
 const KG_ADMIN_API = '/api/instance-admin';
 let kgAdminStatus = null;
+let kgAdminStatusRequest = null;
 let kgAdminRenderKey = '';
 let kgAdminRendering = false;
 let kgAdminObserverQueued = false;
@@ -112,14 +113,33 @@ function installKgAdminStyles() {
   document.head.append(style);
 }
 
+/**
+ * Whether this session is an instance administrator.
+ *
+ * The first ask happens while the module loads, which is the sign-in page —
+ * signed out, so the server says 401. Recording that as "not an admin" is what
+ * kept the Instance Admin link hidden for the founder: signing in never asked
+ * again, because a cached `false` is still an answer. Only a full page reload
+ * cleared it, and signing in does not reload.
+ *
+ * So 401 means "not known yet" and is not remembered. 403 is a real answer from
+ * a real session and is. Concurrent callers share one request, because the
+ * observer below fires on every DOM change.
+ */
 async function loadKgAdminStatus() {
   if (kgAdminStatus !== null) return kgAdminStatus;
-  try {
-    kgAdminStatus = await kgAdminRequest(`${KG_ADMIN_API}/status`);
-  } catch (error) {
-    kgAdminStatus = false;
-  }
-  return kgAdminStatus;
+  if (kgAdminStatusRequest) return kgAdminStatusRequest;
+  kgAdminStatusRequest = (async () => {
+    try {
+      kgAdminStatus = await kgAdminRequest(`${KG_ADMIN_API}/status`);
+    } catch (error) {
+      kgAdminStatus = error.status === 401 ? null : false;
+    } finally {
+      kgAdminStatusRequest = null;
+    }
+    return kgAdminStatus ?? false;
+  })();
+  return kgAdminStatusRequest;
 }
 
 function installAdminNavigation() {
@@ -346,6 +366,7 @@ async function renderAudit(content, route) {
 
 async function renderKgAdminRoute() {
   if (!kgAdminRouteActive() || kgAdminRendering) return;
+  if (!kgAdminShellReady()) return;
   if (!(await loadKgAdminStatus())) return;
   installAdminNavigation();
   const content = document.querySelector('.content');
@@ -369,8 +390,18 @@ async function renderKgAdminRoute() {
   }
 }
 
+/**
+ * The signed-in shell, which is also the thing the navigation attaches to.
+ * Asking before it exists means asking on the sign-in page, and the observer
+ * below fires on every DOM change there too.
+ */
+function kgAdminShellReady() {
+  return [...document.querySelectorAll('.sidebar-section')].some((node) => node.textContent.trim() === 'Manage');
+}
+
 async function reconcileKgAdminUi() {
   kgAdminObserverQueued = false;
+  if (!kgAdminShellReady()) return;
   const status = await loadKgAdminStatus();
   if (!status) return;
   installAdminNavigation();
@@ -383,10 +414,18 @@ function scheduleKgAdminUi() {
   queueMicrotask(reconcileKgAdminUi);
 }
 
-installKgAdminStyles();
-window.addEventListener('hashchange', () => {
-  kgAdminRenderKey = '';
+// Guarded so the module can be imported without a browser. Everything above is
+// a declaration; this is the only part that touches the page, and a test that
+// cannot import the file is a test that never checks who gets to see the
+// administration panel.
+if (typeof document !== 'undefined' && typeof window !== 'undefined') {
+  installKgAdminStyles();
+  window.addEventListener('hashchange', () => {
+    kgAdminRenderKey = '';
+    scheduleKgAdminUi();
+  });
+  new MutationObserver(scheduleKgAdminUi).observe(document.documentElement, { childList: true, subtree: true });
   scheduleKgAdminUi();
-});
-new MutationObserver(scheduleKgAdminUi).observe(document.documentElement, { childList: true, subtree: true });
-scheduleKgAdminUi();
+}
+
+export { loadKgAdminStatus, kgAdminShellReady };
