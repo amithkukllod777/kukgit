@@ -2,7 +2,46 @@
 
 KukGit provides a durable in-app notification inbox and a transactional email outbox for collaboration, security and operational events. Notification creation is synchronous with the product event, while email delivery is performed by a background worker with bounded retries.
 
-## Notification categories
+## Transports
+
+Two, and the instance picks one at send time.
+
+| | |
+| --- | --- |
+| **Resend** | HTTP API. Key and sender set in Instance Admin → Integrations. |
+| **SMTP** | The original transport, configured by environment variables. |
+
+**Resend wins when it is configured.** Configuring it is a deliberate act; an
+SMTP host left in an environment file is often just history. With neither
+configured, sending throws — a transport that quietly accepted and dropped
+messages is how an invitation nobody received looks like an invitation that was
+sent.
+
+The choice is made per batch rather than at startup, so a key pasted into the
+console takes effect on the next message instead of the next restart. The admin
+outbox reports which transport will actually run: "email is configured" without
+saying by what is how somebody debugs the wrong one for an hour.
+
+### Failures keep their stage
+
+Both transports tag a failure with the stage that produced it, because the
+bounce classifier suppresses a recipient on a recipient-side failure and must
+not on ours. Suppressing an address because our own API key expired would
+silently blackhole a valid recipient.
+
+| Resend answers | Stage | Meaning |
+| --- | --- | --- |
+| `401`, `403` | `auth` | our key |
+| `400`, `422` | `data` | the message or address we supplied |
+| `404` | `sender` | our sending domain |
+| `429`, `5xx`, network failure | `transport` | theirs, and retryable |
+
+**The API key is redacted from anything Resend says back.** That message is
+stored on the outbox row and read later by whoever is debugging the failure,
+which is exactly how a key ends up somewhere it should not be. A test plants the
+key in a `401` body and asserts it does not reach the error.
+
+Notification categories
 
 KukGit currently supports five categories:
 

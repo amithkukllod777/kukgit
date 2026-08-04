@@ -1,6 +1,7 @@
 import { currentUser, requireUser } from './auth.mjs';
 import { audit, uid } from './db.mjs';
 import { sendSmtpMessage, smtpConfigured } from './email-transport.mjs';
+import { emailTransport } from './email-resend.mjs';
 import { recordSmtpRejection } from './email-provider-events.mjs';
 import { httpError, normalizeEmail, originAllowed } from './security.mjs';
 import { leaseGate } from './job-leases.mjs';
@@ -384,11 +385,17 @@ function claimEmail(db, id) {
 }
 
 export async function processEmailOutbox(db, config, {
-  sendEmail = sendSmtpMessage,
+  sendEmail = null,
   limit = config.emailBatchSize,
 } = {}) {
   migrateNotifications(db);
-  if (!smtpConfigured(config)) return { configured: false, processed: 0, sent: 0, failed: 0 };
+  // Chosen here rather than at startup, so a key pasted into the console takes
+  // effect on the next batch instead of the next restart.
+  const transport = emailTransport(db, config);
+  const send = sendEmail ?? transport.send;
+  if (!sendEmail && !transport.configured) {
+    return { configured: false, transport: transport.name, processed: 0, sent: 0, failed: 0 };
+  }
   const batch = Math.max(1, Math.min(Number(limit) || 20, 100));
   db.prepare(`
     UPDATE email_outbox SET status = 'failed', last_error = 'Delivery worker recovered an interrupted attempt.',
@@ -409,7 +416,7 @@ export async function processEmailOutbox(db, config, {
     if (!email) continue;
     const startedAt = new Date().toISOString();
     try {
-      const result = await sendEmail(config, {
+      const result = await send(config, {
         to: email.toEmail,
         subject: email.subject,
         text: email.textBody,
@@ -544,7 +551,7 @@ export function scheduleTokenExpiryNotifications(db, config, now = new Date()) {
  * and an email, unlike a webhook, has no delivery id a recipient can use to
  * recognise the duplicate.
  */
-export function startNotificationWorker(db, config, { sendEmail = sendSmtpMessage, gate = leaseGate(db, 'email') } = {}) {
+export function startNotificationWorker(db, config, { sendEmail = null, gate = leaseGate(db, 'email') } = {}) {
   let stopped = false;
   let running = false;
   let lastTokenSweep = 0;
@@ -660,7 +667,10 @@ export function createNotificationsApiHandler({ config, db }) {
         requireInstanceAdmin(config, user);
         return sendJson(res, 200, {
           ...listEmailOutbox(db, { status: url.searchParams.get('status'), limit: url.searchParams.get('limit') }),
-          configured: smtpConfigured(config),
+          configured: emailTransport(db, config).configured,
+          // Which transport will actually run. "Email is configured" without
+          // saying by what is how somebody debugs the wrong one for an hour.
+          transport: emailTransport(db, config).name,
         });
       }
       if (pathname === '/api/notifications/admin/process' && req.method === 'POST') {
