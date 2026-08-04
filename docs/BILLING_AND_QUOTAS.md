@@ -3,9 +3,11 @@
 What an organization is using, and what its plan allows.
 
 ```bash
-GET /api/plans                        # the plans somebody can be on
-GET /api/orgs/:slug/usage             # any member of that organization
-GET /api/instance-admin/usage         # every organization, for an operator
+GET /api/plans                          # the plans somebody can be on
+GET /api/orgs/:slug/usage               # any member of that organization
+GET /api/orgs/:slug/usage/history       # closed periods, kept for invoicing
+GET /api/instance-admin/usage           # every organization, for an operator
+GET /api/instance-admin/usage/history   # a closed period across the instance
 ```
 
 Measurement and enforcement. It bills nobody — see
@@ -141,14 +143,42 @@ an organization could push past its limit once every cache window.
 - **CI minutes.** The limit is measured and reported; no job is refused for it.
 - **External collaborators.** Measured and reported, not enforced.
 
+## History, and why the peak
+
+The current figure cannot be invoiced from. Storage is a **level**, not a total:
+measure it once, at the end of the month, and the bill is whatever happened to
+be on disk that day — which anybody who works it out answers by deleting on the
+30th.
+
+So every organization is sampled through the period, and the period closes on
+the **peak**. The average and the last reading are kept beside it, because a
+disputed invoice should be something to look at rather than something to argue
+about.
+
+CI minutes are a total rather than a level. They accumulate inside the period,
+so the closing figure is the period's own sum.
+
+| | |
+| --- | --- |
+| Sampled | every 6 hours, one instance at a time (`usage-sample` lease) |
+| Closed | hourly check, closes the month that has ended (`usage-period-close` lease) |
+| Kept | `usage_samples` per reading, `usage_periods` per closed month |
+
+**A closed period never changes.** Closing again does nothing at all — not an
+update, not an error. A figure that can be recomputed into a different number is
+not evidence of anything, and somebody has already been invoiced for the first
+one.
+
+**A period with no samples is recorded as unknown, not as zero.** `samples: 0`
+and `billable: false`. The instance being down for a month is not the same as a
+customer having used nothing, and a bill for zero would say it was.
+
 ## What this does not do
 
 - **No billing.** No prices, no invoices, no payment provider, no plan changes.
   `organizations.plan` is still set by hand. There is deliberately no endpoint
   that writes it: until money changes hands somewhere, an endpoint that could
   set a plan is a way to give the product away.
-- **No history.** Usage is current, not a series. An invoice needs the period's
-  final figure recorded at the period's end, and nothing records it yet.
 - **No cross-instance totals.** One instance measures itself.
 - **Egress is not measured.** Clone and LFS download bandwidth is real cost and
   is not counted here.

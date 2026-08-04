@@ -93,6 +93,7 @@ import { createStatusPageApiHandler, migrateStatusPage } from './src/status-page
 import { createAbuseReportsApiHandler, migrateAbuseReports } from './src/abuse-reports.mjs';
 import { createDangerousFilesApiHandler, migrateDangerousFiles } from './src/dangerous-files.mjs';
 import { createUsageApiHandler } from './src/usage-api.mjs';
+import { migrateUsageHistory, startUsagePeriodWorker, startUsageSampleWorker } from './src/usage-history.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
 import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
@@ -290,6 +291,7 @@ const statusPageApi = createStatusPageApiHandler({ config, db, isInstanceAdmin }
 // hosted here is usually not a customer. It has its own tight rate-limit surface.
 const abuseReportsApi = createAbuseReportsApiHandler({ config, db, isInstanceAdmin });
 const dangerousFilesApi = createDangerousFilesApiHandler({ config, db, isInstanceAdmin });
+migrateUsageHistory(db);
 const usageApi = createUsageApiHandler({ config, db, isInstanceAdmin });
 // Registered so a support grant can be honoured at all. Without this the
 // resolver has no way to tell an operator from anybody else, and it fails
@@ -378,6 +380,8 @@ const stopStorageRetentionWorker = startStorageRetentionWorker(db, config);
 const stopScheduleWorker = startScheduleWorker(db, config);
 const stopOperationalNotificationWorker = startOperationalNotificationWorker(db, config);
 const stopExternalAccessReviewWorker = startExternalAccessReviewWorker(db, config);
+const stopUsageSampleWorker = startUsageSampleWorker(db, config);
+const stopUsagePeriodWorker = startUsagePeriodWorker(db, config);
 // Counts in-flight requests so a shutdown can wait for them. Outermost, so it
 // sees every request including the ones a guard rejects.
 const trackedDispatch = createRequestTracker({ next: identityDispatch });
@@ -446,6 +450,8 @@ async function shutdown(signal) {
   stopNotificationWorker();
   stopStalledJobWorker();
   stopStorageRetentionWorker();
+  stopUsageSampleWorker();
+  stopUsagePeriodWorker();
   stopScheduleWorker();
   stopOperationalNotificationWorker();
   stopExternalAccessReviewWorker();
