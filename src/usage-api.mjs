@@ -2,7 +2,13 @@ import { requireUser } from './auth.mjs';
 import { orgAccess, uid } from './db.mjs';
 import { httpError } from './security.mjs';
 import { PLANS, PURCHASABLE_PLANS } from './plans.mjs';
-import { exceeded, instanceUsage, organizationUsage } from './usage.mjs';
+import { billingPeriod, exceeded, instanceUsage, organizationUsage } from './usage.mjs';
+import { instancePeriod, organizationPeriods } from './usage-history.mjs';
+
+/** The most recent period that has actually ended, which is what a bill is for. */
+function previousPeriodId(now = new Date()) {
+  return billingPeriod(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))).id;
+}
 
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
@@ -27,9 +33,11 @@ export function createUsageApiHandler({ config, db, isInstanceAdmin }) {
   return async function usageApi(req, res) {
     const url = new URL(req.url, config.baseUrl);
     const organizationRoute = /^\/api\/orgs\/([^/]+)\/usage$/.exec(url.pathname);
+    const organizationHistory = /^\/api\/orgs\/([^/]+)\/usage\/history$/.exec(url.pathname);
     const operatorRoute = url.pathname === '/api/instance-admin/usage';
+    const operatorHistory = url.pathname === '/api/instance-admin/usage/history';
     const planCatalogue = url.pathname === '/api/plans';
-    if (!organizationRoute && !operatorRoute && !planCatalogue) return false;
+    if (!organizationRoute && !organizationHistory && !operatorRoute && !operatorHistory && !planCatalogue) return false;
 
     const requestId = uid('req');
     res.setHeader('X-Request-Id', requestId);
@@ -50,19 +58,27 @@ export function createUsageApiHandler({ config, db, isInstanceAdmin }) {
 
       const user = requireUser(db, req);
 
-      if (operatorRoute) {
+      if (operatorRoute || operatorHistory) {
         if (!isInstanceAdmin(config, user)) {
           throw httpError(403, 'KukGit instance administrator access is required.', 'INSTANCE_ADMIN_REQUIRED');
+        }
+        if (operatorHistory) {
+          const period = url.searchParams.get('period') || previousPeriodId();
+          return sendJson(res, 200, instancePeriod(db, period));
         }
         return sendJson(res, 200, instanceUsage(db, config, {}));
       }
 
-      const orgSlug = decodeURIComponent(organizationRoute[1]);
+      const orgSlug = decodeURIComponent((organizationRoute ?? organizationHistory)[1]);
       // Every member, not only owners. People are asked to stay inside a limit
       // they cannot see otherwise, and the person who fills the disk is rarely
       // the person who bought the plan.
       const organization = orgAccess(db, user.id, orgSlug, 'viewer');
       if (!organization) throw httpError(404, 'Organization not found.', 'ORG_NOT_FOUND');
+
+      if (organizationHistory) {
+        return sendJson(res, 200, { periods: organizationPeriods(db, organization.id) });
+      }
 
       const usage = organizationUsage(db, config, { organizationId: organization.id });
       return sendJson(res, 200, { usage: { ...usage, exceeded: exceeded(usage) } });
