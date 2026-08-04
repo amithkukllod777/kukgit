@@ -158,15 +158,55 @@ activate them over our own bookkeeping would be punishing them for it.
 The adapter is registered whether or not it is configured. A `404` would tell a
 stranger which providers an instance has set up.
 
+## Stripe
+
+```
+Webhook URL   https://git.kuklabs.com/api/billing/webhooks/stripe
+Secret        Instance Admin → Integrations → Stripe → Webhook signing secret
+```
+
+Stripe signs `${timestamp}.${rawBody}` and sends `stripe-signature: t=…,v1=…`.
+
+The timestamp is **inside the signed material**, so a delivery captured off a
+proxy log is not a working request tomorrow. Anything outside five minutes is
+refused, in both directions — a delivery from the future is as much a sign of a
+forged header as one from last week. Razorpay has no equivalent, which is worth
+knowing when comparing the two.
+
+Stripe sends **more than one `v1`** while a signing secret is being rotated, and
+both are valid. Taking only the first would break exactly the deployment that is
+trying to rotate safely, so every `v1` is tried.
+
+Organization and plan come from the subscription's `metadata`:
+
+```json
+"metadata": { "kukgit_org": "kuklabs", "kukgit_plan": "team" }
+```
+
+| Stripe status | Status |
+| --- | --- |
+| `trialing` | `trialing` |
+| `active` | `active` |
+| `past_due`, `unpaid`, `incomplete`, `paused` | `past_due` |
+| `incomplete_expired`, `canceled` | `canceled` |
+
+`customer.subscription.deleted` is `canceled` **from the event, not the object**.
+Stripe sends the subscription as it last was, which may still read `active`;
+taking the status from the object there would keep a cancelled customer on their
+plan.
+
+`invoice.paid` records an invoice and moves nothing — the subscription event
+does that. `invoice.payment_failed` moves the subscription to `past_due`, which
+opens the grace period rather than taking the plan away. Amounts are Stripe's
+minor units already: cents in USD, paise in INR, converted nowhere.
+
 ## What this does not do
 
-- **No Stripe adapter yet.**
 - **No checkout.** Nothing creates a Razorpay subscription or generates a
   payment link, so the `notes` above have to be set by whatever does — today,
   the Razorpay dashboard.
 - **No prices.** Nothing here knows what a plan costs. With a provider, the
   provider holds the price; without one, the operator types the amount.
-- **No checkout.** Nothing generates a payment link or a hosted page.
 - **No tax handling.** GST, VAT, invoice numbering and the legal format of an
   invoice are not addressed. `billing_invoices` records what was charged; it is
   not a compliant tax document.

@@ -98,6 +98,7 @@ import { migrateBilling, startBillingGraceWorker } from './src/billing.mjs';
 import { createBillingApiHandler } from './src/billing-api.mjs';
 import { registerBillingProvider } from './src/billing.mjs';
 import { razorpayAdapter } from './src/billing-razorpay.mjs';
+import { stripeAdapter } from './src/billing-stripe.mjs';
 import { createInstanceSettingsApiHandler, migrateInstanceSettings } from './src/instance-settings.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
@@ -304,6 +305,7 @@ migrateInstanceSettings(db);
 // with no secret, and a 404 here would tell a stranger which providers an
 // instance has set up.
 registerBillingProvider('razorpay', razorpayAdapter);
+registerBillingProvider('stripe', stripeAdapter);
 const billingApi = createBillingApiHandler({ config, db, isInstanceAdmin });
 const instanceSettingsApi = createInstanceSettingsApiHandler({ config, db, isInstanceAdmin });
 // Registered so a support grant can be honoured at all. Without this the
