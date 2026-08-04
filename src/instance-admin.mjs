@@ -466,10 +466,36 @@ function retryWebhook(db, actor, deliveryId, body) {
   return { id: deliveryId, status: 'pending', event: delivery.event };
 }
 
+/**
+ * Operator paths that belong to another module.
+ *
+ * This handler runs before them in the chain and ends with a 404 for anything
+ * it does not recognise, so without this list it answered for all of them —
+ * abuse cases, maintenance windows, status incidents, support access and
+ * blocked content were 404 on the real server while their own tests passed,
+ * because those tests call each module's handler directly.
+ *
+ * `/api/instance-admin/status` is this module's own — it is what the panel asks
+ * to find out whether the session is an operator. Only `status/incidents`
+ * belongs to the status page.
+ */
+const DELEGATED_PREFIXES = [
+  '/api/instance-admin/abuse/',
+  '/api/instance-admin/maintenance/',
+  '/api/instance-admin/status/incidents',
+  '/api/instance-admin/support-access',
+  '/api/instance-admin/blocked-content',
+];
+
+export function delegatedToAnotherHandler(pathname) {
+  return DELEGATED_PREFIXES.some((prefix) => pathname === prefix.replace(/\/$/, '') || pathname.startsWith(prefix));
+}
+
 export function createInstanceAdminApiHandler({ config, db }) {
   return async function instanceAdminApi(req, res) {
     const url = new URL(req.url, config.baseUrl);
     if (!url.pathname.startsWith('/api/instance-admin')) return false;
+    if (delegatedToAnotherHandler(url.pathname)) return false;
     const requestId = uid('req');
     res.setHeader('X-Request-Id', requestId);
     res.setHeader('Referrer-Policy', 'no-referrer');
