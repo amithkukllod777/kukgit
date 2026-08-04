@@ -460,7 +460,7 @@ async function renderAICenter() {
 async function renderOrganizations() {
   const data = await api('/api/orgs');
   const content = `${pageHeader('Organizations', 'Companies and teams that own repositories inside KukGit.', '')}
-  <div class="grid">${data.organizations.map((org) => `<section class="card"><div class="card-body"><div style="display:flex;gap:14px;align-items:center"><div class="avatar">${initials(org.name)}</div><div style="flex:1"><h3 style="margin:0">${escapeHtml(org.name)}</h3><div class="muted" style="font-size:10px;margin-top:5px">@${escapeHtml(org.slug)} · ${escapeHtml(org.plan)} plan</div></div><span class="badge public">${escapeHtml(org.role)}</span></div></div></section>`).join('')}</div>`;
+  <div class="grid">${data.organizations.map((org) => `<section class="card"><div class="card-body" data-kg-org-card="${escapeHtml(org.slug)}"><div style="display:flex;gap:14px;align-items:center"><div class="avatar">${initials(org.name)}</div><div style="flex:1"><h3 style="margin:0">${escapeHtml(org.name)}</h3><div class="muted" style="font-size:10px;margin-top:5px">@${escapeHtml(org.slug)} · ${escapeHtml(org.plan)} plan</div></div><span class="badge public">${escapeHtml(org.role)}</span></div></div></section>`).join('')}</div>`;
   app.innerHTML = shell(content); bindShell();
 }
 
