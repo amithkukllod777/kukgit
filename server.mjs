@@ -94,7 +94,8 @@ import { createAbuseReportsApiHandler, migrateAbuseReports } from './src/abuse-r
 import { createDangerousFilesApiHandler, migrateDangerousFiles } from './src/dangerous-files.mjs';
 import { createUsageApiHandler } from './src/usage-api.mjs';
 import { migrateUsageHistory, startUsagePeriodWorker, startUsageSampleWorker } from './src/usage-history.mjs';
-import { migrateBilling, startBillingGraceWorker } from './src/billing.mjs';
+import { migrateBilling, setBillingNotifier, startBillingGraceWorker } from './src/billing.mjs';
+import { notifyBilling } from './src/billing-notifications.mjs';
 import { createBillingApiHandler } from './src/billing-api.mjs';
 import { registerBillingProvider } from './src/billing.mjs';
 import { razorpayAdapter, razorpayCheckout } from './src/billing-razorpay.mjs';
@@ -307,6 +308,9 @@ migrateInstanceSettings(db);
 // instance has set up.
 registerBillingProvider('razorpay', razorpayAdapter);
 registerBillingProvider('stripe', stripeAdapter);
+// A customer whose card was declined should hear it from us before they hear
+// it from their bank statement.
+setBillingNotifier((database, payload) => notifyBilling(database, config, payload));
 migrateBillingCheckout(db);
 // Starting a purchase is a separate capability from accepting a webhook about
 // one. An instance can be set up to receive Stripe events for subscriptions

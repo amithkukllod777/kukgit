@@ -200,6 +200,45 @@ The audit row (`billing.checkout.started`) carries the provider, the plan and
 the provider's reference. **Not the URL.** A checkout link starts a payment and
 does not belong in a log somebody can page through.
 
+## Being told
+
+Four moments produce a message, to the organization's **owners and admins** —
+the same people who may start and end a subscription. A developer with push
+access did not agree to the charge and cannot fix the card.
+
+| Moment | Optional? | Says |
+| --- | --- | --- |
+| A payment failed | **No** | How many days are left, and that nothing is deleted |
+| The grace period ran out | **No** | The plan has changed; everything is still readable |
+| A cancellation was scheduled | Yes | When it ends, and that it was an owner or admin who did it |
+| The subscription ended | **No** | The plan has changed; everything is still readable |
+
+**Mandatory means mandatory.** Somebody who muted organization email did not
+thereby agree to stop being told that a charge failed. Those are notices about
+money already taken or about to stop being taken, and burying them in a
+preference is how a customer finds out from their bank instead.
+
+There is no "your payment succeeded" message. A charge that worked is on the
+invoice list, and mail nobody reads is mail that teaches people not to read the
+next one. Nothing here is an offer, and a test asserts none of it reads like
+one — the moment billing mail gets filtered like marketing, the one that says
+*your card failed* is filtered too.
+
+Deduplicated on organization, kind and period, because the thing that triggers
+these is a provider that retries. A customer whose card fails three times in an
+hour has one problem; three identical emails makes it two.
+
+An organization already on `free` is not told its subscription ended. After the
+grace period drops them, the provider's cancellation follows as a matter of
+course, and the second message says the same thing about a plan they no longer
+have.
+
+The notifier is a **hook**, registered in `server.mjs`, not an import — the part
+that decides what an organization is entitled to should not also know how email
+works. It never throws: a billing event that could not send an email is still a
+billing event that must be applied, and refusing the plan change because the
+mail server is down is the more expensive failure by far.
+
 ## What is still missing
 
 - **No purchase or cancellation has completed against a real provider.** Every
@@ -213,7 +252,13 @@ does not belong in a log somebody can page through.
 - **No tax handling.** GST and VAT are the provider's, and `billing_invoices` is
   not a compliant tax document.
 - **No customer portal.** Changing a card means going to the provider.
-- **No dunning.** Nothing emails a customer whose payment failed.
+- **No repeated dunning.** A failed payment is emailed once, when it happens.
+  Nothing reminds anybody on day 7 or day 13 that the fourteen days are running
+  out, which is where most of the recovered revenue in a dunning sequence
+  actually comes from.
+- **No email has been delivered by a real provider.** Resend has never made a
+  live call either; the outbox, retries and bounce handling are all tested
+  against a stub.
 - **Currency is the provider's.** A Razorpay plan in INR and a Stripe price in
   USD are two prices somebody has to keep in step by hand.
 

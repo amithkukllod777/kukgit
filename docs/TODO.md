@@ -205,8 +205,13 @@ not the boundary being trusted. Those items stay in scope here.
 - [x] self-serve cancellation — ends at the paid period, never immediately;
       Stripe can resume, Razorpay cannot and does not offer it,
       [CHECKOUT.md](CHECKOUT.md)
+- [x] billing notices — a failed payment, an expired grace period, a scheduled
+      cancellation and an ended subscription are emailed to owners and admins;
+      the money ones cannot be muted, [CHECKOUT.md](CHECKOUT.md)
 - [ ] downgrade between paid plans with proration — today Business to Team means
       cancelling and buying again
+- [ ] a dunning sequence — a failed payment is announced once and never
+      followed up before the grace period ends
 - [ ] repository, LFS, CI, artifact and package quotas
 - [ ] package registry
 - [ ] container registry
