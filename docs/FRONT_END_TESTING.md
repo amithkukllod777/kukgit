@@ -127,6 +127,22 @@ and the intended test confirmed to fail.
 | `kgAdminStatus = error.status === 401 ? null : false` → `false` | *a signed-out 401 is not remembered* |
 | The same line → `null` | *a 403 is an answer* |
 | `:not([data-kg-usage])` on the org card | *an organization card gets its usage once* |
+| The bell's minimum interval | *the notification bell is not re-read on every DOM change* |
+| The collaboration panel's guard-before-fetch | *the organization list is not fetched to find out there is nothing to do* |
+
+### The two storms this suite did not prevent
+
+The harness was built after four bugs; it did not stop the next two. A browser
+pointed at the organizations page counted **43× `/api/notifications`** and **40×
+`/api/orgs`** in six seconds, both ending at the rate limiter.
+
+Same defect, two new shapes. `notifications-ui.js` re-read the unread count on
+every observer pass, and rendering the bell is a DOM change that wakes the
+observer. `collaboration-ui.js` fetched the organization list **before** the
+render-key guard, so every pass paid for a list it then correctly discarded.
+
+Both now have tests here. The lesson is the one in the last section: this suite
+shortens what browser verification has to catch, and does not replace it.
 
 ## What is still not covered
 

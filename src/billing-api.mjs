@@ -14,6 +14,7 @@ import {
   subscriptionFor,
   webhookRejections,
 } from './billing.mjs';
+import { CHECKOUT_PLANS, checkoutOptions, startCheckout } from './billing-checkout.mjs';
 
 const MAX_WEBHOOK_BYTES = 256 * 1024;
 
@@ -55,6 +56,22 @@ async function readJson(req) {
 }
 
 /**
+ * Who may spend an organization's money.
+ *
+ * Owner and admin. A maintainer can merge to `main`; that is not the same
+ * question as whether they may put the organization on a recurring charge, and
+ * conflating the two is how somebody's card gets billed by a colleague.
+ *
+ * External repository collaborators are refused whatever role they appear to
+ * carry: their access is to one repository, granted by somebody else, and it
+ * was never access to the organization.
+ */
+function canPurchase(organization) {
+  if (organization?.externalRepositoryAccess) return false;
+  return organization?.role === 'owner' || organization?.role === 'admin';
+}
+
+/**
  * Billing over HTTP.
  *
  * Three audiences, and they see different things. A member sees what their
@@ -72,10 +89,11 @@ export function createBillingApiHandler({ config, db, isInstanceAdmin }) {
     const url = new URL(req.url, config.baseUrl);
     const webhook = /^\/api\/billing\/webhooks\/([a-z0-9-]+)$/.exec(url.pathname);
     const organizationRoute = /^\/api\/orgs\/([^/]+)\/billing$/.exec(url.pathname);
+    const checkoutRoute = /^\/api\/orgs\/([^/]+)\/billing\/checkout$/.exec(url.pathname);
     const operatorSubscriptions = url.pathname === '/api/instance-admin/billing/subscriptions';
     const operatorInvoices = url.pathname === '/api/instance-admin/billing/invoices';
     const operatorEvents = url.pathname === '/api/instance-admin/billing/events';
-    if (!webhook && !organizationRoute && !operatorSubscriptions && !operatorInvoices && !operatorEvents) return false;
+    if (!webhook && !organizationRoute && !checkoutRoute && !operatorSubscriptions && !operatorInvoices && !operatorEvents) return false;
 
     const requestId = uid('req');
     res.setHeader('X-Request-Id', requestId);
@@ -127,7 +145,39 @@ export function createBillingApiHandler({ config, db, isInstanceAdmin }) {
           subscription: subscriptionFor(db, organization.id),
           entitlement: entitlement(db, organization.id),
           invoices: organizationInvoices(db, organization.id),
+          // What this person could buy, if they are allowed to buy anything. A
+          // viewer sees an empty list rather than buttons that would refuse
+          // them.
+          checkout: canPurchase(organization) ? checkoutOptions(db, config) : [],
         });
+      }
+
+      if (checkoutRoute) {
+        if (method !== 'POST') throw httpError(405, 'Method not allowed.', 'METHOD_NOT_ALLOWED');
+        if (!originAllowed(req, config.baseUrl)) throw httpError(403, 'Request origin is not allowed.', 'CSRF_BLOCKED');
+        const orgSlug = decodeURIComponent(checkoutRoute[1]);
+        // Membership first, permission second, and they are different answers.
+        // A maintainer knows this organization exists — telling them it does not
+        // is a lie they can disprove — so they are refused, not hidden from. A
+        // stranger gets the 404.
+        const organization = orgAccess(db, user.id, orgSlug, 'viewer');
+        if (!organization) throw httpError(404, 'Organization not found.', 'ORG_NOT_FOUND');
+        // The role is read off the row rather than asked for as a minimum:
+        // `orgAccess` returns early for a request already inside a
+        // repository-access context and does not compare roles on that path,
+        // and spending an organization's money is not somewhere to depend on
+        // which caller happens to reach this line.
+        if (!canPurchase(organization)) {
+          throw httpError(403, 'Organization administrator access is required to change the plan.', 'ORG_ADMIN_REQUIRED');
+        }
+        const body = await readJson(req);
+        const session = await startCheckout(db, config, {
+          organization,
+          plan: body.plan,
+          provider: body.provider,
+          userId: user.id,
+        });
+        return sendJson(res, 201, { checkout: session, requestId });
       }
 
       if (!isInstanceAdmin(config, user)) {
@@ -193,4 +243,4 @@ export function createBillingApiHandler({ config, db, isInstanceAdmin }) {
   };
 }
 
-export { PURCHASABLE_PLANS };
+export { PURCHASABLE_PLANS, CHECKOUT_PLANS, canPurchase };

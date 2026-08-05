@@ -108,8 +108,12 @@ function renderBell(data) {
     button.addEventListener('click', openNotificationDrawer);
   }
   const badge = button.querySelector('.kg-notification-count');
-  badge.hidden = !data.unreadCount;
-  badge.textContent = data.unreadCount > 99 ? '99+' : String(data.unreadCount);
+  const hidden = !data.unreadCount;
+  const label = data.unreadCount > 99 ? '99+' : String(data.unreadCount);
+  // Writing the same value is still a DOM change, and a DOM change is what
+  // wakes the observer that gets us back here.
+  if (badge.hidden !== hidden) badge.hidden = hidden;
+  if (badge.textContent !== label) badge.textContent = label;
 }
 
 function closeNotificationDrawer() {
@@ -283,13 +287,31 @@ function enhanceInvitationResend() {
   });
 }
 
-async function refreshNotificationSummary() {
+/**
+ * How often the unread count is worth asking for.
+ *
+ * The bell does not depend on the route, so a page change is not a reason to
+ * ask again — and rendering the bell changes the DOM, which wakes the observer
+ * that renders the bell. Without a floor that loop asked forty-three times in
+ * six seconds and ended at the rate limiter. The minute poll below is what
+ * actually keeps the number fresh.
+ */
+const SUMMARY_MIN_INTERVAL_MS = 15_000;
+let lastNotificationSummaryAt = 0;
+
+async function refreshNotificationSummary({ force = false } = {}) {
   if (!document.querySelector('.app-shell')) return;
+  const now = Date.now();
+  if (!force && now - lastNotificationSummaryAt < SUMMARY_MIN_INTERVAL_MS) return;
+  lastNotificationSummaryAt = now;
   try {
     const data = await notificationRequest(`${NOTIFICATIONS_API}?limit=20`);
     latestNotificationData = data;
     renderBell(data);
-  } catch {}
+  } catch {
+    // A failure holds the floor too. Retrying at DOM speed is exactly how a
+    // failure becomes a storm, and the minute poll below is what retries.
+  }
 }
 
 function mountNotifications() {
@@ -298,7 +320,9 @@ function mountNotifications() {
   refreshNotificationSummary();
   renderNotificationSettings();
   enhanceInvitationResend();
-  if (!notificationPoll) notificationPoll = setInterval(refreshNotificationSummary, 60000);
+  // Forced: the poll is the thing that keeps the number fresh, and the floor
+  // above is there to stop the observer, not the clock.
+  if (!notificationPoll) notificationPoll = setInterval(() => refreshNotificationSummary({ force: true }), 60000);
 }
 
 function scheduleNotifications() {

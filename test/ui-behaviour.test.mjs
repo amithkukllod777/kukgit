@@ -44,13 +44,15 @@ const FORBIDDEN = { status: 403, body: { error: { code: 'FORBIDDEN', message: 'N
 
 /** A signed-in page, roughly the shape `app.js` renders. */
 function shell(inner = '') {
-  return `
+  return `<div id="app"><div class="app-shell">
     <aside class="sidebar">
       <div class="sidebar-section">Manage</div>
       <nav class="nav"></nav>
     </aside>
+    <header class="topbar"><div class="topbar-actions"></div></header>
     <main class="content">${inner}</main>
-    <div id="toast-root"></div>`;
+  </div></div>
+  <div id="toast-root"></div>`;
 }
 
 /** Something else on the page redrawing, which is what wakes every observer. */
@@ -190,6 +192,70 @@ test('an organization card gets its usage once, however often the page redraws',
   assert.equal(browser.looped, false);
 });
 
+test('pressing upgrade sends the customer to the provider', async (t) => {
+  const browser = installBrowser({
+    hash: '#/',
+    html: shell('<article data-kg-org-card="kuklabs"></article>'),
+    routes: {
+      '/api/orgs/kuklabs/usage': { body: usagePayload() },
+      'GET /api/orgs/kuklabs/billing': {
+        body: { subscription: null, invoices: [], checkout: [{ provider: 'razorpay', plan: 'business', label: 'Business' }] },
+      },
+      'POST /api/orgs/kuklabs/billing/checkout': {
+        status: 201, body: { checkout: { url: 'https://rzp.io/i/abc', provider: 'razorpay', plan: 'business' } },
+      },
+      '*': NOT_FOUND,
+    },
+  });
+  const visited = [];
+  browser.location.assign = (url) => visited.push(url);
+  t.after(() => browser.restore());
+
+  await importFresh('../public/usage-ui.js');
+  await browser.settle();
+
+  const button = browser.document.querySelector('.kg-usage-buy');
+  assert.ok(button, 'the upgrade button should be on the card');
+  button.click();
+  await browser.settle();
+
+  assert.deepEqual(browser.requests().filter((request) => request.includes('checkout')),
+    ['POST /api/orgs/kuklabs/billing/checkout']);
+  // Same tab. A payment page opened in a popup is a payment page a blocker eats.
+  assert.deepEqual(visited, ['https://rzp.io/i/abc']);
+});
+
+test('a refused checkout says why, on the button', async (t) => {
+  const browser = installBrowser({
+    hash: '#/',
+    html: shell('<article data-kg-org-card="kuklabs"></article>'),
+    routes: {
+      '/api/orgs/kuklabs/usage': { body: usagePayload() },
+      'GET /api/orgs/kuklabs/billing': {
+        body: { subscription: null, invoices: [], checkout: [{ provider: 'stripe', plan: 'business', label: 'Business' }] },
+      },
+      'POST /api/orgs/kuklabs/billing/checkout': {
+        status: 400,
+        body: { error: { code: 'BILLING_CHECKOUT_REFUSED', message: 'Stripe refused the checkout: no such price.' } },
+      },
+      '*': NOT_FOUND,
+    },
+  });
+  const visited = [];
+  browser.location.assign = (url) => visited.push(url);
+  t.after(() => browser.restore());
+
+  await importFresh('../public/usage-ui.js');
+  await browser.settle();
+  browser.document.querySelector('.kg-usage-buy').click();
+  await browser.settle();
+
+  assert.deepEqual(visited, [], 'nobody is sent anywhere');
+  assert.match(browser.html(), /no such price/);
+  // And they can try again, rather than being left with a dead button.
+  assert.equal(browser.document.querySelector('.kg-usage-buy').disabled, false);
+});
+
 test('a usage panel that fails to load does not take the page with it', async (t) => {
   const browser = installBrowser({
     hash: '#/',
@@ -268,6 +334,56 @@ test('the admin shell is not asked for on the sign-in page', async (t) => {
   await browser.settle();
 
   assert.equal(browser.countPath('/api/instance-admin/status'), 0);
+});
+
+test('the notification bell is not re-read on every DOM change', async (t) => {
+  const browser = installBrowser({
+    hash: '#/organizations',
+    html: shell(),
+    routes: { '/api/notifications': { body: { unreadCount: 3, notifications: [] } }, '*': NOT_FOUND },
+  });
+  t.after(() => browser.restore());
+
+  await importFresh('../public/notifications-ui.js');
+  await browser.settle();
+  churn(browser, 8);
+  await browser.settle();
+
+  assert.ok(browser.document.querySelector('#kg-notification-button'), 'the bell is rendered');
+  // Rendering the bell changes the DOM, which wakes the observer that renders
+  // the bell. Measured at forty-three in six seconds before the floor.
+  assert.equal(browser.countPath('/api/notifications'), 1);
+  assert.equal(browser.looped, false);
+});
+
+test('the organization list is not fetched to find out there is nothing to do', async (t) => {
+  const browser = installBrowser({
+    hash: '#/organizations',
+    html: shell(),
+    routes: {
+      '/api/orgs': { body: { organizations: [{ slug: 'kuklabs', name: 'Kuklabs', role: 'owner' }] } },
+      '/api/collaboration/orgs/kuklabs': {
+        body: {
+          organization: { slug: 'kuklabs', name: 'Kuklabs', role: 'owner' },
+          canManage: true,
+          members: [], invitations: [], teams: [], repositories: [],
+        },
+      },
+      '*': NOT_FOUND,
+    },
+  });
+  t.after(() => browser.restore());
+
+  await importFresh('../public/collaboration-ui.js');
+  await browser.settle();
+  churn(browser, 8);
+  await browser.settle();
+
+  // The panel's own slug is on the panel. Fetching the list first and checking
+  // the render key afterwards asked forty times in six seconds and correctly
+  // skipped the render every time.
+  assert.ok(browser.countPath('/api/orgs') <= 2, `asked ${browser.countPath('/api/orgs')} times`);
+  assert.equal(browser.looped, false);
 });
 
 test('the sign-in page carries no credentials in its markup', async () => {

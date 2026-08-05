@@ -54,6 +54,12 @@ export const INTEGRATIONS = Object.freeze({
       { key: 'keyId', label: 'Key ID', secret: false, env: 'KUKGIT_RAZORPAY_KEY_ID' },
       { key: 'keySecret', label: 'Key secret', secret: true, env: 'KUKGIT_RAZORPAY_KEY_SECRET' },
       { key: 'webhookSecret', label: 'Webhook secret', secret: true, env: 'KUKGIT_RAZORPAY_WEBHOOK_SECRET' },
+      // The price lives with the provider, so what KukGit stores is which
+      // Razorpay plan a KukGit plan means. Changing a price is then something
+      // done in the Razorpay dashboard, with no deploy and no second answer to
+      // "what does Team cost".
+      { key: 'planIdTeam', label: 'Razorpay plan ID — Team', secret: false },
+      { key: 'planIdBusiness', label: 'Razorpay plan ID — Business', secret: false },
     ],
   },
   'billing.stripe': {
@@ -63,6 +69,8 @@ export const INTEGRATIONS = Object.freeze({
       { key: 'publishableKey', label: 'Publishable key', secret: false, env: 'KUKGIT_STRIPE_PUBLISHABLE_KEY' },
       { key: 'secretKey', label: 'Secret key', secret: true, env: 'KUKGIT_STRIPE_SECRET_KEY' },
       { key: 'webhookSecret', label: 'Webhook signing secret', secret: true, env: 'KUKGIT_STRIPE_WEBHOOK_SECRET' },
+      { key: 'priceIdTeam', label: 'Stripe price ID — Team', secret: false },
+      { key: 'priceIdBusiness', label: 'Stripe price ID — Business', secret: false },
     ],
   },
   'auth.google': {

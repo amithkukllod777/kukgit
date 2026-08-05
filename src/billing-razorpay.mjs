@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { instanceSetting } from './instance-settings.mjs';
 import { recordInvoice } from './billing.mjs';
+import { attributionNotes, providerRequest } from './billing-checkout.mjs';
 
 /**
  * Razorpay, as a billing adapter.
@@ -173,5 +174,72 @@ function organizationFor(db, subscription) {
   if (!slug) return null;
   return db.prepare('SELECT id FROM organizations WHERE slug = ?').get(slug)?.id ?? null;
 }
+
+/* ------------------------------------------------------------------ checkout */
+
+const SUBSCRIPTIONS_ENDPOINT = 'https://api.razorpay.com/v1/subscriptions';
+
+/**
+ * How many billing cycles a subscription is created for.
+ *
+ * Razorpay requires a count; there is no "until cancelled". Ten years of
+ * monthly cycles is the closest honest approximation, and a customer who is
+ * still here in 2036 renewing is a problem worth having.
+ */
+const TOTAL_CYCLES = 120;
+
+/** `team` → `planIdTeam`, which is what the console asks an operator to fill in. */
+function planSettingKey(plan) {
+  const id = String(plan ?? '').toLowerCase();
+  return `planId${id.charAt(0).toUpperCase()}${id.slice(1)}`;
+}
+
+export function razorpayCheckoutCredentials(db, config, plan) {
+  return {
+    keyId: instanceSetting(db, config, 'billing.razorpay', 'keyId'),
+    keySecret: instanceSetting(db, config, 'billing.razorpay', 'keySecret'),
+    planId: instanceSetting(db, config, 'billing.razorpay', planSettingKey(plan)),
+  };
+}
+
+/**
+ * Starting a Razorpay subscription.
+ *
+ * The price is Razorpay's — a plan created in their dashboard — and what is
+ * stored here is which of their plans a KukGit plan means. `notes` carry the
+ * organization and the plan, and Razorpay echoes them unchanged on every later
+ * event, which is what lets the webhook attribute the money without a mapping
+ * table that would drift.
+ *
+ * There is no idempotency key: Razorpay's subscriptions API does not offer one.
+ * The protection against a double click is the reused session in
+ * `billing-checkout.mjs`, and it is the only one.
+ */
+export const razorpayCheckout = {
+  configured(db, config, plan) {
+    const { keyId, keySecret, planId } = razorpayCheckoutCredentials(db, config, plan);
+    return Boolean(keyId && keySecret && planId);
+  },
+
+  async create(db, config, { organization, plan, fetchImpl }) {
+    const { keyId, keySecret, planId } = razorpayCheckoutCredentials(db, config, plan);
+    const authorization = Buffer.from(`${keyId}:${keySecret}`, 'utf8').toString('base64');
+    const created = await providerRequest(fetchImpl, SUBSCRIPTIONS_ENDPOINT, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${authorization}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        plan_id: planId,
+        total_count: TOTAL_CYCLES,
+        quantity: 1,
+        customer_notify: 1,
+        notes: attributionNotes(organization, plan),
+      }),
+    }, { secret: keySecret, provider: 'Razorpay' });
+
+    // `short_url` is the hosted page a customer completes. An id without one is
+    // a subscription nobody can pay, which is a failure and not a link.
+    return { url: created?.short_url ?? null, reference: created?.id ? String(created.id) : null };
+  },
+};
 
 export { STATUS_BY_EVENT as RAZORPAY_STATUS_BY_EVENT };

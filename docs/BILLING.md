@@ -229,11 +229,10 @@ on request is a way to fill the disk.
 
 ## What this does not do
 
-- **No checkout.** Nothing creates a Razorpay subscription or generates a
-  payment link, so the `notes` above have to be set by whatever does — today,
-  the Razorpay dashboard.
 - **No prices.** Nothing here knows what a plan costs. With a provider, the
   provider holds the price; without one, the operator types the amount.
+- **No cancellation.** A customer cancels in the provider's own portal, and the
+  webhook that follows moves them to free. See [CHECKOUT.md](CHECKOUT.md).
 - **No tax handling.** GST, VAT, invoice numbering and the legal format of an
   invoice are not addressed. `billing_invoices` records what was charged; it is
   not a compliant tax document.

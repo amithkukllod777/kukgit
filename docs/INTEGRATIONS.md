@@ -83,19 +83,30 @@ Storing the credentials here is fine and is what this page is for. Wiring them
 as a KukGit-side sign-in path would create a second identity system in
 production, and that needs a decision, not an implementation.
 
+## Plan and price identifiers
+
+Razorpay and Stripe carry two more fields each, and they are not secrets:
+
+| Integration | Fields |
+| --- | --- |
+| Razorpay | `planIdTeam`, `planIdBusiness` |
+| Stripe | `priceIdTeam`, `priceIdBusiness` |
+
+The **price** lives with the provider; what is stored here is which provider
+object a KukGit plan means. A provider with credentials but no identifier for a
+given plan is not offered for that plan at checkout — see
+[CHECKOUT.md](CHECKOUT.md).
+
 ## What this does not do yet
 
-Nothing is wired. This stores and serves the credentials; the code that uses
-them comes next, one integration at a time:
-
-- **Resend** — KukGit's email transport is currently SMTP. Resend is an HTTP API,
-  which is a different transport, not a different configuration.
-- **Razorpay and Stripe** — the billing core takes provider adapters
-  ([BILLING.md](BILLING.md)); neither adapter is written.
-- **Google and GitHub** — see above.
-
-There is also no connection test. A key that is set is a key that is stored, not
-a key that is known to work, and the console does not currently claim otherwise.
+- **Google and GitHub sign-in are stored and unused.** No sign-in flow reads
+  them. Production identity is One Kuklabs Account, and these belong federated
+  inside AuthKit rather than beside it.
+- **No connection test.** A key that is set is a key that is stored, not a key
+  that is known to work, and the console does not claim otherwise.
+- **No integration here has run against its real provider.** Resend, Razorpay
+  and Stripe all have working adapters and complete test coverage against
+  recorded responses. None has yet received a real delivery or made a real call.
 
 ## Related
 
