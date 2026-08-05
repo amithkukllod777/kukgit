@@ -240,6 +240,37 @@ export const razorpayCheckout = {
     // a subscription nobody can pay, which is a failure and not a link.
     return { url: created?.short_url ?? null, reference: created?.id ? String(created.id) : null };
   },
+
+  /**
+   * Cancel at the end of the cycle the customer has paid for.
+   *
+   * Not immediately. They bought this period; taking it away the moment they
+   * click cancel is charging for something and then withdrawing it, and it
+   * turns a routine decision into a support ticket.
+   */
+  async cancel(db, config, { subscription, fetchImpl }) {
+    const { keyId, keySecret } = razorpayCheckoutCredentials(db, config, subscription.plan);
+    const authorization = Buffer.from(`${keyId}:${keySecret}`, 'utf8').toString('base64');
+    const result = await providerRequest(
+      fetchImpl,
+      `${SUBSCRIPTIONS_ENDPOINT}/${encodeURIComponent(subscription.reference)}/cancel`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Basic ${authorization}`, 'Content-Type': 'application/json' },
+        // A boolean, not a 1. Razorpay's own documentation says a non-boolean
+        // here is a 400, and plenty of examples in the wild send the integer.
+        body: JSON.stringify({ cancel_at_cycle_end: true }),
+      },
+      { secret: keySecret, provider: 'Razorpay', operation: 'cancellation' },
+    );
+    const endsAt = Number(result?.current_end ?? result?.end_at);
+    return { cancelsAt: Number.isFinite(endsAt) && endsAt > 0 ? new Date(endsAt * 1000).toISOString() : null };
+  },
+
+  // Razorpay has no un-cancel. A subscription cancelled at cycle end stays
+  // cancelled, and the customer buys again. Saying so is better than a button
+  // that fails.
+  resume: null,
 };
 
 export { STATUS_BY_EVENT as RAZORPAY_STATUS_BY_EVENT };

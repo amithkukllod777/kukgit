@@ -105,12 +105,33 @@ function installStyles() {
  */
 export function checkoutRow(usage, billing, slug) {
   const options = (billing?.checkout ?? []).filter((option) => option.plan !== usage.plan?.id);
-  if (!options.length) return '';
-  return `<div class="kg-usage-checkout">
-    ${options.map((option) => `<button class="btn btn-ghost kg-usage-buy"
-      data-kg-buy-org="${esc(slug)}" data-kg-buy-plan="${esc(option.plan)}" data-kg-buy-provider="${esc(option.provider)}"
-      >Upgrade to ${esc(option.label ?? option.plan)} · ${esc(option.provider)}</button>`).join('')}
-  </div>`;
+  const actions = billing?.actions ?? {};
+  const buttons = options.map((option) => `<button class="btn btn-ghost kg-usage-buy"
+    data-kg-buy-org="${esc(slug)}" data-kg-buy-plan="${esc(option.plan)}" data-kg-buy-provider="${esc(option.provider)}"
+    >Upgrade to ${esc(option.label ?? option.plan)} · ${esc(option.provider)}</button>`);
+
+  // Cancel and Resume come from the server, which knows that Razorpay has no
+  // un-cancel. Working it out here would mean the browser holding a copy of
+  // what each provider supports, and being wrong about it quietly.
+  if (actions.canCancel) {
+    buttons.push(`<button class="btn btn-ghost kg-usage-cancel" data-kg-manage-org="${esc(slug)}">Cancel plan</button>`);
+  }
+  if (actions.canResume) {
+    buttons.push(`<button class="btn btn-ghost kg-usage-resume" data-kg-manage-org="${esc(slug)}">Keep plan</button>`);
+  }
+  if (!buttons.length) return '';
+  return `<div class="kg-usage-checkout">${buttons.join('')}</div>`;
+}
+
+/** What a pending cancellation means, said before somebody has to ask. */
+export function cancellationNote(billing) {
+  const at = billing?.subscription?.cancelsAt;
+  if (!at) return '';
+  const when = new Date(at);
+  const date = Number.isFinite(when.getTime())
+    ? new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' }).format(when)
+    : String(at);
+  return `<br />This plan ends on ${esc(date)}. Everything keeps working until then, and nothing is deleted after.`;
 }
 
 export function usagePanel(usage, billing, slug = '') {
@@ -131,6 +152,7 @@ export function usagePanel(usage, billing, slug = '') {
       ${ci.running ? `<br />${esc(ci.running)} CI job${ci.running === 1 ? '' : 's'} still running, already counted.` : ''}
       ${people.externalCollaborators ? `<br />${esc(people.externalCollaborators)} external collaborator${people.externalCollaborators === 1 ? '' : 's'}, outside the seat count above.` : ''}
       ${subscription ? `<br />Subscription ${esc(subscription.status)} via ${esc(subscription.provider)}.` : ''}
+      ${cancellationNote(billing)}
       ${invoice ? `<br />Last invoice ${esc(money(invoice.amountMinor, invoice.currency))} for ${esc(invoice.period)} — ${esc(invoice.status)}.` : ''}
       ${plan.recognised === false ? `<br />This organization's plan is recorded as "${esc(plan.stored)}", which is not a plan we know. It is being treated as free.` : ''}
     </div>
@@ -162,9 +184,40 @@ async function buy(button) {
   }
 }
 
+/**
+ * Ending or keeping a plan.
+ *
+ * The panel is redrawn from the server's answer rather than patched here: what
+ * a subscription may do next is the server's to say, and guessing it in the
+ * browser is how a Resume button appears beside a provider that has no un-cancel.
+ */
+async function manage(button, action, working) {
+  const slug = button.dataset.kgManageOrg;
+  const card = button.closest('[data-kg-org-card]');
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = working;
+  try {
+    await request(`/api/orgs/${encodeURIComponent(slug)}/billing/${action}`, { method: 'POST' });
+    cache.delete(slug);
+    card?.querySelector('.kg-usage')?.remove();
+    if (card) await fill(card, slug);
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = original;
+    button.insertAdjacentHTML('afterend', `<small class="kg-usage-note over">${esc(error.message)}</small>`);
+  }
+}
+
 function bindCheckout(card) {
   for (const button of card.querySelectorAll('.kg-usage-buy')) {
     button.addEventListener('click', () => buy(button));
+  }
+  for (const button of card.querySelectorAll('.kg-usage-cancel')) {
+    button.addEventListener('click', () => manage(button, 'cancel', 'Cancelling…'));
+  }
+  for (const button of card.querySelectorAll('.kg-usage-resume')) {
+    button.addEventListener('click', () => manage(button, 'resume', 'Keeping…'));
   }
 }
 

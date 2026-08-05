@@ -15,6 +15,7 @@ import {
   webhookRejections,
 } from './billing.mjs';
 import { CHECKOUT_PLANS, checkoutOptions, startCheckout } from './billing-checkout.mjs';
+import { requestCancellation, resumeSubscription, subscriptionActions } from './billing-subscription.mjs';
 
 const MAX_WEBHOOK_BYTES = 256 * 1024;
 
@@ -90,10 +91,12 @@ export function createBillingApiHandler({ config, db, isInstanceAdmin }) {
     const webhook = /^\/api\/billing\/webhooks\/([a-z0-9-]+)$/.exec(url.pathname);
     const organizationRoute = /^\/api\/orgs\/([^/]+)\/billing$/.exec(url.pathname);
     const checkoutRoute = /^\/api\/orgs\/([^/]+)\/billing\/checkout$/.exec(url.pathname);
+    const subscriptionRoute = /^\/api\/orgs\/([^/]+)\/billing\/(cancel|resume)$/.exec(url.pathname);
     const operatorSubscriptions = url.pathname === '/api/instance-admin/billing/subscriptions';
     const operatorInvoices = url.pathname === '/api/instance-admin/billing/invoices';
     const operatorEvents = url.pathname === '/api/instance-admin/billing/events';
-    if (!webhook && !organizationRoute && !checkoutRoute && !operatorSubscriptions && !operatorInvoices && !operatorEvents) return false;
+    if (!webhook && !organizationRoute && !checkoutRoute && !subscriptionRoute
+      && !operatorSubscriptions && !operatorInvoices && !operatorEvents) return false;
 
     const requestId = uid('req');
     res.setHeader('X-Request-Id', requestId);
@@ -149,7 +152,28 @@ export function createBillingApiHandler({ config, db, isInstanceAdmin }) {
           // viewer sees an empty list rather than buttons that would refuse
           // them.
           checkout: canPurchase(organization) ? checkoutOptions(db, config) : [],
+          // Decided on the server, so the screen offers what will work rather
+          // than what looks plausible — Razorpay has no un-cancel, and a
+          // "Resume" button beside a Razorpay subscription is a lie.
+          actions: canPurchase(organization)
+            ? subscriptionActions(db, organization.id)
+            : { canCancel: false, canResume: false },
         });
+      }
+
+      if (subscriptionRoute) {
+        if (method !== 'POST') throw httpError(405, 'Method not allowed.', 'METHOD_NOT_ALLOWED');
+        if (!originAllowed(req, config.baseUrl)) throw httpError(403, 'Request origin is not allowed.', 'CSRF_BLOCKED');
+        const organization = orgAccess(db, user.id, decodeURIComponent(subscriptionRoute[1]), 'viewer');
+        if (!organization) throw httpError(404, 'Organization not found.', 'ORG_NOT_FOUND');
+        // Ending a subscription is the same decision as starting one, and the
+        // person who may do one may do the other.
+        if (!canPurchase(organization)) {
+          throw httpError(403, 'Organization administrator access is required to change the plan.', 'ORG_ADMIN_REQUIRED');
+        }
+        const change = subscriptionRoute[2] === 'cancel' ? requestCancellation : resumeSubscription;
+        const result = await change(db, config, { organization, userId: user.id });
+        return sendJson(res, 200, { ...result, actions: subscriptionActions(db, organization.id), requestId });
       }
 
       if (checkoutRoute) {

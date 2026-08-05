@@ -231,8 +231,6 @@ on request is a way to fill the disk.
 
 - **No prices.** Nothing here knows what a plan costs. With a provider, the
   provider holds the price; without one, the operator types the amount.
-- **No cancellation.** A customer cancels in the provider's own portal, and the
-  webhook that follows moves them to free. See [CHECKOUT.md](CHECKOUT.md).
 - **No tax handling.** GST, VAT, invoice numbering and the legal format of an
   invoice are not addressed. `billing_invoices` records what was charged; it is
   not a compliant tax document.

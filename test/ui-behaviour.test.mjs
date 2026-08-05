@@ -256,6 +256,78 @@ test('a refused checkout says why, on the button', async (t) => {
   assert.equal(browser.document.querySelector('.kg-usage-buy').disabled, false);
 });
 
+test('cancelling redraws the panel from what the server now says', async (t) => {
+  let cancelled = false;
+  const browser = installBrowser({
+    hash: '#/',
+    html: shell('<article data-kg-org-card="kuklabs"></article>'),
+    routes: {
+      '/api/orgs/kuklabs/usage': { body: usagePayload() },
+      'GET /api/orgs/kuklabs/billing': () => ({
+        body: {
+          subscription: {
+            status: 'active', provider: 'razorpay',
+            cancelsAt: cancelled ? '2026-09-01T00:00:00.000Z' : null,
+          },
+          invoices: [],
+          checkout: [],
+          actions: { canCancel: !cancelled, canResume: false },
+        },
+      }),
+      'POST /api/orgs/kuklabs/billing/cancel': () => { cancelled = true; return { body: { subscription: {} } }; },
+      '*': NOT_FOUND,
+    },
+  });
+  t.after(() => browser.restore());
+
+  await importFresh('../public/usage-ui.js');
+  await browser.settle();
+  assert.ok(browser.document.querySelector('.kg-usage-cancel'), 'cancel is offered');
+
+  browser.document.querySelector('.kg-usage-cancel').click();
+  await browser.settle();
+
+  // Redrawn from the server rather than patched here: what a subscription may
+  // do next is the server's to say.
+  assert.equal(browser.document.querySelector('.kg-usage-cancel'), null, 'cancel is no longer offered');
+  assert.match(browser.html(), /ends on 1 Sept? 2026/);
+  assert.equal(browser.document.querySelectorAll('.kg-usage').length, 1, 'one panel, not two');
+  assert.equal(browser.looped, false);
+});
+
+test('a refused cancellation leaves the plan alone and says why', async (t) => {
+  const browser = installBrowser({
+    hash: '#/',
+    html: shell('<article data-kg-org-card="kuklabs"></article>'),
+    routes: {
+      '/api/orgs/kuklabs/usage': { body: usagePayload() },
+      'GET /api/orgs/kuklabs/billing': {
+        body: {
+          subscription: { status: 'active', provider: 'razorpay', cancelsAt: null },
+          invoices: [], checkout: [], actions: { canCancel: true, canResume: false },
+        },
+      },
+      'POST /api/orgs/kuklabs/billing/cancel': {
+        status: 400,
+        body: { error: { code: 'BILLING_CHECKOUT_REFUSED', message: 'Razorpay refused the checkout: subscription not found.' } },
+      },
+      '*': NOT_FOUND,
+    },
+  });
+  t.after(() => browser.restore());
+
+  await importFresh('../public/usage-ui.js');
+  await browser.settle();
+  browser.document.querySelector('.kg-usage-cancel').click();
+  await browser.settle();
+
+  assert.match(browser.html(), /subscription not found/);
+  // Telling somebody their plan is ending when the provider never agreed is
+  // the one outcome worse than the refusal.
+  assert.doesNotMatch(browser.html(), /ends on/);
+  assert.equal(browser.document.querySelector('.kg-usage-cancel').disabled, false);
+});
+
 test('a usage panel that fails to load does not take the page with it', async (t) => {
   const browser = installBrowser({
     hash: '#/',

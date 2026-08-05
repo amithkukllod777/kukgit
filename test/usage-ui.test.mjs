@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { bytes, checkoutRow, meter, money, usagePanel } from '../public/usage-ui.js';
+import { bytes, cancellationNote, checkoutRow, meter, money, usagePanel } from '../public/usage-ui.js';
 
 const GIB = 1024 ** 3;
 
@@ -142,6 +142,30 @@ test('both providers are offered when both are configured', async () => {
   // and the customer picks, not us.
   assert.match(html, /razorpay/);
   assert.match(html, /stripe/);
+});
+
+test('cancel and resume are offered only when the server says so', async () => {
+  const base = { checkout: [], subscription: { status: 'active', provider: 'razorpay' } };
+  assert.doesNotMatch(checkoutRow(usage(), base, 'kuklabs'), /kg-usage-cancel|kg-usage-resume/);
+
+  const cancellable = checkoutRow(usage(), { ...base, actions: { canCancel: true, canResume: false } }, 'kuklabs');
+  assert.match(cancellable, /kg-usage-cancel/);
+  // Razorpay has no un-cancel. Working that out in the browser would mean
+  // holding a copy of what each provider supports, and being quietly wrong.
+  assert.doesNotMatch(cancellable, /kg-usage-resume/);
+
+  const resumable = checkoutRow(usage(), { ...base, actions: { canCancel: false, canResume: true } }, 'kuklabs');
+  assert.match(resumable, /kg-usage-resume/);
+  assert.doesNotMatch(resumable, /kg-usage-cancel/);
+});
+
+test('a pending cancellation says when, and that nothing is lost', async () => {
+  assert.equal(cancellationNote({ subscription: { status: 'active' } }), '');
+  const note = cancellationNote({ subscription: { cancelsAt: '2026-09-01T00:00:00.000Z' } });
+  assert.match(note, /ends on 1 Sept? 2026/);
+  // The first thing somebody cancelling wants to know is whether their code is
+  // going anywhere. It is not.
+  assert.match(note, /nothing is deleted after/);
 });
 
 test('the page actually loads the module and marks the cards', async () => {

@@ -234,7 +234,7 @@ export function redactSecret(text, secret) {
  * removed from the message before it leaves this function, not before it is
  * displayed — by then it has already been written down.
  */
-export async function providerRequest(fetchImpl, url, options, { secret, provider }) {
+export async function providerRequest(fetchImpl, url, options, { secret, provider, operation = 'checkout' }) {
   let response;
   try {
     response = await fetchImpl(url, { ...options, signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
@@ -250,9 +250,11 @@ export async function providerRequest(fetchImpl, url, options, { secret, provide
       const parsed = JSON.parse(text);
       detail = parsed?.error?.description ?? parsed?.error?.message ?? parsed?.message ?? detail;
     } catch { /* not JSON */ }
+    // Named after what was actually attempted. "refused the checkout" on a
+    // cancellation sends whoever reads it looking in the wrong place.
     throw httpError(
       response.status >= 500 ? 502 : 400,
-      `${provider} refused the checkout: ${redactSecret(detail, secret)}`,
+      `${provider} refused the ${operation}: ${redactSecret(detail, secret)}`,
       'BILLING_CHECKOUT_REFUSED',
     );
   }

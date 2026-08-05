@@ -202,8 +202,11 @@ not the boundary being trusted. Those items stay in scope here.
 - [ ] verify Razorpay, Stripe and Resend against the real providers in test
       mode — three adapters exist, none has ever made a real call or received a
       real delivery. **This is the blocker for taking money.**
-- [ ] self-serve cancellation and downgrade — today a customer cancels in the
-      provider's own portal
+- [x] self-serve cancellation — ends at the paid period, never immediately;
+      Stripe can resume, Razorpay cannot and does not offer it,
+      [CHECKOUT.md](CHECKOUT.md)
+- [ ] downgrade between paid plans with proration — today Business to Team means
+      cancelling and buying again
 - [ ] repository, LFS, CI, artifact and package quotas
 - [ ] package registry
 - [ ] container registry
