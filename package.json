@@ -28,7 +28,7 @@
     "database:postgresql-import": "node scripts/postgresql-import.mjs",
     "database:postgresql-shadow": "node scripts/postgresql-shadow.mjs",
     "ssh:authorized-keys": "node scripts/authorized-keys.mjs",
-    "check": "for f in server.mjs src/*.mjs scripts/*.mjs public/*.js; do node --check \"$f\" || exit 1; done",
+    "check": "for f in server.mjs src/*.mjs scripts/*.mjs test-support/*.mjs public/*.js; do node --check \"$f\" || exit 1; done",
     "test": "NODE_ENV=test node --test --test-reporter=spec"
   },
   "dependencies": {
