@@ -83,6 +83,19 @@ function asServerUser(command, args, { bin, cwd = root }) {
   return spawnSync('su', ['postgres', '-c', `${path.join(bin, command)} ${quoted}`], { cwd, encoding: 'utf8' });
 }
 
+/** Whether the port actually answers, rather than whether pg_ctl said "started". */
+function reachable(port) {
+  const probe = spawnSync(process.execPath, ['-e', `
+    const net = require('node:net');
+    const socket = net.connect(${port}, '127.0.0.1');
+    socket.setTimeout(2000);
+    socket.on('connect', () => { socket.destroy(); process.exit(0); });
+    socket.on('timeout', () => { socket.destroy(); process.exit(1); });
+    socket.on('error', () => process.exit(1));
+  `], { encoding: 'utf8' });
+  return probe.status === 0;
+}
+
 function start() {
   const bin = serverBin();
   if (!bin) {
@@ -124,6 +137,19 @@ function start() {
   const created = asServerUser('createdb', ['-h', '/tmp', '-p', String(port), '-U', USER, DATABASE], { bin });
   if (created.status !== 0) {
     console.error(created.stderr || created.stdout);
+    process.exitCode = 1;
+    return;
+  }
+
+  // Over TCP, which is what the URL says and what `pg` will use. A cluster
+  // reachable on its Unix socket and not on 127.0.0.1 starts, creates the
+  // database, prints a URL, and then refuses every connection made with it.
+  if (!reachable(port)) {
+    console.error([
+      `The cluster started but nothing answers on 127.0.0.1:${port}.`,
+      `Its log is at ${path.join(dataDir, 'log')}.`,
+    ].join('\n'));
+    asServerUser('pg_ctl', ['-D', dataDir, '-m', 'immediate', 'stop'], { bin });
     process.exitCode = 1;
     return;
   }

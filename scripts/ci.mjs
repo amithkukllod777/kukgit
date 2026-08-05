@@ -46,6 +46,7 @@ const STEPS = [
     // true sends somebody debugging node-postgres.
     installed: 'pg',
   },
+  { name: 'licences', command: ['npm', 'run', 'deps'] },
   { name: 'doctor', command: ['npm', 'run', 'doctor'] },
   { name: 'syntax', command: ['npm', 'run', 'check'] },
   { name: 'tests', command: ['npm', 'test'] },
@@ -63,7 +64,31 @@ const POSTGRES_STEP = {
   name: 'PostgreSQL write compatibility',
   command: ['node', '--test', '--test-reporter=spec', 'test/runtime-write-postgresql.test.mjs'],
   needs: 'KUKGIT_TEST_POSTGRES_URL',
+  reachable: true,
 };
+
+/**
+ * Whether anything is listening where the URL says.
+ *
+ * "Nothing is at that address" is not a test result. Reporting it as a failed
+ * compatibility test sends somebody debugging PostgreSQL transaction semantics
+ * when what actually happened is that their development cluster died — which is
+ * how this was found.
+ */
+export function canReach(url, { timeoutMs = 1500 } = {}) {
+  let target;
+  try { target = new URL(url); } catch { return false; }
+  if (!target.hostname) return false;
+  const probe = spawnSync(process.execPath, ['-e', `
+    const net = require('node:net');
+    const socket = net.connect(${Number(target.port) || 5432}, ${JSON.stringify(target.hostname)});
+    socket.setTimeout(${timeoutMs});
+    socket.on('connect', () => { socket.destroy(); process.exit(0); });
+    socket.on('timeout', () => { socket.destroy(); process.exit(1); });
+    socket.on('error', () => process.exit(1));
+  `], { encoding: 'utf8' });
+  return probe.status === 0;
+}
 
 function run(step, { quiet }) {
   const started = Date.now();
@@ -90,6 +115,23 @@ function main() {
   const results = [];
   let failed = null;
 
+  // Before anything runs, because `npm test` runs the PostgreSQL file too. An
+  // unreachable database set in the environment makes that step fail, and the
+  // summary then says "tests" — which sends somebody reading test output when
+  // the answer is that their development cluster died.
+  const databaseUrl = process.env[POSTGRES_STEP.needs];
+  if (databaseUrl && !canReach(databaseUrl)) {
+    console.error([
+      `${POSTGRES_STEP.needs} is set to ${databaseUrl}, and nothing is listening there.`,
+      '',
+      'Start one with `npm run postgres:dev`, or unset the variable to skip the',
+      'PostgreSQL steps. Running with it set would fail the whole suite for a',
+      'reason that has nothing to do with the code.',
+    ].join('\n'));
+    process.exitCode = 1;
+    return;
+  }
+
   for (const step of [...STEPS, POSTGRES_STEP]) {
     if (step.needs && !process.env[step.needs]) {
       // With the command that fixes it. A skip somebody does not know how to
@@ -99,6 +141,10 @@ function main() {
     }
     if (step.installed && !fs.existsSync(path.join(root, 'node_modules', step.installed))) {
       results.push({ name: step.name, state: 'skipped', why: `${step.installed} is not installed — run npm install` });
+      continue;
+    }
+    if (step.reachable && !canReach(process.env[step.needs])) {
+      results.push({ name: step.name, state: 'skipped', why: `nothing is listening at ${process.env[step.needs]}` });
       continue;
     }
     if (!quiet) console.log(`\n── ${step.name} ──`);
