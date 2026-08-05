@@ -288,9 +288,22 @@ async function renderOrganizationPanel(preferredSlug = '', organizations = null,
   const content = document.querySelector('.content');
   if (!content) return;
   injectStyles();
+
+  // The guard runs before the fetch, not after it.
+  //
+  // When the panel is already on the page its slug is on the panel, so nothing
+  // has to be fetched to find out we have nothing to do. Asking first and
+  // checking afterwards meant every DOM change fetched the organization list —
+  // forty times in six seconds on this page, ending at the rate limiter, with
+  // the render correctly skipped every time.
+  const knownSlug = preferredSlug || document.querySelector('#kg-collaboration-panel')?.dataset.org || '';
+  if (!force && knownSlug
+    && organizationRenderKey === `${location.hash}:${knownSlug}`
+    && document.querySelector('#kg-collaboration-panel')) return;
+
   const orgList = organizations || (await request('/api/orgs')).organizations;
   if (!orgList.length) return;
-  const currentSlug = preferredSlug || document.querySelector('#kg-collaboration-panel')?.dataset.org || orgList[0].slug;
+  const currentSlug = knownSlug || orgList[0].slug;
   const key = `${location.hash}:${currentSlug}`;
   if (!force && organizationRenderKey === key && document.querySelector('#kg-collaboration-panel')) return;
   organizationRenderKey = key;

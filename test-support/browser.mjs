@@ -339,6 +339,24 @@ class KgElement {
 
   appendChild(node) { this.append(node); return node; }
 
+  prepend(...nodes) {
+    const adopted = nodes.map((node) => {
+      const child = typeof node === 'string' ? new KgText(node, this.ownerDocument) : node;
+      if (child.parentNode) child.parentNode.removeChild(child, true);
+      return adopt(this, child);
+    });
+    this.childNodes.unshift(...adopted);
+    this.ownerDocument?.noteMutation(this);
+  }
+
+  insertBefore(node, reference) {
+    if (node.parentNode) node.parentNode.removeChild(node, true);
+    const at = reference ? this.childNodes.indexOf(reference) : this.childNodes.length;
+    this.childNodes.splice(at < 0 ? this.childNodes.length : at, 0, adopt(this, node));
+    this.ownerDocument?.noteMutation(this);
+    return node;
+  }
+
   removeChild(node, quiet = false) {
     const index = this.childNodes.indexOf(node);
     if (index >= 0) this.childNodes.splice(index, 1);
@@ -624,6 +642,19 @@ class KgFormData {
   * [Symbol.iterator]() { yield* this.entries; }
 }
 
+/** `sessionStorage`/`localStorage`, in memory and gone with the harness. */
+function memoryStorage() {
+  const store = new Map();
+  return {
+    getItem: (key) => (store.has(String(key)) ? store.get(String(key)) : null),
+    setItem: (key, value) => { store.set(String(key), String(value)); },
+    removeItem: (key) => { store.delete(String(key)); },
+    clear: () => store.clear(),
+    key: (index) => [...store.keys()][index] ?? null,
+    get length() { return store.size; },
+  };
+}
+
 /* ------------------------------------------------------------------- the shim */
 
 /**
@@ -685,16 +716,49 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
     origin,
     hash,
     pathname: '/',
+    search: '',
+    assign() {},
+    replace() {},
     get href() { return `${origin}/${this.hash}`; },
   };
 
   set('document', document);
   set('location', location);
+  // Several modules schedule through two nested frames rather than a
+  // microtask. A frame is a macrotask here, which is close enough to make the
+  // fetch → render → observer → fetch loop reproduce at the same shape.
+  //
+  // Tracked, because a frame still queued when the test ends fires into a torn
+  // down global and reports as an unhandled `requestAnimationFrame is not
+  // defined` against whichever test happens to be running.
+  const frames = new Set();
+  set('requestAnimationFrame', (callback) => {
+    const handle = setTimeout(() => { frames.delete(handle); callback(0); }, 0);
+    frames.add(handle);
+    return handle;
+  });
+  set('cancelAnimationFrame', (handle) => { frames.delete(handle); clearTimeout(handle); });
+  set('sessionStorage', memoryStorage());
+  set('localStorage', memoryStorage());
   set('MutationObserver', KgMutationObserver);
   set('FormData', KgFormData);
   set('Element', KgElement);
   set('fetch', makeFetch(routes, calls));
   set('window', globalThis);
+
+  // Several modules start a poll on import — a minute-long `setInterval` that
+  // is correct in a browser and, in Node, keeps the event loop alive until the
+  // test runner gives up. Recorded here and cleared by `restore()`; unref'd
+  // immediately so a forgotten `restore()` fails as an assertion rather than as
+  // a hung suite.
+  const intervals = new Set();
+  const savedSetInterval = globalThis.setInterval;
+  globalThis.setInterval = (...args) => {
+    const handle = savedSetInterval(...args);
+    handle?.unref?.();
+    intervals.add(handle);
+    return handle;
+  };
 
   const windowSaved = {
     addEventListener: globalThis.addEventListener,
@@ -755,6 +819,11 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
       globalThis.addEventListener = windowSaved.addEventListener;
       globalThis.removeEventListener = windowSaved.removeEventListener;
       globalThis.dispatchEvent = windowSaved.dispatchEvent;
+      globalThis.setInterval = savedSetInterval;
+      for (const handle of intervals) clearInterval(handle);
+      intervals.clear();
+      for (const handle of frames) clearTimeout(handle);
+      frames.clear();
       document.observers.clear();
     },
   };
