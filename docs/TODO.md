@@ -20,13 +20,19 @@ This is the prioritized execution list for KukGit. The phase-level direction is 
 
 ### 0. Restore trustworthy CI execution
 
-Current blocker: GitHub-hosted jobs for this repository have failed before their
-first step and produced no executable logs. **No workflow file in this repository
-has ever run**, including `.github/workflows/ci.yml`.
+Current blocker: **GitHub Actions billing on the account.** Confirmed by the
+owner, 2026-08-05. Every job GitHub has created for this repository — 349 of
+them, including every merge to `main` — failed within two seconds with
+`runner_id: 0`, no runner name, no steps and no logs. The runner was never
+assigned. No change to this repository fixes that.
 
-- [ ] restore GitHub Actions hosted-runner provisioning for this repository/account
+- [ ] resolve GitHub Actions billing for the account — **only the account owner
+      can do this**, and nothing else in this section can close until it is done
 - [ ] execute `.github/workflows/ci.yml` at least once, so the workflow file
       itself is known to be correct rather than only plausible
+- [x] make the same verdict producible without GitHub — `npm run ci` runs the
+      workflow's steps in the workflow's order, and `test/ci-parity.test.mjs`
+      fails if the two drift apart
 - [x] run normal doctor, syntax and complete Node test suite from the exact
       PR #70 head — **run locally** with current `main` merged in: doctor 23
       checks clean, syntax clean, 425/425 tests passing
@@ -46,9 +52,18 @@ the same commands locally at the exact PR head — and PR #70 was merged on that
 basis, which is recorded here rather than left to be inferred from the merge.
 
 What local execution does **not** prove is that `ci.yml` is correct, because it
-has still never run. That is why the first two items above stay open. Until they
-close, every merge depends on somebody running the suite by hand, and a workflow
-file nobody has executed is a file nobody should trust.
+has still never run. That is why the first two items above stay open.
+
+**`npm run ci` is the verdict until they close.** It runs the workflow's steps
+in the workflow's order and prints one pass/fail line each, and it says out loud
+which steps it skipped — a suite that quietly runs less than it claims is how a
+green result stops meaning anything. `test/ci-parity.test.mjs` fails if the
+workflow grows a step the script does not run, so "I ran CI locally" cannot
+quietly come to mean something smaller than CI.
+
+It is still not the same thing. `npm run ci` does not prove the YAML parses, the
+actions resolve, or the PostgreSQL service starts. A workflow file nobody has
+executed remains a file nobody should trust.
 
 ### 1. PostgreSQL production data layer
 
