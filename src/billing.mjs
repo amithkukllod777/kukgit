@@ -40,6 +40,31 @@ const REJECTION_LIMIT = 200;
 const providers = new Map();
 
 /**
+ * Who to tell when money goes wrong. A no-op until somebody registers one.
+ *
+ * A hook rather than an import, for the same reason provider adapters are
+ * adapters: the part that decides what an organization is entitled to should
+ * not also know how email works. It also keeps the dependency pointing one way
+ * — the notifier reads `GRACE_DAYS` from here, and a direct call in the other
+ * direction would close the loop.
+ *
+ * Failures are swallowed on purpose. A billing event that could not send an
+ * email is still a billing event that must be applied; refusing the plan change
+ * because the mail server is down is the more expensive failure by far.
+ */
+let notifier = null;
+
+export function setBillingNotifier(fn) {
+  notifier = typeof fn === 'function' ? fn : null;
+}
+
+function notify(db, payload) {
+  if (!notifier) return;
+  try { notifier(db, payload); }
+  catch (error) { console.error('KukGit billing notification', error.message); }
+}
+
+/**
  * Register a payment provider.
  *
  * An adapter verifies a request came from its provider and turns the payload
@@ -256,6 +281,16 @@ function applyChange(db, {
   const granted = entitlement(db, organizationId, { now }).plan;
   db.prepare('UPDATE organizations SET plan = ? WHERE id = ?').run(granted, organizationId);
 
+  // After the write, so a notice never describes a state that failed to save.
+  if (state === 'past_due') {
+    notify(db, {
+      organizationId, kind: 'payment_failed', plan: wanted,
+      subscription: subscriptionFor(db, organizationId), graceUntil: graceFor(state, now),
+    });
+  } else if (state === 'canceled' && organization.plan !== 'free') {
+    notify(db, { organizationId, kind: 'subscription_ended', plan: organization.plan });
+  }
+
   audit(db, {
     organizationId,
     userId,
@@ -329,6 +364,16 @@ export function recordCancellationIntent(db, organizationId, { cancelsAt = null,
   if (!subscription) throw httpError(404, 'This organization has no subscription.', 'BILLING_NO_SUBSCRIPTION');
   db.prepare('UPDATE billing_subscriptions SET cancels_at = ?, updated_at = CURRENT_TIMESTAMP WHERE organization_id = ?')
     .run(cancelsAt, organizationId);
+  // Only on the way out. Resuming is somebody undoing their own click a moment
+  // later, and mailing the whole admin list about it is noise.
+  if (!resumed && cancelsAt) {
+    notify(db, {
+      organizationId,
+      kind: 'cancellation_scheduled',
+      plan: subscription.plan,
+      subscription: subscriptionFor(db, organizationId),
+    });
+  }
   audit(db, {
     organizationId,
     userId,
@@ -455,6 +500,9 @@ export function expireGracePeriods(db, { now = new Date() } = {}) {
     const organization = db.prepare('SELECT plan FROM organizations WHERE id = ?').get(row.organizationId);
     if (!organization || organization.plan === 'free') continue;
     db.prepare("UPDATE organizations SET plan = 'free' WHERE id = ?").run(row.organizationId);
+    // The one moment nobody is looking at a screen: a worker changed their plan
+    // an hour after midnight because a card expired two weeks ago.
+    notify(db, { organizationId: row.organizationId, kind: 'grace_expired', plan: organization.plan });
     audit(db, {
       organizationId: row.organizationId,
       action: 'billing.grace_expired',
