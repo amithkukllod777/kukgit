@@ -33,6 +33,10 @@ assigned. No change to this repository fixes that.
 - [x] make the same verdict producible without GitHub — `npm run ci` runs the
       workflow's steps in the workflow's order, and `test/ci-parity.test.mjs`
       fails if the two drift apart
+- [x] stop the PostgreSQL suite skipping everywhere — `npm run postgres:dev`
+      starts a disposable PostgreSQL 16, and the skip message names it. First
+      run with nothing skipped: **804 tests, 804 pass, 0 skipped**, all six CI
+      steps green, PostgreSQL 16.13, 2026-08-05
 - [x] run normal doctor, syntax and complete Node test suite from the exact
       PR #70 head — **run locally** with current `main` merged in: doctor 23
       checks clean, syntax clean, 425/425 tests passing

@@ -36,8 +36,10 @@ npm run doctor
 npm run seed
 npm test
 npm start
-npm run ci    # everything .github/workflows/ci.yml runs — GitHub's runners
-              # are blocked on account billing, so this is the verdict
+npm run ci             # everything .github/workflows/ci.yml runs — GitHub's
+                       # runners are blocked on account billing, so this is
+                       # the verdict
+npm run postgres:dev   # a disposable PostgreSQL 16, so `ci` skips nothing
 ```
 
 ## Current technology

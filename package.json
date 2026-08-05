@@ -30,7 +30,8 @@
     "ssh:authorized-keys": "node scripts/authorized-keys.mjs",
     "check": "for f in server.mjs src/*.mjs scripts/*.mjs test-support/*.mjs public/*.js; do node --check \"$f\" || exit 1; done",
     "test": "NODE_ENV=test node --test --test-reporter=spec",
-    "ci": "node scripts/ci.mjs"
+    "ci": "node scripts/ci.mjs",
+    "postgres:dev": "node scripts/postgres-dev.mjs"
   },
   "dependencies": {
     "pg": "8.22.0"
