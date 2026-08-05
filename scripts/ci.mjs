@@ -92,7 +92,9 @@ function main() {
 
   for (const step of [...STEPS, POSTGRES_STEP]) {
     if (step.needs && !process.env[step.needs]) {
-      results.push({ name: step.name, state: 'skipped', why: `${step.needs} is not set` });
+      // With the command that fixes it. A skip somebody does not know how to
+      // resolve is a skip that stays there, and this one stayed for months.
+      results.push({ name: step.name, state: 'skipped', why: `${step.needs} is not set — npm run postgres:dev` });
       continue;
     }
     if (step.installed && !fs.existsSync(path.join(root, 'node_modules', step.installed))) {
