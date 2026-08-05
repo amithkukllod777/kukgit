@@ -104,15 +104,72 @@ reused session is the only protection.
 After the window, a new checkout is created — an abandoned session from this
 morning is not what somebody is shown this afternoon.
 
-## Downgrading
+## Cancelling
 
-`free` is not sold at checkout, and neither is `founder`.
+`free` is not sold at checkout, and neither is `founder`. Downgrading to free is
+a **cancellation**: a different operation with different consequences.
 
-Downgrading to free is a **cancellation**: a different operation with different
-consequences, and calling it a purchase would hide that. It is not implemented —
-today a customer cancels in the provider's own portal and the resulting
-`subscription.cancelled` / `customer.subscription.deleted` webhook moves them to
-free, with the usual grace behaviour.
+```
+POST /api/orgs/:slug/billing/cancel   → 200 { subscription, actions, alreadyRequested }
+POST /api/orgs/:slug/billing/resume   → 200 { subscription, actions, alreadyActive }
+```
+
+A customer who can start a subscription and cannot end one is a customer whose
+only exit is their bank. It is also, in most of the places KukGit will be sold,
+the first thing a consumer authority asks about.
+
+**Cancelling ends the subscription, not the access.** The customer paid for this
+period and keeps it — Razorpay `cancel_at_cycle_end`, Stripe
+`cancel_at_period_end`. Cutting them off the moment they click is charging for
+something and then withdrawing it.
+
+**The plan still changes only through a provider event.** Cancelling asks the
+provider to stop billing; what moves the organization to `free` is the event
+that arrives when the period runs out. A test asserts that immediately after
+cancelling, the plan and the subscription status are unchanged.
+
+### Who knows the end date
+
+`billing_subscriptions.cancels_at` holds when the subscription is due to end.
+
+- **Stripe is authoritative.** It sends `cancel_at_period_end` and `cancel_at`
+  on every subscription event, so an undo done in Stripe's own portal is
+  reflected here without KukGit being told separately.
+- **Razorpay does not report it**, so what the cancellation request recorded is
+  what stands — falling back to the current period end when Razorpay's response
+  carries no date. A cancellation with no date reads as "already gone", and
+  their repositories are still there.
+- Either way it is cleared once the subscription is actually `canceled`. A date
+  in the past that says "ends soon" is worse than no date.
+
+### Resume
+
+Stripe only. **Razorpay has no un-cancel** — a subscription cancelled at cycle
+end stays cancelled and the customer buys again.
+
+Which buttons a screen may show is decided by `subscriptionActions` on the
+server and returned as `actions: { canCancel, canResume }`. Working it out in
+the browser would mean the front end holding a copy of what each provider
+supports, and being quietly wrong about it.
+
+### What is refused
+
+| Situation | Answer |
+| --- | --- |
+| No subscription | `404 BILLING_NO_SUBSCRIPTION` |
+| Already ended | `409 BILLING_ALREADY_CANCELED` |
+| Provider has not confirmed it yet (no reference) | `409 BILLING_NOT_CONFIRMED` |
+| `manual` subscription, or a provider that cannot do it | `422 BILLING_ACTION_UNSUPPORTED` |
+| Member, not owner/admin | `403 ORG_ADMIN_REQUIRED` |
+
+A `manual` subscription is the interesting one: an operator recorded a bank
+transfer or a negotiated agreement, there is no provider to call, and there is
+no self-serve way to end an agreement somebody signed. The message says to
+contact support, which is more use than a button that fails.
+
+Cancelling twice does not call the provider twice — providers differ on what a
+second cancellation of one subscription means, and none of the answers is better
+than not asking.
 
 ## What is refused, and what is said
 
@@ -145,10 +202,13 @@ does not belong in a log somebody can page through.
 
 ## What is still missing
 
-- **Nothing here has run against a real provider.** The adapters are written to
-  the documented APIs and tested against a recorded fetch. Razorpay and Stripe
-  in test mode is the next step, and until it happens this is unproven.
-- **No cancellation or downgrade in KukGit.** See above.
+- **No purchase or cancellation has completed against a real provider.** Every
+  endpoint here has been *called* from a live instance and refused on
+  credentials — which proves the paths, the verbs and the auth shape, and
+  nothing about what a successful response looks like. Razorpay and Stripe in
+  test mode is the next step.
+- **No downgrade between paid plans.** Business to Team means cancelling and
+  buying, with no proration.
 - **No proration.** A plan change takes effect when the provider says so.
 - **No tax handling.** GST and VAT are the provider's, and `billing_invoices` is
   not a compliant tax document.

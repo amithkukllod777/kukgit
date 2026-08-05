@@ -191,6 +191,13 @@ export const stripeAdapter = {
       currentPeriodEnd: subscription.current_period_end
         ? new Date(Number(subscription.current_period_end) * 1000).toISOString()
         : null,
+      // Stripe reports the pending cancellation on every subscription event,
+      // which makes it authoritative: an undo done in Stripe's own portal is
+      // reflected here without KukGit being told separately. Razorpay has no
+      // equivalent, so there the cancellation request is all we have.
+      cancelsAt: subscription.cancel_at_period_end && subscription.cancel_at
+        ? new Date(Number(subscription.cancel_at) * 1000).toISOString()
+        : null,
     };
   },
 };
@@ -264,6 +271,43 @@ export const stripeCheckout = {
 
     return { url: created?.url ?? null, reference: created?.id ? String(created.id) : null };
   },
+
+  /**
+   * Cancel at the end of the period the customer has paid for.
+   *
+   * `cancel_at_period_end` rather than deleting the subscription: deleting it
+   * ends access now, and they bought this period.
+   *
+   * The reference on the subscription row is Stripe's `sub_…`, which arrives on
+   * the first `customer.subscription.*` event. Before that it is the checkout
+   * session id, which this API will refuse — and refusing with Stripe's own
+   * message is more use than a guess of ours.
+   */
+  async cancel(db, config, { subscription, fetchImpl }) {
+    return updateSubscription(db, config, subscription, fetchImpl, true);
+  },
+
+  /** Undo a pending cancellation, which Stripe supports and Razorpay does not. */
+  async resume(db, config, { subscription, fetchImpl }) {
+    return updateSubscription(db, config, subscription, fetchImpl, false);
+  },
 };
+
+async function updateSubscription(db, config, subscription, fetchImpl, cancelAtPeriodEnd) {
+  const { secretKey } = stripeCheckoutCredentials(db, config, subscription.plan);
+  const updated = await providerRequest(
+    fetchImpl,
+    `https://api.stripe.com/v1/subscriptions/${encodeURIComponent(subscription.reference)}`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formEncode({ cancel_at_period_end: cancelAtPeriodEnd }).toString(),
+    },
+    { secret: secretKey, provider: 'Stripe', operation: cancelAtPeriodEnd ? 'cancellation' : 'resume' },
+  );
+  const at = Number(updated?.cancel_at ?? updated?.current_period_end);
+  const cancelling = updated?.cancel_at_period_end !== false && cancelAtPeriodEnd;
+  return { cancelsAt: cancelling && Number.isFinite(at) && at > 0 ? new Date(at * 1000).toISOString() : null };
+}
 
 export { STATUS_BY_STRIPE as STRIPE_STATUS_MAP };

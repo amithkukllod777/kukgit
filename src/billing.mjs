@@ -127,6 +127,10 @@ export function migrateBilling(db) {
     CREATE INDEX IF NOT EXISTS idx_billing_rejections_recent
       ON billing_webhook_rejections(received_at DESC);
   `);
+
+  // Added after the table shipped, so it is a column and not a rewrite.
+  const columns = new Set(db.prepare('PRAGMA table_info(billing_subscriptions)').all().map((row) => String(row.name)));
+  if (!columns.has('cancels_at')) db.exec('ALTER TABLE billing_subscriptions ADD COLUMN cancels_at TEXT');
 }
 
 /**
@@ -149,6 +153,9 @@ function shapeSubscription(row) {
     reference: row.provider_reference,
     currentPeriodEnd: row.current_period_end,
     graceUntil: row.grace_until,
+    // When the subscription is due to end. Set by a cancellation request, and
+    // overwritten by the provider where the provider reports it.
+    cancelsAt: row.cancels_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -208,7 +215,10 @@ function graceFor(status, now) {
  * Called from `ingestBillingEvent`, and directly by nothing else — every caller
  * goes through an event so that what changed a plan is always answerable.
  */
-function applyChange(db, { organizationId, plan, status, provider, reference, currentPeriodEnd, now, userId = null, eventType }) {
+function applyChange(db, {
+  organizationId, plan, status, provider, reference, currentPeriodEnd, cancelsAt,
+  now, userId = null, eventType,
+}) {
   const wanted = assertPlan(plan);
   const state = assertStatus(status);
   const organization = db.prepare('SELECT id, plan FROM organizations WHERE id = ?').get(organizationId);
@@ -227,6 +237,21 @@ function applyChange(db, { organizationId, plan, status, provider, reference, cu
       grace_until = excluded.grace_until,
       updated_at = CURRENT_TIMESTAMP
   `).run(organizationId, wanted, state, provider, reference ?? null, currentPeriodEnd ?? null, graceFor(state, now));
+
+  // The pending-cancellation date, kept in step with whoever knows better.
+  //
+  // A provider that reports it is authoritative — Stripe sends `cancel_at` on
+  // every subscription event, so an undo done in Stripe's own portal is
+  // reflected here without KukGit being told separately. A provider that does
+  // not report it leaves what the cancellation request recorded. Either way it
+  // is cleared once the subscription is actually `canceled`: a date in the past
+  // that says "ends soon" is worse than no date.
+  if (state === 'canceled') {
+    db.prepare('UPDATE billing_subscriptions SET cancels_at = NULL WHERE organization_id = ?').run(organizationId);
+  } else if (cancelsAt !== undefined) {
+    db.prepare('UPDATE billing_subscriptions SET cancels_at = ? WHERE organization_id = ?')
+      .run(cancelsAt ?? null, organizationId);
+  }
 
   const granted = entitlement(db, organizationId, { now }).plan;
   db.prepare('UPDATE organizations SET plan = ? WHERE id = ?').run(granted, organizationId);
@@ -289,6 +314,30 @@ export function ingestBillingEvent(db, { provider, providerEventId, type, change
       .run(`failed: ${error.code || error.message}`, id);
     throw error;
   }
+}
+
+/**
+ * Record that a subscription is due to end, or is no longer due to end.
+ *
+ * Deliberately narrow: it writes one column and never touches the plan or the
+ * status. A cancellation is a thing that will happen, not a thing that has —
+ * the customer paid for this period and keeps it. What actually changes the
+ * plan is the provider's event when the period runs out, like everything else.
+ */
+export function recordCancellationIntent(db, organizationId, { cancelsAt = null, userId = null, provider, resumed = false }) {
+  const subscription = subscriptionFor(db, organizationId);
+  if (!subscription) throw httpError(404, 'This organization has no subscription.', 'BILLING_NO_SUBSCRIPTION');
+  db.prepare('UPDATE billing_subscriptions SET cancels_at = ?, updated_at = CURRENT_TIMESTAMP WHERE organization_id = ?')
+    .run(cancelsAt, organizationId);
+  audit(db, {
+    organizationId,
+    userId,
+    action: resumed ? 'billing.subscription.resumed' : 'billing.subscription.cancellation_requested',
+    targetType: 'organization',
+    targetId: organizationId,
+    metadata: { provider: provider ?? subscription.provider, plan: subscription.plan, cancelsAt },
+  });
+  return subscriptionFor(db, organizationId);
 }
 
 /**
