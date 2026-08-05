@@ -33,7 +33,8 @@
     "ci": "node scripts/ci.mjs",
     "postgres:dev": "node scripts/postgres-dev.mjs",
     "deps": "node scripts/dependencies.mjs check",
-    "sbom": "node scripts/dependencies.mjs sbom"
+    "sbom": "node scripts/dependencies.mjs sbom",
+    "vulns": "node scripts/vulnerabilities.mjs"
   },
   "dependencies": {
     "pg": "8.22.0"

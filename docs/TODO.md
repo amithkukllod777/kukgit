@@ -209,8 +209,12 @@ not the boundary being trusted. Those items stay in scope here.
 - [x] dependency and licence gate, and a CycloneDX bill of materials —
       permissive licences only, refused by default, runs in CI,
       [DEPENDENCIES.md](DEPENDENCIES.md)
-- [ ] vulnerability scanning — `npm audit` is wired into nothing; the gate
-      answers "may we ship it", not "is it safe today"
+- [x] vulnerability scanning — `npm run vulns` fails on high and critical,
+      reports the rest, refuses to call an unreachable registry a pass, and
+      requires a person, a reason and an expiry to accept one,
+      [DEPENDENCIES.md](DEPENDENCIES.md)
+- [ ] advisories beyond npm — the Git side, the operating system, container
+      base images and vendored code are all outside `npm audit`
 - [ ] extend front-end behaviour coverage to `app.js` routing and the remaining
       `public/*.js` modules — [FRONT_END_TESTING.md](FRONT_END_TESTING.md) lists
       what the shim does not cover

@@ -40,6 +40,9 @@ npm run ci             # everything .github/workflows/ci.yml runs — GitHub's
                        # runners are blocked on account billing, so this is
                        # the verdict
 npm run postgres:dev   # a disposable PostgreSQL 16, so `ci` skips nothing
+npm run deps           # licences and lockfile drift
+npm run vulns          # npm advisories
+npm run sbom           # CycloneDX bill of materials
 ```
 
 ## Current technology

@@ -47,6 +47,7 @@ const STEPS = [
     installed: 'pg',
   },
   { name: 'licences', command: ['npm', 'run', 'deps'] },
+  { name: 'advisories', command: ['npm', 'run', 'vulns'] },
   { name: 'doctor', command: ['npm', 'run', 'doctor'] },
   { name: 'syntax', command: ['npm', 'run', 'check'] },
   { name: 'tests', command: ['npm', 'test'] },
