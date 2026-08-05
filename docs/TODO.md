@@ -206,7 +206,11 @@ not the boundary being trusted. Those items stay in scope here.
 - [x] push protection: block a push that introduces a credential, with a
       per-repository policy and an audited bypass — [PUSH_PROTECTION.md](PUSH_PROTECTION.md)
 - [x] history backfill scan for credentials committed before scanning existed — `npm run scan`
-- [ ] dependency, license and SBOM scanning design
+- [x] dependency and licence gate, and a CycloneDX bill of materials —
+      permissive licences only, refused by default, runs in CI,
+      [DEPENDENCIES.md](DEPENDENCIES.md)
+- [ ] vulnerability scanning — `npm audit` is wired into nothing; the gate
+      answers "may we ship it", not "is it safe today"
 - [ ] extend front-end behaviour coverage to `app.js` routing and the remaining
       `public/*.js` modules — [FRONT_END_TESTING.md](FRONT_END_TESTING.md) lists
       what the shim does not cover

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import net from 'node:net';
 import { freePort, serverBin } from '../scripts/postgres-dev.mjs';
-import { POSTGRES_STEP } from '../scripts/ci.mjs';
+import { POSTGRES_STEP, canReach } from '../scripts/ci.mjs';
 
 /**
  * The launcher, tested for the parts that decide whether it is safe.
@@ -57,6 +57,34 @@ test('the skip message says how to stop skipping', async () => {
   // This step skipped for months. A skip somebody does not know how to resolve
   // is a skip that stays.
   assert.match(script, /npm run postgres:dev/);
+});
+
+test('"nothing is listening there" is told apart from "the test failed"', async (t) => {
+  assert.equal(canReach('postgresql://kukgit@127.0.0.1:59999/nothing'), false);
+  assert.equal(canReach('not a url'), false);
+  assert.equal(canReach(''), false);
+
+  const server = net.createServer();
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  assert.equal(canReach(`postgresql://kukgit@127.0.0.1:${server.address().port}/anything`), true);
+});
+
+test('a database that is set and absent stops the run before the tests', async () => {
+  const script = fs.readFileSync(new URL('../scripts/ci.mjs', import.meta.url), 'utf8');
+  // `npm test` runs the PostgreSQL file too, so an unreachable database set in
+  // the environment fails that step and the summary says "tests" — which sends
+  // somebody reading test output when their development cluster has died. That
+  // is how this was found.
+  assert.match(script, /nothing is listening there/);
+  assert.match(script, /npm run postgres:dev/);
+});
+
+test('the launcher checks the URL it prints', async () => {
+  const script = fs.readFileSync(new URL('../scripts/postgres-dev.mjs', import.meta.url), 'utf8');
+  // A cluster reachable on its Unix socket and not on 127.0.0.1 starts, creates
+  // the database, prints a URL, and then refuses every connection made with it.
+  assert.match(script, /if \(!reachable\(port\)\)/);
 });
 
 test('both scripts are wired into package.json', async () => {
