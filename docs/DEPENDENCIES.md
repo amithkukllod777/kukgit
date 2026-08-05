@@ -1,7 +1,8 @@
 # Dependencies, licences and the bill of materials
 
 ```bash
-npm run deps    # the licence gate — runs in CI
+npm run deps    # may we ship it — licences and lockfile drift, runs in CI
+npm run vulns   # is it safe today — npm advisories, runs in CI
 npm run sbom    # CycloneDX to stdout, or --out sbom.json
 ```
 
@@ -88,10 +89,52 @@ Every component carries a `purl`, a version, and the `integrity` hash from the
 lockfile converted to a CycloneDX `SHA-512`. The same package at two versions
 appears twice, because both are shipped and both have a licence.
 
+## Advisories
+
+The licence gate answers *may we ship this*, once. `npm run vulns` answers a
+question whose answer changes without anybody touching the repository: a package
+that was fine on Monday has a CVE on Thursday.
+
+**High and critical fail the build. Moderate and low are printed and do not.**
+
+A gate that fails on everything gets switched off within a month — somebody hits
+a `low` in a transitive dependency with no fix available, the build is red, and
+the fastest way to ship is to delete the check. A gate that fails on nothing is
+decoration. This is the line where the failure is worth somebody's afternoon.
+
+### An unreachable registry is not a pass
+
+`npm audit` needs the npm registry. A machine with no route to it is not a
+machine with no vulnerabilities, so the tool reports that it could not check and
+says so in as many words. It does **not** fail the build either — an air-gapped
+build must not go red for being air-gapped.
+
+### Accepting one, with an expiry
+
+`ACCEPTED` in `scripts/vulnerabilities.mjs` is empty and should stay that way.
+An entry is a decision that KukGit ships a known vulnerability, so it needs a
+person, a reason, and an expiry date:
+
+```js
+{ id: 1234567, package: 'left-pad', why: 'no fix; not reachable from our code', until: '2026-12-31', by: 'amith' }
+```
+
+**The expiry is the part that matters.** An accepted risk with no end date is a
+risk nobody looks at again; it becomes furniture and is still there three years
+later when somebody asks why. Past its date it stops counting and the build goes
+red, so the decision is made again by somebody who can see what has changed.
+
+It is matched on the advisory id **and** the package, because an id reused for a
+different package is a different problem, and an acceptance that silently
+covered it would be an acceptance nobody made.
+
 ## What this does not do
 
-- **No vulnerability scanning.** `npm audit` exists and is not wired into
-  anything here. This answers "may we ship it", not "is it safe today".
+- **`npm audit` is the only source.** It knows about advisories published to the
+  npm registry and nothing else — not the Git side, not the operating system,
+  not anything vendored. It is not a great source; it is the one that matches
+  the dependency tree exactly, and a check that runs beats a better check that
+  does not.
 - **Nothing verifies the declared licence.** See above.
 - **No transitive licence obligations.** Attribution files, NOTICE requirements
   and the text a customer must be given are not generated.
