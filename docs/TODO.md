@@ -194,7 +194,16 @@ not the boundary being trusted. Those items stay in scope here.
 
 ## P2 — Public beta
 
-- [ ] subscriptions, plans, usage metering and invoices
+- [x] subscriptions, plans, usage metering and invoices —
+      [BILLING.md](BILLING.md), [BILLING_AND_QUOTAS.md](BILLING_AND_QUOTAS.md)
+- [x] self-serve checkout for Razorpay and Stripe —
+      [CHECKOUT.md](CHECKOUT.md); checkout starts a purchase and cannot grant a
+      plan, which stays the webhook's job
+- [ ] verify Razorpay, Stripe and Resend against the real providers in test
+      mode — three adapters exist, none has ever made a real call or received a
+      real delivery. **This is the blocker for taking money.**
+- [ ] self-serve cancellation and downgrade — today a customer cancels in the
+      provider's own portal
 - [ ] repository, LFS, CI, artifact and package quotas
 - [ ] package registry
 - [ ] container registry

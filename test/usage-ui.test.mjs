@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { bytes, meter, money, usagePanel } from '../public/usage-ui.js';
+import { bytes, checkoutRow, meter, money, usagePanel } from '../public/usage-ui.js';
 
 const GIB = 1024 ** 3;
 
@@ -105,6 +105,43 @@ test('everything rendered is escaped', async () => {
   // The plan string comes from the database, which an operator types into.
   assert.doesNotMatch(html, /<img/);
   assert.match(html, /&lt;img/);
+});
+
+test('nothing to buy shows no buttons', async () => {
+  // A member who cannot change the plan gets an empty list from the API. A
+  // button that exists to be refused is worse than no button.
+  assert.equal(checkoutRow(usage(), { checkout: [] }, 'kuklabs'), '');
+  assert.equal(checkoutRow(usage(), null, 'kuklabs'), '');
+  assert.doesNotMatch(usagePanel(usage(), null, 'kuklabs'), /kg-usage-buy/);
+});
+
+test('the plan somebody is already on is not sold to them again', async () => {
+  const billing = {
+    checkout: [
+      { provider: 'razorpay', plan: 'team', label: 'Team' },
+      { provider: 'razorpay', plan: 'business', label: 'Business' },
+    ],
+  };
+  const html = checkoutRow(usage(), billing, 'kuklabs');
+  // The fixture is on Team. "Upgrade to Team" is how a customer pays twice.
+  assert.doesNotMatch(html, /data-kg-buy-plan="team"/);
+  assert.match(html, /data-kg-buy-plan="business"/);
+  assert.match(html, /data-kg-buy-provider="razorpay"/);
+  assert.match(html, /data-kg-buy-org="kuklabs"/);
+});
+
+test('both providers are offered when both are configured', async () => {
+  const billing = {
+    checkout: [
+      { provider: 'razorpay', plan: 'business', label: 'Business' },
+      { provider: 'stripe', plan: 'business', label: 'Business' },
+    ],
+  };
+  const html = checkoutRow(usage(), billing, 'kuklabs');
+  // Two providers for one plan is a real state — India and everywhere else —
+  // and the customer picks, not us.
+  assert.match(html, /razorpay/);
+  assert.match(html, /stripe/);
 });
 
 test('the page actually loads the module and marks the cards', async () => {

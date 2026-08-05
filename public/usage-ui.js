@@ -59,8 +59,12 @@ export function meter(label, used, limit, format = (value) => value) {
   </div>`;
 }
 
-async function request(path) {
-  const response = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
+async function request(path, options = {}) {
+  const response = await fetch(path, {
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.error?.message || `Request failed (${response.status})`);
   return payload;
@@ -82,11 +86,34 @@ function installStyles() {
     .kg-usage-bar.over i { background:linear-gradient(90deg,#ff5e70,#ff2d55); }
     .kg-usage-note { color:var(--muted); font-size:10px; line-height:1.5; }
     .kg-usage-note.over { color:#ff8fa0; }
+    .kg-usage-checkout { display:flex; flex-wrap:wrap; gap:7px; margin-top:4px; }
+    .kg-usage-checkout .btn { font-size:11px; padding:6px 10px; }
   `;
   document.head.append(style);
 }
 
-export function usagePanel(usage, billing) {
+/**
+ * The plans this person can actually buy, as buttons.
+ *
+ * Only what the server offered. A member who cannot change the plan gets an
+ * empty list from the API and sees nothing here — a button that exists to be
+ * refused is worse than no button, and the check that matters is the server's
+ * either way.
+ *
+ * The plan somebody is already on is not offered again. "Upgrade to Team" on a
+ * Team subscription is how a customer ends up paying twice.
+ */
+export function checkoutRow(usage, billing, slug) {
+  const options = (billing?.checkout ?? []).filter((option) => option.plan !== usage.plan?.id);
+  if (!options.length) return '';
+  return `<div class="kg-usage-checkout">
+    ${options.map((option) => `<button class="btn btn-ghost kg-usage-buy"
+      data-kg-buy-org="${esc(slug)}" data-kg-buy-plan="${esc(option.plan)}" data-kg-buy-provider="${esc(option.provider)}"
+      >Upgrade to ${esc(option.label ?? option.plan)} · ${esc(option.provider)}</button>`).join('')}
+  </div>`;
+}
+
+export function usagePanel(usage, billing, slug = '') {
   const { limits, storage, ci, people, plan } = usage;
   const over = usage.exceeded ?? [];
 
@@ -108,12 +135,43 @@ export function usagePanel(usage, billing) {
       ${plan.recognised === false ? `<br />This organization's plan is recorded as "${esc(plan.stored)}", which is not a plan we know. It is being treated as free.` : ''}
     </div>
     ${over.length ? `<div class="kg-usage-note over">Over the plan on ${esc(over.join(', '))}. Nothing has been deleted and everything can still be read — what stops is adding more.</div>` : ''}
+    ${checkoutRow(usage, billing, slug)}
   </div>`;
+}
+
+async function buy(button) {
+  const { kgBuyOrg: slug, kgBuyPlan: plan, kgBuyProvider: provider } = button.dataset;
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = 'Opening payment page…';
+  try {
+    const { checkout } = await request(`/api/orgs/${encodeURIComponent(slug)}/billing/checkout`, {
+      method: 'POST',
+      body: JSON.stringify({ plan, provider }),
+    });
+    if (!checkout?.url) throw new Error('The payment provider did not return a link.');
+    // Same tab. A payment page opened in a popup is a payment page a blocker
+    // eats, and the customer sees a button that did nothing.
+    window.location.assign(checkout.url);
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = original;
+    // On the button rather than in a toast: the thing that failed is the thing
+    // they are looking at, and a toast is gone before they finish reading it.
+    button.insertAdjacentHTML('afterend', `<small class="kg-usage-note over">${esc(error.message)}</small>`);
+  }
+}
+
+function bindCheckout(card) {
+  for (const button of card.querySelectorAll('.kg-usage-buy')) {
+    button.addEventListener('click', () => buy(button));
+  }
 }
 
 async function fill(card, slug) {
   if (cache.has(slug)) {
     card.insertAdjacentHTML('beforeend', cache.get(slug));
+    bindCheckout(card);
     return;
   }
   try {
@@ -123,9 +181,12 @@ async function fill(card, slug) {
       request(`/api/orgs/${encodeURIComponent(slug)}/usage`),
       request(`/api/orgs/${encodeURIComponent(slug)}/billing`).catch(() => null),
     ]);
-    const html = usagePanel(usage, billing);
+    const html = usagePanel(usage, billing, slug);
     cache.set(slug, html);
     card.insertAdjacentHTML('beforeend', html);
+    // After insertion, and on every path that inserts: markup restored from the
+    // cache has the same buttons and they would otherwise do nothing.
+    bindCheckout(card);
   } catch {
     // Silent. A usage panel that could not load must not take the page it is
     // attached to with it.

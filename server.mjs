@@ -97,8 +97,9 @@ import { migrateUsageHistory, startUsagePeriodWorker, startUsageSampleWorker } f
 import { migrateBilling, startBillingGraceWorker } from './src/billing.mjs';
 import { createBillingApiHandler } from './src/billing-api.mjs';
 import { registerBillingProvider } from './src/billing.mjs';
-import { razorpayAdapter } from './src/billing-razorpay.mjs';
-import { stripeAdapter } from './src/billing-stripe.mjs';
+import { razorpayAdapter, razorpayCheckout } from './src/billing-razorpay.mjs';
+import { stripeAdapter, stripeCheckout } from './src/billing-stripe.mjs';
+import { migrateBillingCheckout, registerCheckoutProvider } from './src/billing-checkout.mjs';
 import { createInstanceSettingsApiHandler, migrateInstanceSettings } from './src/instance-settings.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
@@ -306,6 +307,13 @@ migrateInstanceSettings(db);
 // instance has set up.
 registerBillingProvider('razorpay', razorpayAdapter);
 registerBillingProvider('stripe', stripeAdapter);
+migrateBillingCheckout(db);
+// Starting a purchase is a separate capability from accepting a webhook about
+// one. An instance can be set up to receive Stripe events for subscriptions
+// created elsewhere without being able to create any, and `configured()` is
+// what decides whether a customer is ever offered the button.
+registerCheckoutProvider('razorpay', razorpayCheckout);
+registerCheckoutProvider('stripe', stripeCheckout);
 const billingApi = createBillingApiHandler({ config, db, isInstanceAdmin });
 const instanceSettingsApi = createInstanceSettingsApiHandler({ config, db, isInstanceAdmin });
 // Registered so a support grant can be honoured at all. Without this the

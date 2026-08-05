@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { instanceSetting } from './instance-settings.mjs';
 import { recordInvoice } from './billing.mjs';
+import { CHECKOUT_REUSE_MINUTES, attributionNotes, formEncode, providerRequest } from './billing-checkout.mjs';
 
 /**
  * Stripe, as a billing adapter.
@@ -191,6 +192,77 @@ export const stripeAdapter = {
         ? new Date(Number(subscription.current_period_end) * 1000).toISOString()
         : null,
     };
+  },
+};
+
+/* ------------------------------------------------------------------ checkout */
+
+const CHECKOUT_ENDPOINT = 'https://api.stripe.com/v1/checkout/sessions';
+
+/** `team` → `priceIdTeam`, which is what the console asks an operator to fill in. */
+function planSettingKey(plan) {
+  const id = String(plan ?? '').toLowerCase();
+  return `priceId${id.charAt(0).toUpperCase()}${id.slice(1)}`;
+}
+
+export function stripeCheckoutCredentials(db, config, plan) {
+  return {
+    secretKey: instanceSetting(db, config, 'billing.stripe', 'secretKey'),
+    priceId: instanceSetting(db, config, 'billing.stripe', planSettingKey(plan)),
+  };
+}
+
+/**
+ * The key that makes a retried create return the first session.
+ *
+ * Bucketed by the same window the reused session uses, so the two agree: within
+ * the window Stripe returns the session it already made, and outside it both
+ * this and the local lookup have moved on together. Without it, two concurrent
+ * clicks that both miss the local lookup create two subscriptions.
+ */
+function idempotencyKey(organization, plan, now) {
+  const bucket = Math.floor(now.getTime() / (CHECKOUT_REUSE_MINUTES * 60_000));
+  return `kukgit:${organization.id}:${plan}:${bucket}`;
+}
+
+/**
+ * Starting a Stripe Checkout session.
+ *
+ * The metadata goes on `subscription_data` as well as the session, because the
+ * webhook reads the **subscription**, and a session's metadata is not copied to
+ * the subscription it creates. Setting only the session's is the mistake that
+ * produces a paid customer whose events cannot be attributed to anyone.
+ */
+export const stripeCheckout = {
+  configured(db, config, plan) {
+    const { secretKey, priceId } = stripeCheckoutCredentials(db, config, plan);
+    return Boolean(secretKey && priceId);
+  },
+
+  async create(db, config, { organization, plan, returnUrl, fetchImpl, now = new Date() }) {
+    const { secretKey, priceId } = stripeCheckoutCredentials(db, config, plan);
+    const notes = attributionNotes(organization, plan);
+    const body = formEncode({
+      mode: 'subscription',
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: returnUrl,
+      cancel_url: returnUrl,
+      client_reference_id: organization.slug,
+      metadata: notes,
+      subscription_data: { metadata: notes },
+    });
+
+    const created = await providerRequest(fetchImpl, CHECKOUT_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${secretKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Idempotency-Key': idempotencyKey(organization, plan, now),
+      },
+      body: body.toString(),
+    }, { secret: secretKey, provider: 'Stripe' });
+
+    return { url: created?.url ?? null, reference: created?.id ? String(created.id) : null };
   },
 };
 
