@@ -598,16 +598,21 @@ function renderExtensionRoute() {
 async function renderCurrentRoute() {
   state.route = parseRoute();
   try {
+    // `await`, every one of them. `return somePromise()` inside a `try` hands
+    // the promise back before it settles, so the rejection is delivered outside
+    // the block and this `catch` never runs — which meant the error page below
+    // had never been shown to anybody, and an expired session left whatever was
+    // on screen instead of returning to sign-in.
     const first = state.route.segments[0];
-    if (!first) return renderDashboard();
-    if (first === 'repositories') return renderRepositories();
-    if (first === 'repo') return renderRepo();
-    if (first === 'issues') return renderGlobalIssues();
-    if (first === 'pulls') return renderGlobalPulls();
-    if (first === 'ai') return renderAICenter();
-    if (first === 'organizations') return renderOrganizations();
-    if (first === 'audit') return renderAudit();
-    if (first === 'settings') return renderSettings();
+    if (!first) return await renderDashboard();
+    if (first === 'repositories') return await renderRepositories();
+    if (first === 'repo') return await renderRepo();
+    if (first === 'issues') return await renderGlobalIssues();
+    if (first === 'pulls') return await renderGlobalPulls();
+    if (first === 'ai') return await renderAICenter();
+    if (first === 'organizations') return await renderOrganizations();
+    if (first === 'audit') return await renderAudit();
+    if (first === 'settings') return await renderSettings();
     if (EXTENSION_ROUTES.has(first)) return renderExtensionRoute();
     navigate('#/');
   } catch (error) {

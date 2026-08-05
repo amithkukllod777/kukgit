@@ -593,6 +593,21 @@ class KgDocument {
 
   removeEventListener() {}
 
+  /**
+   * An event delivered to a document-level listener.
+   *
+   * `app.js` binds its navigation to `document`, not to each link, so a click
+   * that never reaches the document is a click nothing handles — and a test
+   * that could not deliver one could not test navigation at all.
+   */
+  dispatchEvent(event) {
+    const target = event.target ?? this.documentElement;
+    if (target?.nodeType === 1 && event.bubbles !== false) target.dispatchEvent(event);
+    for (const handler of [...(this.listeners.get(event.type) ?? [])]) {
+      handler.call(this, { ...event, target, currentTarget: this, preventDefault() {}, stopPropagation() {} });
+    }
+  }
+
   noteMutation() {
     if (!this.observers.size || this.mutationScheduled || this.overflowed) return;
     this.mutationScheduled = true;

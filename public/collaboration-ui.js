@@ -345,15 +345,30 @@ function showInvitationDialog() {
   });
 }
 
+/**
+ * The page whose load already failed.
+ *
+ * Showing the failure is itself a DOM change, which wakes the observer, which
+ * calls this again — and the guard below tested for the panel, which a failed
+ * load never renders. So every pass fetched again and appended another copy of
+ * the same message. Cleared on navigation, where the answer can differ.
+ */
+let organizationFailedKey = '';
+
 async function mount() {
   scheduling = false;
   captureInvitationToken();
-  try {
-    await renderOrganizationPanel();
-  } catch (error) {
-    const root = document.querySelector('.content');
-    if (root && location.hash.split('?')[0] === '#/organizations' && !document.querySelector('#kg-collaboration-panel')) {
-      root.insertAdjacentHTML('beforeend', `<section class="card kg-collaboration"><div class="card-body kg-empty">${escapeHtml(error.message)}</div></section>`);
+  if (organizationFailedKey !== location.hash) {
+    try {
+      await renderOrganizationPanel();
+      organizationFailedKey = '';
+    } catch (error) {
+      organizationFailedKey = location.hash;
+      const root = document.querySelector('.content');
+      if (root && location.hash.split('?')[0] === '#/organizations' && !document.querySelector('#kg-collaboration-panel')) {
+        document.querySelector('#kg-collaboration-error')?.remove();
+        root.insertAdjacentHTML('beforeend', `<section class="card kg-collaboration" id="kg-collaboration-error"><div class="card-body kg-empty">${escapeHtml(error.message)}</div></section>`);
+      }
     }
   }
   showInvitationDialog();
