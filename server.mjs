@@ -96,6 +96,7 @@ import { createUsageApiHandler } from './src/usage-api.mjs';
 import { migrateUsageHistory, startUsagePeriodWorker, startUsageSampleWorker } from './src/usage-history.mjs';
 import { migrateBilling, setBillingNotifier, startBillingGraceWorker } from './src/billing.mjs';
 import { notifyBilling } from './src/billing-notifications.mjs';
+import { startBillingDunningWorker } from './src/billing-dunning.mjs';
 import { createBillingApiHandler } from './src/billing-api.mjs';
 import { registerBillingProvider } from './src/billing.mjs';
 import { razorpayAdapter, razorpayCheckout } from './src/billing-razorpay.mjs';
@@ -412,6 +413,11 @@ const stopExternalAccessReviewWorker = startExternalAccessReviewWorker(db, confi
 const stopUsageSampleWorker = startUsageSampleWorker(db, config);
 const stopUsagePeriodWorker = startUsagePeriodWorker(db, config);
 const stopBillingGraceWorker = startBillingGraceWorker(db);
+// The fourteen days between a failed charge and the plan changing were silent.
+// Most of what a dunning sequence recovers is recovered in them.
+const stopBillingDunningWorker = startBillingDunningWorker(db, {
+  notify: (database, payload) => notifyBilling(database, config, payload),
+});
 // Counts in-flight requests so a shutdown can wait for them. Outermost, so it
 // sees every request including the ones a guard rejects.
 const trackedDispatch = createRequestTracker({ next: identityDispatch });
@@ -483,6 +489,7 @@ async function shutdown(signal) {
   stopUsageSampleWorker();
   stopUsagePeriodWorker();
   stopBillingGraceWorker();
+  stopBillingDunningWorker();
   stopScheduleWorker();
   stopOperationalNotificationWorker();
   stopExternalAccessReviewWorker();

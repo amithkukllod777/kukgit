@@ -64,7 +64,7 @@ function readableDate(value) {
  * "act now" — this is not marketing, and the moment it reads like marketing it
  * gets filtered like marketing.
  */
-function message(kind, { organization, plan, subscription, config, graceUntil }) {
+function message(kind, { organization, plan, subscription, config, graceUntil, stage }) {
   const link = '#/organizations';
   const open = `Open KukGit: ${String(config.baseUrl).replace(/\/$/, '')}/#/organizations`;
   const who = organization.name || organization.slug;
@@ -88,6 +88,30 @@ function message(kind, { organization, plan, subscription, config, graceUntil })
             : `Update the payment method with the payment provider and the next attempt clears it.`,
           '',
           'Whatever happens, no repository is deleted and everything stays readable. What stops on a free plan is adding more.',
+          '',
+          open,
+        ].join('\n'),
+      };
+    }
+
+    case 'payment_reminder': {
+      const until = readableDate(graceUntil ?? subscription?.graceUntil);
+      const days = stage?.daysLeft ?? null;
+      const left = days === 1 ? 'tomorrow' : days ? `in ${days} days` : 'shortly';
+      return {
+        mandatory: true,
+        title: `${who} moves to the free plan ${left}`,
+        body: `The payment for the ${plan} plan still has not gone through${until ? `, so ${who} moves to the free plan on ${until}` : ''}. Nothing will be deleted and every repository stays readable — what stops is adding more.`,
+        subject: `${who}'s KukGit plan changes ${left}`,
+        link,
+        text: [
+          `The payment for ${who}'s ${plan} plan still has not gone through.`,
+          '',
+          until
+            ? `${who} moves to the free plan on ${until}${days ? ` — ${left}` : ''}. Updating the payment method with the payment provider is what stops that.`
+            : 'Updating the payment method with the payment provider is what stops that.',
+          '',
+          'If it does change, nothing is deleted. Every repository stays there and stays readable, over the web, Git HTTP, SSH and Git LFS. What stops is adding more.',
           '',
           open,
         ].join('\n'),
@@ -167,7 +191,9 @@ function message(kind, { organization, plan, subscription, config, graceUntil })
  * event that must be applied — refusing the plan change because the mail server
  * is down would be the more expensive failure by far.
  */
-export function notifyBilling(db, config, { organizationId, kind, plan, subscription = null, graceUntil = null, period = null }) {
+export function notifyBilling(db, config, {
+  organizationId, kind, plan, subscription = null, graceUntil = null, period = null, stage = null,
+}) {
   try {
     migrateNotifications(db);
     const organization = organizationOf(db, organizationId);
@@ -176,7 +202,7 @@ export function notifyBilling(db, config, { organizationId, kind, plan, subscrip
     // message somebody is already annoyed to be receiving.
     const stored = plan ?? subscription?.plan ?? null;
     const label = stored && PLANS[String(stored).toLowerCase()] ? planFor(stored).label : (stored ?? 'paid');
-    const content = message(kind, { organization, plan: label, subscription, config, graceUntil });
+    const content = message(kind, { organization, plan: label, subscription, config, graceUntil, stage });
     if (!content) return { sent: 0 };
 
     const stamp = period ?? readableDate(graceUntil ?? subscription?.cancelsAt ?? subscription?.currentPeriodEnd) ?? 'now';

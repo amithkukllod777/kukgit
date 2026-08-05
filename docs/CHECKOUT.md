@@ -209,9 +209,46 @@ access did not agree to the charge and cannot fix the card.
 | Moment | Optional? | Says |
 | --- | --- | --- |
 | A payment failed | **No** | How many days are left, and that nothing is deleted |
+| 7 days left | **No** | When the plan changes, and that nothing is deleted |
+| 2 days left | **No** | The same, more urgently |
 | The grace period ran out | **No** | The plan has changed; everything is still readable |
 | A cancellation was scheduled | Yes | When it ends, and that it was an owner or admin who did it |
 | The subscription ended | **No** | The plan has changed; everything is still readable |
+
+### The fourteen days in between
+
+The failure notice used to be the only thing sent, and then nothing for two
+weeks until a worker quietly moved the organization to free. Most of what a
+dunning sequence recovers is recovered in those two weeks, from people who meant
+to fix the card and forgot.
+
+**Two reminders, not five.** The point is to be remembered, and a message every
+day is a message that gets a filter rule.
+
+The stage is **derived from the dates**, never counted. A counter is wrong the
+first time a process dies between incrementing it and sending, and wrong the
+other way the first time somebody replays a month of events. It also means the
+worker sends the *most urgent* stage reached rather than the one it missed: an
+instance that was down for a week sends the final notice, because a reminder
+arriving after the deadline it warns about is worse than none.
+
+The deadline is part of the deduplication key, so a card that fails again next
+month gets the sequence again rather than being silently deduplicated against a
+failure from before.
+
+Only `past_due` subscriptions are chased. Chasing somebody who has already paid
+is the fastest way to have every message from KukGit ignored.
+
+Simulated over a full grace period, three ticks a day:
+
+```
+day  0  Payment failed for Kuklabs Inc. on KukGit
+day  7  Kuklabs Inc.'s KukGit plan changes in 7 days
+day 12  Kuklabs Inc.'s KukGit plan changes in 2 days
+day 14  Kuklabs Inc. has moved to the free plan on KukGit
+```
+
+Four messages, forty-five worker runs.
 
 **Mandatory means mandatory.** Somebody who muted organization email did not
 thereby agree to stop being told that a charge failed. Those are notices about
@@ -252,13 +289,16 @@ mail server is down is the more expensive failure by far.
 - **No tax handling.** GST and VAT are the provider's, and `billing_invoices` is
   not a compliant tax document.
 - **No customer portal.** Changing a card means going to the provider.
-- **No repeated dunning.** A failed payment is emailed once, when it happens.
-  Nothing reminds anybody on day 7 or day 13 that the fourteen days are running
-  out, which is where most of the recovered revenue in a dunning sequence
-  actually comes from.
 - **No email has been delivered by a real provider.** Resend has never made a
-  live call either; the outbox, retries and bounce handling are all tested
-  against a stub.
+  live call; the outbox, retries and bounce handling are all tested against a
+  stub. Every message here reaches the outbox and stops there until a transport
+  is configured.
+- **The reminders cannot be turned off.** Losing a plan is a money notice, and
+  it is treated like one. Somebody who does not want them has to fix the
+  payment or cancel.
+- **Nothing is recorded about whether a reminder worked.** There is no measure
+  of how many failed payments are recovered, so the schedule is a judgement and
+  not a finding.
 - **Currency is the provider's.** A Razorpay plan in INR and a Stripe price in
   USD are two prices somebody has to keep in step by hand.
 
