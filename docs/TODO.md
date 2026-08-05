@@ -210,8 +210,10 @@ not the boundary being trusted. Those items stay in scope here.
       the money ones cannot be muted, [CHECKOUT.md](CHECKOUT.md)
 - [ ] downgrade between paid plans with proration — today Business to Team means
       cancelling and buying again
-- [ ] a dunning sequence — a failed payment is announced once and never
-      followed up before the grace period ends
+- [x] a dunning sequence — two reminders inside the fourteen-day grace period,
+      derived from the dates rather than counted, [CHECKOUT.md](CHECKOUT.md)
+- [ ] measure whether the reminders recover anything — the schedule is a
+      judgement, and nothing records what it is worth
 - [ ] repository, LFS, CI, artifact and package quotas
 - [ ] package registry
 - [ ] container registry

@@ -234,9 +234,6 @@ on request is a way to fill the disk.
 - **No tax handling.** GST, VAT, invoice numbering and the legal format of an
   invoice are not addressed. `billing_invoices` records what was charged; it is
   not a compliant tax document.
-- **No repeated dunning.** A failed payment is emailed once, when it happens.
-  Nothing reminds anybody on day 7 or day 13 that the grace period is running
-  out — see [CHECKOUT.md](CHECKOUT.md).
 - **No proration.** A plan change takes effect immediately and no partial period
   is computed.
 
