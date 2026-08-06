@@ -1,6 +1,7 @@
 const EXTERNAL_ACCESS_API = '/api/repository-access';
 const REPOSITORY_INVITATIONS_API = '/api/repository-invitations';
 let externalRenderKey = '';
+let externalRefusedKey = '';
 let externalScheduled = false;
 let externalLoading = false;
 let oneTimeInvitation = null;
@@ -174,6 +175,10 @@ async function loadExternalPanel(route, force = false) {
   if (!content) return;
   const key = `${route.org}/${route.repo}/${location.hash}`;
   if (!force && externalRenderKey === key && document.querySelector('#kg-external-collaborators-panel')) return;
+  // 403 and 404 are answers. The guard above needs the rendered panel, which a
+  // refused load never produces, so without this it asked again on every DOM
+  // change for the whole time somebody sat on a repository they cannot manage.
+  if (!force && externalRefusedKey === key) return;
   externalLoading = true;
   try {
     const access = await externalRequest(`${EXTERNAL_ACCESS_API}/${encodeURIComponent(route.org)}/${encodeURIComponent(route.repo)}`);
@@ -323,6 +328,7 @@ async function mountExternalCollaborators() {
   }
   try { await loadExternalPanel(route); }
   catch (error) {
+    externalRefusedKey = `${route.org}/${route.repo}/${location.hash}`;
     if (![403, 404].includes(error.status)) {
       const content = document.querySelector('.content');
       if (content && !document.querySelector('#kg-external-collaborators-panel')) {

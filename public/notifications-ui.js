@@ -1,6 +1,7 @@
 const NOTIFICATIONS_API = '/api/notifications';
 let notificationScheduled = false;
 let notificationSettingsKey = '';
+let notificationSettingsFailed = '';
 let latestNotificationData = null;
 let notificationPoll = null;
 
@@ -198,7 +199,10 @@ async function renderNotificationSettings(force = false) {
   if (!content) return;
   const key = `${route}:${document.querySelector('.sidebar-user-name span')?.textContent || ''}`;
   if (!force && notificationSettingsKey === key && document.querySelector('#kg-notification-settings')) return;
+  // Set before the fetch and never cleared on failure, so the guard below —
+  // which also needs the rendered panel — let every DOM change ask again.
   notificationSettingsKey = key;
+  if (!force && notificationSettingsFailed === key) return;
   try {
     const preferences = (await notificationRequest(`${NOTIFICATIONS_API}/preferences`)).preferences;
     document.querySelector('#kg-notification-settings')?.remove();
@@ -221,7 +225,13 @@ async function renderNotificationSettings(force = false) {
       } finally { button.disabled = false; }
     });
     await renderEmailAdministration(content);
-  } catch {}
+    notificationSettingsFailed = '';
+  } catch {
+    // Remembered, because the guard above needs the rendered panel and a failed
+    // load never renders one. Cleared by a different key, which is what a
+    // different page or a different signed-in person produces.
+    notificationSettingsFailed = key;
+  }
 }
 
 async function renderEmailAdministration(content) {

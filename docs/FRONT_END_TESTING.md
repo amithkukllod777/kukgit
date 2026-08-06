@@ -119,16 +119,46 @@ not do the one thing that has broken the live site four times. A module added
 later is covered without anybody remembering to add it, which matters more here
 than the depth of any single case.
 
-It found the fourth instance the day it was written: `collaboration-ui.js`
-refetched and appended another copy of its error card on every DOM change when
-its load failed — the guard tested for the panel, which a failed load never
-renders.
+### What it asserts is growth, not a number
 
-**It is a net, not a proof.** Reintroducing the collaboration panel's
-*success-path* storm still passes the sweep, because a generic payload does not
+A threshold has to be wrong in one direction. Two calls it a storm when
+`git-lfs-ui` legitimately settles at three; three lets the collaboration panel's
+storm through. Neither number is about the defect — **the defect is that the
+count never stops rising.**
+
+So the page is churned twice, with a settle after each, and what is asserted is
+that the second round produced **no new requests**. A module that has finished
+stays finished however much the DOM moves under it; a module in a loop adds
+another turn every round, whatever count it happened to reach.
+
+### Where it stands matters as much as what it answers
+
+The first version swept one route and passed everything. Most of `public/` does
+nothing at all off its own page, so one route exercises a handful of modules and
+reports the rest as clean.
+
+That blind spot hid a live bug. Six scenarios now: the organizations list, a
+repository settings page, a pull request page and account settings, each with a
+world where everything fails and, for two of them, one where everything answers.
+
+### What it found
+
+| Module | Symptom |
+| --- | --- |
+| `collaboration-ui` | refetched and stacked another error card on every DOM change when its load failed |
+| `repository-access-ui` | the same, measured at **120 requests and 120 identical error cards** |
+| `git-lfs-ui` | one extra fetch per DOM change on a repository whose LFS the visitor cannot see |
+| `external-collaborators-ui` | the same, on a repository they cannot manage |
+| `notifications-ui` | the same, on the notification preferences panel |
+
+All five are one defect: **the guard tests for a rendered element, and a
+refused load never renders one.** 403, 404 and a failed load are answers, and an
+answer has to be remembered until navigation.
+
+**It is still a net, not a proof.** Reintroducing the collaboration panel's
+*success-path* storm passes the sweep, because a generic payload does not
 reproduce the exact render that drives that loop; `ui-behaviour.test.mjs`
-catches that one. Between the two files all four known storms are covered.
-Neither covers them alone.
+catches that one. Neither file covers everything alone.
 
 ## The test files
 

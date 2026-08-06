@@ -19,9 +19,11 @@ import { installBrowser, importFresh } from '../test-support/browser.mjs';
  * thing that has broken the live site three times.
  *
  * A module added later is covered without anybody remembering to add it here,
- * which matters more than the depth of any single case. It found a fourth
- * instance the day it was written: the collaboration panel refetched and
- * appended another error card on every DOM change when its load failed.
+ * which matters more than the depth of any single case. It found two more the
+ * day it was written — the collaboration panel and the repository access panel
+ * both refetched and appended another error card on every DOM change when
+ * their load failed, the second at a hundred and twenty requests and a hundred
+ * and twenty identical cards.
  *
  * **What it does not catch.** Reintroducing the collaboration panel's
  * success-path storm — fetching the organization list before the render-key
@@ -41,26 +43,24 @@ const SHELL = `<div id="app"><div class="app-shell">
 </div></div><div id="toast-root"></div>`;
 
 /**
- * How many requests to one path is too many.
+ * The question is growth, not a number.
  *
- * Two, not one: a module may legitimately ask once on load and once after the
- * page it was waiting for appears. Forty is the number that was measured; three
- * is comfortably below anything accidental and far above anything deliberate.
+ * A threshold has to be wrong in one direction. Two calls it a storm when
+ * `git-lfs-ui` legitimately settles at three; three lets the collaboration
+ * panel's storm through. Neither number is about the defect — the defect is
+ * that the count never stops rising.
+ *
+ * So the page is churned twice, with a settle after each, and what is asserted
+ * is that the second round of churn produced no new requests. A module that
+ * has finished stays finished however much the DOM moves under it; a module in
+ * a loop adds another turn every round, whatever its count happened to reach.
  */
-const TOO_MANY = 2;
+const SETTLED_MEANS_NO_NEW_REQUESTS = 0;
 
 const MODULES = fs.readdirSync(new URL('../public/', import.meta.url))
   .filter((name) => name.endsWith('.js'))
   .sort();
 
-/**
- * Two worlds, because the guards differ.
- *
- * Under `404` a module usually renders nothing, and the bug is failing to
- * remember the answer. Under `200` it renders, and the bug is that rendering
- * wakes the thing that renders. The access-review panel stormed in the first;
- * the collaboration panel stormed in the second.
- */
 /**
  * One body that satisfies most renderers.
  *
@@ -81,9 +81,29 @@ const ANYTHING = {
   activity: [], user: { id: 'usr_1', email: 'amith@kuklabs.com', displayName: 'Amith' },
 };
 
-const WORLDS = [
-  ['nothing is there', { '*': { status: 404, body: { error: { code: 'NOT_FOUND', message: 'Not found.' } } } }],
-  ['everything answers', { '*': { body: ANYTHING } }],
+const NOTHING = { '*': { status: 404, body: { error: { code: 'NOT_FOUND', message: 'Not found.' } } } };
+const EVERYTHING = { '*': { body: ANYTHING } };
+
+/**
+ * Where to stand, as well as what to answer.
+ *
+ * The first version of this swept one route and passed everything. Most of
+ * `public/` does nothing at all off its own page — a repository panel on the
+ * organizations list returns before it fetches — so a single route exercises a
+ * handful of modules and reports the rest as clean.
+ *
+ * That blind spot hid a live bug: `repository-access-ui` on a repository
+ * settings page whose load failed asked a hundred and twenty times and stacked
+ * a hundred and twenty identical error cards. It passed the one-route sweep
+ * without ever running.
+ */
+const SCENARIOS = [
+  ['nothing is there', '#/organizations', NOTHING],
+  ['everything answers', '#/organizations', EVERYTHING],
+  ['a repository page that fails', '#/repo/kuklabs/demo/settings', NOTHING],
+  ['a repository page that loads', '#/repo/kuklabs/demo/settings', EVERYTHING],
+  ['a pull request page that fails', '#/repo/kuklabs/demo/pull/1', NOTHING],
+  ['account settings that fail', '#/settings', NOTHING],
 ];
 
 test('public/ is discovered rather than listed', async () => {
@@ -93,10 +113,10 @@ test('public/ is discovered rather than listed', async () => {
   assert.ok(MODULES.includes('app.js'));
 });
 
-for (const [worldName, routes] of WORLDS) {
+for (const [scenario, hash, routes] of SCENARIOS) {
   for (const name of MODULES) {
-    test(`${name} does not spiral when ${worldName}`, async (t) => {
-      const page = installBrowser({ hash: '#/organizations', html: SHELL, routes });
+    test(`${name} does not spiral on ${scenario}`, async (t) => {
+      const page = installBrowser({ hash, html: SHELL, routes });
       t.after(() => page.restore());
 
       await importFresh(`../public/${name}`);
@@ -106,19 +126,29 @@ for (const [worldName, routes] of WORLDS) {
       // observer in `public/`. Wherever the module left the page: `app.js`
       // replaces the whole shell on load, so the element churned into has to be
       // found after it has run, not before.
-      const target = page.document.querySelector('.content')
-        ?? page.document.querySelector('#app')
-        ?? page.document.documentElement;
-      for (let round = 0; round < 6; round += 1) {
-        target.insertAdjacentHTML('beforeend', `<div class="kg-churn">${round}</div>`);
-      }
+      const churn = () => {
+        const target = page.document.querySelector('.content')
+          ?? page.document.querySelector('#app')
+          ?? page.document.documentElement;
+        for (let round = 0; round < 6; round += 1) {
+          target.insertAdjacentHTML('beforeend', `<div class="kg-churn">${round}</div>`);
+        }
+      };
+
       // Forty rounds, not twelve. One cycle of the loop is observer → two
       // animation frames → fetch → render → observer, which is several ticks;
       // with a dozen the storm has only turned twice and reads as normal.
+      churn();
+      await page.settle(40);
+      const settled = page.calls.length;
+
+      churn();
       await page.settle(40);
 
+      const added = page.calls.length - settled;
       const [path, count] = page.busiest();
-      assert.ok(count <= TOO_MANY, `${name} asked for ${path} ${count} times`);
+      assert.equal(added, SETTLED_MEANS_NO_NEW_REQUESTS,
+        `${name} asked ${added} more time${added === 1 ? '' : 's'} after settling — ${count}× ${path}`);
       assert.equal(page.looped, false, `${name} never settled`);
     });
   }

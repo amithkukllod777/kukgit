@@ -1,6 +1,8 @@
 const REPOSITORY_ACCESS_API = '/api/repository-access';
 let renderKey = '';
 let scheduled = false;
+/** The page whose load already failed. See the note in `mount`. */
+let failedKey = '';
 
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
@@ -218,12 +220,22 @@ async function mount() {
     renderKey = '';
     return;
   }
+  // A failed load is an answer, and showing it is itself a DOM change — which
+  // wakes the observer, which comes back here. The guard below tested for the
+  // panel, which a failed load never renders, so every pass fetched again and
+  // appended another copy of the same message: measured at a hundred and twenty
+  // requests and a hundred and twenty identical error cards. Cleared on
+  // navigation, where the answer can legitimately differ.
+  if (failedKey === location.hash) return;
   try {
     await loadPanel(route);
+    failedKey = '';
   } catch (error) {
+    failedKey = location.hash;
     const content = document.querySelector('.content');
     if (content && currentRepositoryRoute() && !document.querySelector('#kg-repository-access-panel')) {
-      content.insertAdjacentHTML('beforeend', `<section class="card kg-repository-access"><div class="card-body kg-empty">${escapeHtml(error.message)}</div></section>`);
+      document.querySelector('#kg-repository-access-error')?.remove();
+      content.insertAdjacentHTML('beforeend', `<section class="card kg-repository-access" id="kg-repository-access-error"><div class="card-body kg-empty">${escapeHtml(error.message)}</div></section>`);
     }
   }
 }

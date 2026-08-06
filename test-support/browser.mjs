@@ -79,12 +79,24 @@ function splitTop(input, separator) {
   return parts.map((part) => part.trim()).filter(Boolean);
 }
 
+/** Pseudo-classes that are a property on the element rather than a selector. */
+const STATE_PSEUDO = new Map([
+  [':checked', (element) => element.checked === true],
+  [':disabled', (element) => element.disabled === true],
+  [':enabled', (element) => element.disabled !== true],
+]);
+
 function parseCompound(source) {
-  const compound = { tag: '', id: '', classes: [], attributes: [], not: [] };
+  const compound = { tag: '', id: '', classes: [], attributes: [], not: [], states: [] };
   let rest = source;
   while (rest) {
     let match;
-    if ((match = /^:not\(([^)]*)\)/.exec(rest))) {
+    if ((match = /^:(checked|disabled|enabled)\b/.exec(rest))) {
+      // `[name="scope"]:checked` is how the token form reads which boxes are
+      // ticked. Without it the form appears to have no scopes selected and the
+      // test asserts a refusal the code never made.
+      compound.states.push(STATE_PSEUDO.get(`:${match[1]}`));
+    } else if ((match = /^:not\(([^)]*)\)/.exec(rest))) {
       compound.not.push(parseCompound(match[1].trim()));
     } else if ((match = /^\[([^\]]*)\]/.exec(rest))) {
       const body = match[1];
@@ -138,6 +150,7 @@ function compoundMatches(element, compound) {
   if (compound.id && element.getAttribute('id') !== compound.id) return false;
   for (const className of compound.classes) if (!element.classList.contains(className)) return false;
   for (const condition of compound.attributes) if (!attributeMatches(element, condition)) return false;
+  for (const state of compound.states ?? []) if (!state(element)) return false;
   for (const negated of compound.not) if (compoundMatches(element, negated)) return false;
   return true;
 }
@@ -267,6 +280,30 @@ class KgElement {
 
   set disabled(value) {
     if (value) this.setAttribute('disabled', ''); else this.removeAttribute('disabled');
+  }
+
+  /**
+   * A checkbox's state, which starts from the markup and then belongs to the
+   * person clicking. Kept off the attribute after the first change, the way a
+   * browser does — `defaultChecked` stays in the HTML, `checked` does not.
+   */
+  get checked() {
+    return this.explicitChecked === undefined ? this.hasAttribute('checked') : this.explicitChecked;
+  }
+
+  set checked(value) { this.explicitChecked = Boolean(value); }
+
+  /** Every form has one; ours never blocks, because there is no user to warn. */
+  reportValidity() { return true; }
+
+  checkValidity() { return true; }
+
+  /** Back to what the markup said — which is what `form.reset()` means. */
+  reset() {
+    for (const field of this.querySelectorAll('input, select, textarea')) {
+      field.explicitValue = undefined;
+      field.explicitChecked = undefined;
+    }
   }
 
   /**

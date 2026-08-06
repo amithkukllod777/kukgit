@@ -1,5 +1,6 @@
 const LFS_API = '/api/lfs';
 let lfsRenderKey = '';
+let lfsRefusedKey = '';
 let lfsScheduled = false;
 
 function lfsEscape(value = '') {
@@ -147,6 +148,11 @@ async function mountLfs(force = false) {
   if (!content) return;
   const key = `${route.org}/${route.repo}/${location.hash}`;
   if (!force && lfsRenderKey === key && document.querySelector('#kg-lfs-panel')) return;
+  // 403 and 404 are answers. The guard above needs the rendered panel, which a
+  // refused load never produces, so without remembering the refusal this asked
+  // again on every DOM change — a request per keystroke on a repository whose
+  // Git LFS the visitor cannot see.
+  if (!force && lfsRefusedKey === key) return;
   lfsRenderKey = key;
   lfsStyles();
   try {
@@ -155,7 +161,7 @@ async function mountLfs(force = false) {
     content.insertAdjacentHTML('beforeend', lfsMarkup(data));
     bindLfsPanel(route);
   } catch (error) {
-    if (error.status === 403 || error.status === 404) return;
+    if (error.status === 403 || error.status === 404) { lfsRefusedKey = key; return; }
     if (!document.querySelector('#kg-lfs-panel')) {
       content.insertAdjacentHTML('beforeend', `<section class="card kg-lfs-panel" id="kg-lfs-panel"><div class="card-body kg-lfs-empty">${lfsEscape(error.message)}</div></section>`);
     }
