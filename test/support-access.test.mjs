@@ -99,7 +99,11 @@ test('a support operator has no access to a private repository by default', asyn
   const access = getEffectiveRepositoryAccess(context.db, { userId: context.operatorId, ...reference });
   assert.equal(access.permission, 'none');
   assert.deepEqual(access.sources, []);
-  assert.throws(() => requireRepositoryAccess(context.db, context.operatorId, reference), /ACCESS_DENIED|permission is required/);
+  // An operator with no grant is refused, and refused the way a stranger is:
+  // "not found" rather than "you may not". Support tooling that can confirm
+  // which private repositories exist is support tooling that can enumerate a
+  // customer's work without them granting anything.
+  assert.throws(() => requireRepositoryAccess(context.db, context.operatorId, reference), /Repository not found/);
 });
 
 test('the customer grants access, and the grant is why the read is allowed', async (t) => {

@@ -260,7 +260,9 @@ test('external invitation grants only one repository across browser, Git, SSH an
   const sharedRead = await fetch(`${origin}/api/repos/kuklabs/shared-repository`, { headers: { Cookie: externalCookie } });
   assert.equal(sharedRead.status, 200);
   const unrelatedRead = await fetch(`${origin}/api/repos/otherco/private-repository`, { headers: { Cookie: externalCookie } });
-  assert.equal(unrelatedRead.status, 403);
+  // 404, not 403: a contractor invited to one repository must not be able to
+  // learn what else the organization owns by trying names.
+  assert.equal(unrelatedRead.status, 404);
 
   const issue = await fetch(`${origin}/api/repos/kuklabs/shared-repository/issues`, {
     method: 'POST',
@@ -383,7 +385,9 @@ test('external invitation grants only one repository across browser, Git, SSH an
   assert.equal(remove.status, 200);
   const repositoriesAfterRemoval = await fetch(`${origin}/api/repos`, { headers: { Cookie: externalCookie } });
   assert.deepEqual((await repositoriesAfterRemoval.json()).repositories, []);
-  assert.equal((await fetch(`${origin}/api/repos/kuklabs/shared-repository`, { headers: { Cookie: externalCookie } })).status, 403);
+  // Access removed, and with it any confirmation that the repository is there
+  // at all — the contractor is a stranger again.
+  assert.equal((await fetch(`${origin}/api/repos/kuklabs/shared-repository`, { headers: { Cookie: externalCookie } })).status, 404);
 });
 
 test('repository invitations enforce revoke, expiry, resend, permissions and CSRF', async (t) => {
@@ -405,7 +409,9 @@ test('repository invitations enforce revoke, expiry, resend, permissions and CSR
     headers: { 'Content-Type': 'application/json', Cookie: wrongCookie },
     body: JSON.stringify({ email: 'external@example.com', permission: 'read' }),
   });
-  assert.equal(forbidden.status, 403);
+  // Refused without confirming the repository exists: an invitation endpoint
+  // that answers 403 is an enumeration oracle with a friendlier name.
+  assert.equal(forbidden.status, 404);
 
   const create = await fetch(`${origin}/api/repository-invitations/kuklabs/shared-repository`, {
     method: 'POST',

@@ -297,7 +297,7 @@ not the boundary being trusted. Those items stay in scope here.
 4. A green test suite is necessary but not sufficient; migration, identity, authorization and recovery contracts require targeted review.
 5. Obsolete or superseded PRs are closed rather than force-merged.
 6. A PR whose jobs never execute remains unvalidated regardless of mergeability or branch age.
-## A private repository answers 403, not 404, to a stranger
+## ~~A private repository answers 403, not 404, to a stranger~~ — fixed
 
 `requireRepositoryAccess` refuses somebody with no access to a private
 repository with `403 Repository read permission is required`. That confirms the
@@ -315,5 +315,12 @@ routes, and turning every one of their 403s into 404s underneath them is its own
 change with its own test surface. The test records the actual behaviour and
 points here.
 
-Worth doing before external customers, since that is the point at which
-"strangers" stop being hypothetical.
+**Fixed.** `requireRepositoryAccess` now answers 404 when the caller has no
+access at all to a repository that is not public. It still answers 403 in the
+two cases where that is the useful answer: a public repository, whose existence
+is public anyway, and a caller who already has *some* access and is missing a
+stronger permission — they have been told it exists by being able to read it,
+and "not found" would be a lie they could disprove by refreshing.
+
+Eight tests changed with it. Every one of them was asserting "an outsider is
+refused", and 404 refuses harder; none of them lost an assertion.

@@ -143,8 +143,10 @@ test('expired access is archived, denied and renewable without recreating the us
   assert.equal(history.reason, 'expired');
   assert.equal(getEffectiveRepositoryAccess(context.db, { userId: context.externalId, repositoryId: context.repositoryId }).permission, 'none');
   assert.throws(
+    // Once the grant expires the contractor is a stranger to a private
+    // repository again, and a stranger is not told it is there.
     () => requireRepositoryAccess(context.db, context.externalId, { repositoryId: context.repositoryId }, 'read'),
-    (error) => error.code === 'REPOSITORY_ACCESS_DENIED',
+    (error) => error.code === 'REPO_NOT_FOUND' && error.status === 404,
   );
 
   const historyApi = createExternalAccessHistoryApiHandler(context);

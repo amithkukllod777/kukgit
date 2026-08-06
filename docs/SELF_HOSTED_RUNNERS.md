@@ -186,3 +186,55 @@ this runner's registration token.
   running on that machine can reach.
 - Remove a runner the moment its machine is decommissioned. Deleting the row
   invalidates the token.
+
+## Installing one as a service
+
+```bash
+sudo ./scripts/runner-install.sh --url https://git.kuklabs.com --token kgr_...
+sudo ./scripts/runner-install.sh --url ... --token ... --labels android,jdk21
+./scripts/runner-install.sh --check    # say what it would do, change nothing
+```
+
+`npm run runner` works, and works only until the terminal it was typed in
+closes. A build machine that stops when somebody's laptop sleeps is a build
+machine nobody can rely on — and the failure presents as "CI is stuck" rather
+than "the runner is gone".
+
+The installer refuses a token that does not begin with `kgr_`, checks the
+instance answers before it creates anything, makes a dedicated system user with
+no login shell, and writes a `chmod 600` unit — the runner token is in that
+file, and anybody who can read it can register a runner and be handed other
+people's build jobs.
+
+### There is no sandbox
+
+A runner executes whatever a repository's workflow says, as the user it runs as.
+That is not an oversight — it is what a self-hosted runner is, on every system
+that has them. So the isolation has to come from the machine, and the unit sets
+what systemd can enforce from outside the build: `NoNewPrivileges`,
+`PrivateTmp`, `ProtectSystem=strict`, `ProtectHome`, `PrivateDevices`,
+`RestrictSUIDSGID`, and a writable path that is only the runner's own home.
+
+None of that makes a build safe. Together it makes one survivable. **Put a
+runner on a machine you are willing to rebuild**, and never on the machine
+serving Git.
+
+### A build machine for something specific
+
+The runner brings Node and Git and nothing else. Install what the builds need as
+the runner user, and label the runner for it so only the right jobs land there:
+
+```bash
+sudo apt-get install -y openjdk-21-jdk
+sudo -u kukgit-runner ...                     # Android SDK, into its own home
+sudo ./scripts/runner-install.sh --url ... --token ... --labels android,jdk21
+```
+
+```yaml
+jobs:
+  apk:
+    runs-on: [android]
+```
+
+A job whose `runs-on` names a label no runner has waits forever rather than
+failing, which is worth knowing before wondering why nothing starts.
