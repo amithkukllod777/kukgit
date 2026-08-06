@@ -865,6 +865,17 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
     /** Requests made so far, as `"GET /api/thing"` strings. */
     requests() { return calls.map((call) => `${call.method} ${call.path}`); },
 
+    /**
+     * Whether an element is on the page, as a boolean.
+     *
+     * Use this rather than `assert.equal(document.querySelector(x), null)`.
+     * A failing assertion on an element hands node:assert a node with a parent
+     * pointer and a child list, and it formats failures with custom inspection
+     * disabled — so it walks the whole tree and the test hangs instead of
+     * failing. A hanging test is far worse than a failing one.
+     */
+    present(selector) { return Boolean(document.querySelector(selector)); },
+
     /** How many times a path was asked for, regardless of method. */
     countPath(path) { return calls.filter((call) => call.path === path).length; },
 
