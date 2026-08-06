@@ -406,6 +406,22 @@ class KgElement {
     if (this.parentNode) this.parentNode.removeChild(this);
   }
 
+  /** Swaps this node for another, in place. */
+  replaceWith(...nodes) {
+    const parent = this.parentNode;
+    if (!parent) return;
+    const index = parent.childNodes.indexOf(this);
+    if (index < 0) return;
+    parent.childNodes.splice(index, 1, ...nodes.map((node) => adopt(parent, node)));
+    this.parentNode = null;
+    this.ownerDocument?.noteMutation(parent);
+  }
+
+  /** The first child node, or null — what a "move every child" loop reads. */
+  get firstChild() {
+    return this.childNodes[0] ?? null;
+  }
+
   insertAdjacentHTML(position, html) {
     const nodes = parseFragment(String(html), this.ownerDocument);
     if (position === 'beforeend') {
@@ -466,6 +482,19 @@ class KgElement {
         handler.call(node, { ...event, target, currentTarget: node, preventDefault() {}, stopPropagation() {} });
       }
       node = event.bubbles === false ? null : node.parentNode;
+    }
+    // And then the document, which is where delegated listeners live.
+    //
+    // The element chain stops at documentElement, so a listener registered with
+    // `document.addEventListener('click', …)` never heard a click on a button.
+    // That is the pattern a module uses when the element it cares about is
+    // rendered later by somebody else — binding to the button directly would
+    // bind to a button that does not exist yet — so a harness that cannot
+    // deliver such a click cannot test that module at all.
+    if (event.bubbles !== false && this.ownerDocument) {
+      for (const handler of [...(this.ownerDocument.listeners?.get(event.type) ?? [])]) {
+        handler.call(this.ownerDocument, { ...event, target, currentTarget: this.ownerDocument, preventDefault() {}, stopPropagation() {} });
+      }
     }
   }
 
@@ -639,7 +668,9 @@ class KgDocument {
    */
   dispatchEvent(event) {
     const target = event.target ?? this.documentElement;
-    if (target?.nodeType === 1 && event.bubbles !== false) target.dispatchEvent(event);
+    // The element's own dispatch already walks up to this document's listeners,
+    // so calling them again here would deliver the event twice.
+    if (target?.nodeType === 1 && event.bubbles !== false) return target.dispatchEvent(event);
     for (const handler of [...(this.listeners.get(event.type) ?? [])]) {
       handler.call(this, { ...event, target, currentTarget: this, preventDefault() {}, stopPropagation() {} });
     }
@@ -766,7 +797,10 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
     saved.set(name, Object.prototype.hasOwnProperty.call(globalThis, name)
       ? { present: true, value: globalThis[name] }
       : { present: false });
-    globalThis[name] = value;
+    // `navigator` is a getter-only accessor on globalThis in Node, so plain
+    // assignment throws. Every other global here is writable; this one has to
+    // be redefined.
+    Object.defineProperty(globalThis, name, { value, writable: true, configurable: true, enumerable: true });
   };
 
   const document = new KgDocument();
@@ -817,6 +851,15 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
   set('fetch', makeFetch(routes, calls));
   set('window', globalThis);
 
+  // Three modules copy a one-time secret to the clipboard — an invitation link,
+  // an SSH clone URL, a token. What lands there is worth asserting, and a test
+  // cannot assert on a clipboard that does not exist.
+  const clipboard = [];
+  set('navigator', {
+    clipboard: { writeText: async (value) => { clipboard.push(String(value)); } },
+    userAgent: 'KukGit test harness',
+  });
+
   // Several modules start a poll on import — a minute-long `setInterval` that
   // is correct in a browser and, in Node, keeps the event loop alive until the
   // test runner gives up. Recorded here and cleared by `restore()`; unref'd
@@ -861,6 +904,9 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
     /** What `window.confirm` answers next, and what it has been asked. */
     confirmAnswer: true,
     confirmations,
+
+    /** Everything written to the clipboard, in order. */
+    clipboard,
 
     /** Requests made so far, as `"GET /api/thing"` strings. */
     requests() { return calls.map((call) => `${call.method} ${call.path}`); },
