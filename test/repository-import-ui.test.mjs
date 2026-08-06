@@ -143,6 +143,24 @@ test('an unticked box is absent rather than false', async (t) => {
   assert.equal(browser.sent[0].body.includeArchived, false);
 });
 
+test('issues come across by default, and can be turned off', async (t) => {
+  const browser = page(t);
+  await importFresh('../public/repository-import-ui.js');
+  await browser.settle();
+
+  // On by default: for most repositories the conversation is the part that
+  // cannot be reconstructed, and somebody who did not think about the box gets
+  // the more complete migration.
+  assert.equal(browser.document.querySelector('[name="includeIssues"]').checked, true);
+  await fill(browser);
+  assert.equal(browser.sent[0].body.includeIssues, true);
+
+  browser.document.querySelector('[name="includeIssues"]').checked = false;
+  browser.document.querySelector('#kg-import-preview').click();
+  await browser.settle();
+  assert.equal(browser.sent[1].body.includeIssues, false);
+});
+
 test('starting asks first, and cancelling imports nothing', async (t) => {
   const browser = page(t);
   browser.confirmAnswer = false;

@@ -3,6 +3,8 @@ import { audit, findRepo, uid } from './db.mjs';
 import { importMirror, listBranches, deleteBareRepository } from './git.mjs';
 import { assertWithinPlan } from './plan-limits.mjs';
 import { listForgeRepositories, planImport } from './forge-discovery.mjs';
+import { importForgeIssues, listForgeIssues, migrateImportedIssues } from './forge-issues.mjs';
+import { migrateIssueComments } from './issue-comments.mjs';
 
 /**
  * Importing more than one repository, without holding a request open.
@@ -45,6 +47,7 @@ export function migrateRepositoryImportJobs(db) {
       owner TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'running',
       authenticated INTEGER NOT NULL DEFAULT 0,
+      include_issues INTEGER NOT NULL DEFAULT 0,
       note TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       finished_at TEXT
@@ -64,12 +67,19 @@ export function migrateRepositoryImportJobs(db) {
     CREATE INDEX IF NOT EXISTS idx_repository_import_items_job
       ON repository_import_items(job_id, status);
   `);
+  // This module now writes issues and their comments, so it makes sure both
+  // exist rather than relying on the order server.mjs happens to call
+  // migrations in. A dependency that works because of call order is a
+  // dependency that breaks when somebody reorders the list.
+  migrateImportedIssues(db);
+  migrateIssueComments(db);
 }
 
 function jobRow(db, jobId) {
   const job = db.prepare(`
     SELECT id, organization_id AS organizationId, created_by AS createdBy, forge, owner,
-           status, authenticated, note, created_at AS createdAt, finished_at AS finishedAt
+           status, authenticated, include_issues AS includeIssues, note,
+           created_at AS createdAt, finished_at AS finishedAt
     FROM repository_import_jobs WHERE id = ?
   `).get(jobId);
   if (!job) throw httpError(404, 'Import job not found.', 'IMPORT_JOB_NOT_FOUND');
@@ -133,22 +143,22 @@ export async function previewBulkImport({ forge, owner, token = null, includeFor
 /**
  * Records the plan and returns a job to watch. Does not wait for the work.
  */
-export function createBulkImportJob(db, { organizationId, userId, forge, owner, authenticated, note, selected, skipped, token = null }) {
+export function createBulkImportJob(db, { organizationId, userId, forge, owner, authenticated, note, selected, skipped, token = null, includeIssues = false }) {
   if (!selected.length) throw httpError(400, 'Nothing here can be imported. Check the skipped list for why.', 'IMPORT_NOTHING_TO_DO');
   if (selected.length > IMPORT_JOB_LIMITS.maxItems) {
     throw httpError(400, `An import job may cover at most ${IMPORT_JOB_LIMITS.maxItems} repositories.`, 'IMPORT_TOO_MANY');
   }
   const jobId = uid('impjob');
   const insertJob = db.prepare(`
-    INSERT INTO repository_import_jobs (id, organization_id, created_by, forge, owner, authenticated, note)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO repository_import_jobs (id, organization_id, created_by, forge, owner, authenticated, include_issues, note)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertItem = db.prepare(`
     INSERT INTO repository_import_items (id, job_id, name, slug, source_url, visibility, status, message)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const write = db.transaction(() => {
-    insertJob.run(jobId, organizationId, userId ?? null, forge, owner, authenticated ? 1 : 0, note ?? null);
+    insertJob.run(jobId, organizationId, userId ?? null, forge, owner, authenticated ? 1 : 0, includeIssues ? 1 : 0, note ?? null);
     for (const repository of selected) {
       insertItem.run(uid('impitem'), jobId, repository.name, repository.slug, repository.cloneUrl, repository.private ? 'private' : 'public', 'pending', null);
     }
@@ -185,7 +195,7 @@ function finishItem(db, itemId, status, message) {
  * must not stop the thirty after it, because the whole point of a bulk import is
  * not having to babysit it.
  */
-export async function runBulkImportJob(db, config, jobId, { onProgress = null, importRepository = importMirror } = {}) {
+export async function runBulkImportJob(db, config, jobId, { onProgress = null, importRepository = importMirror, readIssues = listForgeIssues } = {}) {
   const job = jobRow(db, jobId);
   const token = TOKENS.get(jobId) ?? null;
   const orgSlug = db.prepare('SELECT slug FROM organizations WHERE id = ?').get(job.organizationId)?.slug;
@@ -236,7 +246,22 @@ export async function runBulkImportJob(db, config, jobId, { onProgress = null, i
         targetId: repoId,
         metadata: { slug: item.slug, sourceHost: job.forge, authenticated: Boolean(token), jobId },
       });
-      finishItem(db, item.id, 'imported', null);
+      // The tracker, if it was asked for. A repository whose code arrived and
+      // whose issues did not is still an imported repository, so this cannot
+      // turn a success into a failure — it says what happened on the item.
+      let note = null;
+      if (job.includeIssues) {
+        try {
+          const listing = await readIssues({ forge: job.forge, owner: job.owner, repo: item.name, token });
+          const result = importForgeIssues(db, { repositoryId: repoId, actorId: job.createdBy, listing });
+          note = `${result.imported} issues and ${result.comments} comments imported`
+            + (result.pullRequestsSkipped ? `; ${result.pullRequestsSkipped} pull requests left behind` : '')
+            + (result.note ? `. ${result.note}` : '');
+        } catch (error) {
+          note = `code imported; issues did not: ${String(error?.message ?? error).slice(0, 300)}`;
+        }
+      }
+      finishItem(db, item.id, 'imported', note);
     } catch (error) {
       // One repository's failure is one repository's failure. Thirty more are
       // waiting, and nobody is watching this run.

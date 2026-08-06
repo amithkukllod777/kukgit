@@ -244,6 +244,68 @@ test('cancelling stops what has not started and forgets the token', async (t) =>
   assert.equal(importJobHasToken(jobId), false);
 });
 
+test('a repository imported with its tracker records what came across', async (t) => {
+  const { config, db, organization, user } = workspace(t);
+  const jobId = createBulkImportJob(db, {
+    organizationId: organization.id,
+    userId: user.id,
+    forge: 'github',
+    owner: 'acme',
+    authenticated: false,
+    selected: [{ name: 'thing', slug: 'thing', cloneUrl: 'https://github.com/acme/thing.git', private: false }],
+    skipped: [],
+    includeIssues: true,
+  });
+
+  const status = await runBulkImportJob(db, config, jobId, {
+    importRepository: importer(),
+    readIssues: async ({ repo }) => ({
+      forge: 'github',
+      source: `github.com/acme/${repo}`,
+      pullRequests: 3,
+      labelledIssues: 0,
+      issues: [{
+        number: 1, title: 'Login is slow', body: '', status: 'open', authorLogin: 'octocat',
+        createdAt: '2024-03-01 09:00:00', updatedAt: '2024-03-01 09:00:00', labels: [],
+        comments: [{ issueNumber: 1, body: 'Reproduced.', authorLogin: 'hubber', createdAt: '2024-03-02 09:00:00' }],
+      }],
+    }),
+  });
+
+  assert.equal(status.counts.imported, 1);
+  assert.match(status.items[0].message, /1 issues and 1 comments imported/);
+  // KukGit has nowhere to put pull request history, and silence there reads as
+  // "everything came across".
+  assert.match(status.items[0].message, /3 pull requests left behind/);
+  const repositoryId = db.prepare('SELECT id FROM repositories WHERE organization_id = ? AND slug = ?').get(organization.id, 'thing').id;
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM issues WHERE repository_id = ?').get(repositoryId).count, 1);
+});
+
+test('a tracker that will not come across does not fail the repository', async (t) => {
+  const { config, db, organization, user } = workspace(t);
+  const jobId = createBulkImportJob(db, {
+    organizationId: organization.id,
+    userId: user.id,
+    forge: 'github',
+    owner: 'acme',
+    authenticated: false,
+    selected: [{ name: 'thing', slug: 'thing', cloneUrl: 'https://github.com/acme/thing.git', private: false }],
+    skipped: [],
+    includeIssues: true,
+  });
+
+  const status = await runBulkImportJob(db, config, jobId, {
+    importRepository: importer(),
+    readIssues: async () => { throw new Error('GitHub rate limit reached.'); },
+  });
+
+  // The code arrived. A repository whose issues did not is still an imported
+  // repository, and calling it a failure would have somebody re-run the clone.
+  assert.equal(status.counts.imported, 1);
+  assert.equal(status.counts.failed, 0);
+  assert.match(status.items[0].message, /code imported; issues did not: GitHub rate limit/);
+});
+
 test("one organization cannot read another's import job", async (t) => {
   const { db, organization, user } = workspace(t);
   const jobId = createBulkImportJob(db, {
