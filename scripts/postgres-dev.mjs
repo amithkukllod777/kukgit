@@ -103,10 +103,20 @@ function start() {
     process.exitCode = 1;
     return;
   }
+  // The state file says a cluster was started. Whether one is *running* is a
+  // different question — a reboot, a container restart or an OOM kill leaves the
+  // file behind and the port dead. Trusting the file printed a URL nothing was
+  // listening on, and the next command failed for a reason that looked like the
+  // code's fault.
   if (fs.existsSync(STATE)) {
     const existing = JSON.parse(fs.readFileSync(STATE, 'utf8'));
-    console.log(`Already running.\n\nexport KUKGIT_TEST_POSTGRES_URL=${existing.url}`);
-    return;
+    if (reachable(existing.port)) {
+      console.log(`Already running.\n\nexport KUKGIT_TEST_POSTGRES_URL=${existing.url}`);
+      return;
+    }
+    console.log(`A cluster was recorded on port ${existing.port} but nothing is listening there. Starting a new one.`);
+    fs.rmSync(existing.dataDir, { recursive: true, force: true });
+    fs.rmSync(STATE, { force: true });
   }
 
   const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
