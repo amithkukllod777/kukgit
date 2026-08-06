@@ -42,7 +42,16 @@ function taxonomy(overrides = {}) {
   };
 }
 
-function page(t, { data = thread(), response, post, patch, taxonomyBody = taxonomy(), taxonomyResponse } = {}) {
+const AVAILABLE = [
+  { name: '+1', emoji: '👍', label: 'Agree' },
+  { name: 'rocket', emoji: '🚀', label: 'Shipped' },
+];
+
+function reactions(overrides = {}) {
+  return { available: AVAILABLE, issue: [], comments: {}, canReact: true, ...overrides };
+}
+
+function page(t, { data = thread(), response, post, patch, taxonomyBody = taxonomy(), taxonomyResponse, reactionsBody, reactionsResponse } = {}) {
   const sent = [];
   const browser = installBrowser({
     hash: ROUTE,
@@ -68,6 +77,18 @@ function page(t, { data = thread(), response, post, patch, taxonomyBody = taxono
       'PATCH /api/issue-taxonomy/kuklabs/thread/issues/1': (request) => {
         sent.push({ to: 'taxonomy', body: JSON.parse(request.init.body) });
         return { body: { labels: [] } };
+      },
+      'GET /api/issue-reactions/kuklabs/thread/1': reactionsResponse ?? { body: reactionsBody ?? reactions() },
+      'POST /api/issue-reactions/kuklabs/thread/1': (request) => {
+        const body = JSON.parse(request.init.body);
+        sent.push({ to: 'react', body });
+        return {
+          body: reactions({
+            outcome: 'added',
+            issue: body.commentId ? [] : [{ reaction: body.reaction, count: 1, mine: true, names: ['Amit'] }],
+            comments: body.commentId ? { [body.commentId]: [{ reaction: body.reaction, count: 1, mine: true, names: ['Amit'] }] } : {},
+          }),
+        };
       },
       '*': { status: 404, body: { error: { message: 'Not found.' } } },
     },
@@ -321,4 +342,189 @@ test('a taxonomy that cannot be read does not hide the conversation', async (t) 
   // failure than losing the discussion.
   assert.match(browser.html(), /Reproduced on staging/);
   assert.equal(browser.document.querySelector('#kg-thread-side'), null);
+});
+
+test('a comment is markdown, not a wall of text', async (t) => {
+  const browser = page(t, {
+    data: thread({
+      issue: { ...thread().issue, body: '## Steps\n\n1. sign in\n2. wait' },
+      comments: [{
+        id: 'c1', body: 'Fixed in `auth.mjs`. See [the note](https://kuklabs.com/n) and #7.',
+        authorName: 'Priya', authorId: 'user_2', imported: false, importedFrom: null, editedAt: null, createdAt: '2026-08-02 09:00:00',
+      }],
+    }),
+  });
+  await importFresh('../public/issue-thread-ui.js');
+  await browser.settle();
+
+  const html = browser.html();
+  assert.match(html, /<h2>Steps<\/h2>/);
+  assert.match(html, /<ol><li>sign in<\/li><li>wait<\/li><\/ol>/);
+  assert.match(html, /<code>auth\.mjs<\/code>/);
+  assert.match(html, /<a href="https:\/\/kuklabs\.com\/n"/);
+  // `#7` means issue 7 in this repository, and the screen is the only thing
+  // that knows which repository that is.
+  assert.match(html, /<a href="#\/repo\/kuklabs\/thread\/issues\?issue=7">#7<\/a>/);
+});
+
+test('a comment cannot smuggle markup into the page', async (t) => {
+  // Everybody with read access can write here, so this is the one that matters.
+  const browser = page(t, {
+    data: thread({
+      comments: [{
+        id: 'c1', body: '<img src=x onerror=alert(1)> and [click](javascript:alert(2))',
+        authorName: 'Priya', authorId: 'user_2', imported: false, importedFrom: null, editedAt: null, createdAt: '2026-08-02 09:00:00',
+      }],
+    }),
+  });
+  await importFresh('../public/issue-thread-ui.js');
+  await browser.settle();
+
+  const html = browser.html();
+  assert.ok(!html.includes('<img src=x'), 'a tag from a comment reached the page');
+  assert.ok(!/href="javascript:/i.test(html), 'a javascript: URL became an href');
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  // It is still shown, as the characters that were typed. A link the renderer
+  // refuses is not a link the reader never hears about.
+  assert.match(html, /\[click\]\(javascript:alert\(2\)\)/);
+});
+
+/* ------------------------------------------------------------ reactions */
+
+test('existing reactions are shown with their counts', async (t) => {
+  const browser = page(t, {
+    reactionsBody: reactions({
+      issue: [{ reaction: '+1', count: 3, mine: true, names: ['Amit', 'Priya', 'Dev'] }],
+      comments: { c1: [{ reaction: 'rocket', count: 1, mine: false, names: ['Priya'] }] },
+    }),
+  });
+  await importFresh('../public/issue-thread-ui.js');
+  await browser.settle();
+
+  const row = (subject) => browser.document.querySelector(`[data-rxn-row="${subject}"]`);
+  const issueChip = row('').querySelector('[data-rxn="+1"]');
+  assert.match(issueChip.textContent, /👍 3/);
+  // `mine` is what tells somebody they have already reacted, so it has to be
+  // visible and not only in the count.
+  assert.match(issueChip.className, /mine/);
+  assert.ok(!row('c1').querySelector('[data-rxn="rocket"]').className.includes('mine'));
+  // The names behind the number, where they fit.
+  assert.match(issueChip.getAttribute('title'), /Amit, Priya, Dev/);
+});
+
+test('clicking a reaction sends the reaction and the subject it was under', async (t) => {
+  const browser = page(t, {
+    reactionsBody: reactions({ comments: { c1: [{ reaction: '+1', count: 4, mine: false, names: ['Priya'] }] } }),
+  });
+  await importFresh('../public/issue-thread-ui.js');
+  await browser.settle();
+
+  browser.document.querySelector('[data-rxn-row="c1"]').querySelector('[data-rxn="+1"]').click();
+  await browser.settle();
+
+  assert.deepEqual(browser.sent.filter((entry) => entry.to === 'react'), [{ to: 'react', body: { reaction: '+1', commentId: 'c1' } }]);
+  // The count comes back from the server rather than being guessed. It starts
+  // at four and the answer says one, so a screen that guessed would show five
+  // and a screen that ignored the answer would still show four.
+  const chip = browser.document.querySelector('[data-rxn-row="c1"]').querySelector('[data-rxn="+1"]');
+  assert.match(chip.textContent, /👍 1/);
+  assert.match(chip.className, /mine/);
+});
+
+test('a reaction on the issue itself carries no comment', async (t) => {
+  const browser = page(t);
+  await importFresh('../public/issue-thread-ui.js');
+  await browser.settle();
+
+  browser.document.querySelector('[data-rxn-open=""]').click();
+  await browser.settle();
+  browser.document.querySelector('[data-rxn-pick="rocket"]').click();
+  await browser.settle();
+
+  assert.deepEqual(browser.sent.filter((entry) => entry.to === 'react'), [{ to: 'react', body: { reaction: 'rocket', commentId: null } }]);
+});
+
+test('the picker offers the set and nothing else', async (t) => {
+  const browser = page(t);
+  await importFresh('../public/issue-thread-ui.js');
+  await browser.settle();
+
+  browser.document.querySelector('[data-rxn-open=""]').click();
+  await browser.settle();
+
+  // A text box here would be an unmoderated message channel on somebody else's
+  // issue.
+  const picker = browser.document.querySelector('.kg-rxn-picker');
+  assert.equal(picker.querySelectorAll('input, textarea').length, 0);
+  assert.deepEqual(picker.querySelectorAll('[data-rxn-pick]').map((node) => node.getAttribute('data-rxn-pick')), ['+1', 'rocket']);
+});
+
+test('a reader who cannot react is shown the counts and no buttons to press', async (t) => {
+  const browser = page(t, {
+    reactionsBody: reactions({
+      canReact: false,
+      issue: [{ reaction: '+1', count: 2, mine: false, names: ['Amit', 'Priya'] }],
+    }),
+  });
+  await importFresh('../public/issue-thread-ui.js');
+  await browser.settle();
+
+  // A support operator, for one. Drawing a button that answers 403 is a worse
+  // answer than not drawing it.
+  assert.equal(browser.present('[data-rxn-open]'), false);
+  assert.equal(browser.document.querySelector('[data-rxn="+1"]').getAttribute('disabled'), '');
+});
+
+test('nothing is drawn where there is nothing to show and nothing to do', async (t) => {
+  const browser = page(t, { reactionsBody: reactions({ canReact: false }) });
+  await importFresh('../public/issue-thread-ui.js');
+  await browser.settle();
+
+  assert.equal(browser.present('.kg-rxn-row'), false);
+});
+
+test('reactions that cannot be read do not take the conversation down with them', async (t) => {
+  const browser = page(t, { reactionsResponse: { status: 500, body: { error: { message: 'Broken.' } } } });
+  await importFresh('../public/issue-thread-ui.js');
+  await browser.settle();
+
+  assert.match(browser.html(), /#1 Login is slow/);
+  assert.equal(browser.present('.kg-rxn-row'), false);
+});
+
+test('reacting does not reload the thread and lose what somebody was typing', async (t) => {
+  const browser = page(t);
+  await importFresh('../public/issue-thread-ui.js');
+  await browser.settle();
+
+  const textarea = browser.document.querySelector('#kg-thread-form [name="body"]');
+  textarea.value = 'half a reply';
+  browser.document.querySelector('[data-rxn-open=""]').click();
+  await browser.settle();
+  browser.document.querySelector('[data-rxn-pick="+1"]').click();
+  await browser.settle();
+
+  // Re-rendering the whole thread for the sake of a number going from two to
+  // three throws away an open reply box.
+  assert.equal(browser.document.querySelector('#kg-thread-form [name="body"]').value, 'half a reply');
+});
+
+test('reacting does not start a request storm', async (t) => {
+  const browser = page(t);
+  await importFresh('../public/issue-thread-ui.js');
+  await browser.settle();
+
+  browser.document.querySelector('[data-rxn-open=""]').click();
+  await browser.settle();
+  browser.document.querySelector('[data-rxn-pick="+1"]').click();
+  await browser.settle();
+
+  const before = browser.requests().length;
+  for (let round = 0; round < 3; round += 1) {
+    browser.document.querySelector('.content').insertAdjacentHTML('beforeend', `<p>round ${round}</p>`);
+    await browser.settle();
+  }
+  // Repainting the rows is a DOM change, and the mutation observer that mounts
+  // this thread is watching for DOM changes.
+  assert.equal(browser.requests().length, before);
 });

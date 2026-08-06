@@ -121,7 +121,11 @@ function parseCompound(source) {
 
 function parseSelectorList(selector) {
   return splitTop(String(selector), ',').map((part) => {
-    if (/[>~+]/.test(part)) {
+    // Bracketed sections are removed before looking for a combinator, because
+    // `+`, `~` and `>` are all ordinary characters inside an attribute value.
+    // Without this, `[data-rxn="+1"]` reads as an adjacent-sibling selector and
+    // the harness refuses a selector that is perfectly ordinary.
+    if (/[>~+]/.test(String(part).replace(/\[[^\]]*\]/g, ''))) {
       // Silently matching the wrong elements is how a harness lies. Our own code
       // does not use combinators; when it starts to, this is the reminder.
       throw new Error(`browser shim: combinators are not supported ("${part}")`);

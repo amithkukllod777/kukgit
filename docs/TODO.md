@@ -288,6 +288,15 @@ not the boundary being trusted. Those items stay in scope here.
       can be driven under `node --test`, covering the request-storm, cached-401
       and duplicate-attachment classes that only a browser had caught,
       [FRONT_END_TESTING.md](FRONT_END_TESTING.md)
+- [x] a private repository stops confirming its own existence — no-access on a
+      non-public repository answers 404, not 403
+- [x] self-hosted runner installer — `npm run runner:install` writes a systemd
+      unit with a dedicated no-login user and the restrictions systemd can
+      enforce, [SELF_HOSTED_RUNNERS.md](SELF_HOSTED_RUNNERS.md)
+- [x] the issue tracker finished: Markdown everywhere through one shared
+      renderer ([MARKDOWN.md](MARKDOWN.md)), notifications to the people in a
+      conversation ([ISSUE_COMMENTS.md](ISSUE_COMMENTS.md)), and reactions
+      ([ISSUE_REACTIONS.md](ISSUE_REACTIONS.md))
 
 ## Triage rules
 

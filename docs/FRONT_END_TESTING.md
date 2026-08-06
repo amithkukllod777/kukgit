@@ -277,3 +277,16 @@ all the way to the document.
 
 Each of those was added because a module could not otherwise be tested at all —
 not speculatively.
+
+### A `+` inside an attribute value is not a combinator
+
+The shim refuses combinators (`>`, `~`, `+`) on purpose: silently matching the
+wrong elements is how a harness lies. But it used to look for them in the whole
+selector, including inside brackets — so `[data-rxn="+1"]` was rejected as an
+adjacent-sibling selector when it is a perfectly ordinary attribute match.
+
+Bracketed sections are now stripped before the check. Reaction names are `+1`
+and `-1`, which is how this surfaced.
+
+Descendant selectors (`.card [data-x]`) do work. It was only the false positive
+that made them look as though they did not.
