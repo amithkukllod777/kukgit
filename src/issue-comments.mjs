@@ -2,6 +2,7 @@ import { requireUser } from './auth.mjs';
 import { audit, uid } from './db.mjs';
 import { permissionAtLeast, requireRepositoryAccess } from './repository-access.mjs';
 import { httpError, originAllowed } from './security.mjs';
+import { labelsForIssue, migrateIssueTaxonomy } from './issue-taxonomy.mjs';
 
 /**
  * The conversation on an issue.
@@ -47,6 +48,10 @@ export function migrateIssueComments(db) {
     CREATE INDEX IF NOT EXISTS idx_issue_comments_issue
       ON issue_comments(issue_id, created_at);
   `);
+  // The thread shows an issue's labels, milestone and assignee, so it makes
+  // sure they exist rather than depending on the order migrations are called
+  // in.
+  migrateIssueTaxonomy(db);
 }
 
 function sendJson(res, status, payload) {
@@ -142,12 +147,20 @@ export function addIssueComment(db, { issueId, authorId, body, importedAuthor = 
 function issueFor(db, repositoryId, number) {
   const issue = db.prepare(`
     SELECT i.id, i.number, i.title, i.body, i.status, i.priority, i.created_at AS createdAt,
-           i.updated_at AS updatedAt, i.author_id AS authorId, u.display_name AS authorName
-    FROM issues i JOIN users u ON u.id = i.author_id
+           i.updated_at AS updatedAt, i.author_id AS authorId, u.display_name AS authorName,
+           i.imported_author AS importedAuthor, i.imported_assignee AS importedAssignee,
+           i.milestone_id AS milestoneId, m.title AS milestoneTitle,
+           i.assignee_id AS assigneeId, a.display_name AS assigneeName
+    FROM issues i
+    JOIN users u ON u.id = i.author_id
+    LEFT JOIN issue_milestones m ON m.id = i.milestone_id
+    LEFT JOIN users a ON a.id = i.assignee_id
     WHERE i.repository_id = ? AND i.number = ?
   `).get(repositoryId, Number(number));
   if (!issue) throw httpError(404, 'Issue not found.', 'ISSUE_NOT_FOUND');
-  return issue;
+  // Same rule as a comment: the name shown is whoever opened it, and an
+  // imported issue names somebody with no account here.
+  return { ...issue, authorName: issue.importedAuthor || issue.authorName, labels: labelsForIssue(db, issue.id) };
 }
 
 export function createIssueCommentsApiHandler({ config, db }) {

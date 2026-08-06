@@ -167,9 +167,15 @@ full of `#42` references is worth nothing if #42 here is a different issue. A
 repository that already has issues gets fresh numbers *and says so*, because
 silently renumbering half a tracker is worse than either choice alone.
 
+**Labels, milestones and assignee names come across** — see
+[ISSUE_TAXONOMY.md](ISSUE_TAXONOMY.md). Labels and milestones are created once
+per name rather than once per use, since they arrive attached to every issue that
+carries them rather than as a list.
+
 **Nobody is invented.** An issue or comment written by somebody with no account
 here is owned by the account that ran the import and displays the original
-author's name, marked as imported. See
+author's name, marked as imported. An assignee is recorded the same way: a forge
+gives a login, not an email, so there is nothing to match an account against. See
 [ISSUE_COMMENTS.md](ISSUE_COMMENTS.md). Original dates are kept, so the thread
 still reads in the order it happened.
 
@@ -226,10 +232,10 @@ costs no requests at all.
 
 ## What it does not do yet
 
-- **Labels, milestones, assignees, reactions, releases, wikis.** KukGit has
-  nowhere to put them. The number of issues that had labels is reported so the
-  loss is visible.
-- **Pull request history**, for the reason above.
+- **Reactions, releases, wikis.** No home for them yet.
+- **Pull request history.** This one is permanent rather than pending: a KukGit
+  pull request needs live head and base refs, and a pull request closed three
+  years ago has neither. They are counted and reported instead.
 - **Re-sync.** One-shot. See "It is never stored", above.
 - **Bitbucket**, and self-hosted GitHub Enterprise or GitLab. The single-URL
   import works with any of them today; bulk listing and issue import do not.

@@ -278,6 +278,8 @@ export async function runBulkImportJob(db, config, jobId, { onProgress = null, i
           const listing = await readIssues({ forge: job.forge, owner: job.owner, repo: item.name, token });
           const result = importForgeIssues(db, { repositoryId: repoId, actorId: job.createdBy, listing });
           note = `${result.imported} issues and ${result.comments} comments imported`
+            + (result.labels ? `, ${result.labels} labels` : '')
+            + (result.milestones ? `, ${result.milestones} milestones` : '')
             + (result.pullRequestsSkipped ? `; ${result.pullRequestsSkipped} pull requests left behind` : '')
             + (result.note ? `. ${result.note}` : '');
         } catch (error) {
