@@ -131,6 +131,7 @@ import {
   createRepositoryLifecycleGuard,
   migrateRepositoryLifecycle,
 } from './src/repository-lifecycle.mjs';
+import { createBulkImportApiHandler, migrateRepositoryImportJobs } from './src/repository-import-api.mjs';
 import {
   createReviewThreadMergeGuard,
   createReviewThreadsApiHandler,
@@ -196,6 +197,7 @@ withSchemaLock(db, () => {
   migrateWorkflowTriggers(db);
   migrateRunners(db);
   migrateRepositoryLifecycle(db);
+  migrateRepositoryImportJobs(db);
   migrateSshKeys(db);
   migrateGitLfs(db);
   migrateInstanceAdminSafe(db);
@@ -326,6 +328,7 @@ const instanceSettingsApi = createInstanceSettingsApiHandler({ config, db, isIns
 // closed — which is the right default for every other embedding of this code.
 registerSupportOperators(db, (user) => isInstanceAdmin(config, user));
 const repositoryLifecycleApi = createRepositoryLifecycleApiHandler({ config, db });
+const bulkImportApi = createBulkImportApiHandler({ config, db });
 const sshKeysApi = createSshKeysApiHandler({ config, db });
 const branchGovernanceApi = createBranchGovernanceApiHandler({ config, db });
 const pullRequestDiffsApi = createPullRequestDiffsApiHandler({ config, db });
@@ -371,6 +374,7 @@ async function dispatch(req, res) {
   if (await billingApi(req, res)) return;
   if (await instanceSettingsApi(req, res)) return;
   if (await repositoryLifecycleApi(req, res)) return;
+  if (await bulkImportApi(req, res)) return;
   if (await sshKeysApi(req, res)) return;
   if (await externalAccessPrivacyApi(req, res)) return;
   if (await repositoryAccessApi(req, res)) return;

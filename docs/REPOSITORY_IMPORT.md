@@ -90,14 +90,66 @@ for SSH imports.
   reached by a different button. It is enforced on both, and the check runs before
   the clone rather than after it.
 
+## Importing everything an account owns
+
+One URL at a time is fine for one repository and hopeless for forty. **New
+repository → Import from another host** asks GitHub or GitLab what an
+organization or user owns and brings the lot.
+
+```
+POST /api/repository-imports/preview   # says what would happen, imports nothing
+POST /api/repository-imports           # 202 and a job to watch
+GET  /api/repository-imports/:jobId    # progress
+DELETE /api/repository-imports/:jobId  # stop what has not started
+```
+
+**Preview first, always.** Forty repositories arriving in an organization — each
+one counted against the plan — is not something to discover afterwards. The
+preview lists what would be imported and, separately, everything it would skip
+and why: forks, archived repositories, ones with no commits, and names that
+collide once reduced to a KukGit slug. Nine missing out of forty is nine named
+reasons, not a smaller number and a shrug. Those reasons are stored on the job
+too, so they are still there a week later.
+
+**The forge is picked from a list, not supplied as a URL.** `github.com` and
+`gitlab.com`, with the API base hard-coded. There is no host field to point at an
+internal address, which is why this needs none of the DNS-resolution defence that
+webhook delivery does. A self-hosted forge will need an instance-level allow-list;
+it is deliberately not "any host you like".
+
+**Listing your own account uses the endpoint that can see private repositories.**
+GitHub's `/users/{owner}/repos` never returns private repositories, even to a
+token that owns every one of them — only `/user/repos` does. So when the token
+belongs to the owner being listed, that is the endpoint used. Without that,
+"import all my repositories" silently skips exactly the ones anybody was worried
+about moving.
+
+**One repository at a time, and one failure is one failure.** A clone saturates
+whatever it is given, so running six at once makes all six slow. A repository
+that will not clone is recorded as failed and the queue carries on — nobody is
+watching a forty-repository import, and stopping at number three would mean
+finding out tomorrow.
+
+**The plan limit is re-checked before every repository**, not once for the batch.
+A job that takes an hour can cross the limit partway through.
+
+**The token stays in memory for the life of the job.** Everything above about
+never writing it down still holds, and a background worker needs the credential
+after the request that carried it has gone. Keeping it in memory preserves the
+property at a real cost: if the server restarts mid-job, the private repositories
+still queued fail, and say they failed because the token went with the process.
+Start the import again for what is left.
+
+**Limits.** 500 repositories enumerated per listing and 500 per job. An owner
+with more is reported as truncated rather than quietly cut off.
+
 ## What it does not do yet
 
-- **Big repositories.** The clone is synchronous with a three-minute ceiling, so
-  a repository that takes longer than that fails and has to be pushed by hand.
-  Background import with progress is the next piece of work.
 - **Issues, pull requests, labels, releases, wikis.** Only Git objects are
   imported. Everything else stays on the old host.
 - **LFS objects.** A mirror clone brings the pointer files, not the contents.
   See [GIT_LFS.md](GIT_LFS.md) for uploading them afterwards.
 - **Re-sync.** One-shot. See "It is never stored", above.
-- **Importing every repository in an organization at once.** One URL at a time.
+- **Bitbucket**, and self-hosted GitHub Enterprise or GitLab. The single-URL
+  import works with any of them today; the bulk listing does not.
+- **Resuming a job across a restart**, for the reason given above.

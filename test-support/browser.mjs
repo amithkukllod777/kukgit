@@ -822,13 +822,24 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
   // test runner gives up. Recorded here and cleared by `restore()`; unref'd
   // immediately so a forgotten `restore()` fails as an assertion rather than as
   // a hung suite.
-  const intervals = new Set();
+  //
+  // They are virtual rather than unref'd real ones. A module that polls a job
+  // every two seconds cannot be tested by waiting two seconds, and a test that
+  // did would be a test that sometimes waited 1.99. `advanceTimers` moves a
+  // clock the module cannot tell from the real one.
+  const intervals = new Map();
+  let intervalHandle = 0;
+  let clock = 0;
   const savedSetInterval = globalThis.setInterval;
-  globalThis.setInterval = (...args) => {
-    const handle = savedSetInterval(...args);
-    handle?.unref?.();
-    intervals.add(handle);
+  const savedClearInterval = globalThis.clearInterval;
+  globalThis.setInterval = (fn, delay = 0) => {
+    const handle = (intervalHandle += 1);
+    intervals.set(handle, { fn, delay: Math.max(1, Number(delay) || 1), dueAt: clock + Math.max(1, Number(delay) || 1) });
     return handle;
+  };
+  globalThis.clearInterval = (handle) => {
+    if (intervals.has(handle)) intervals.delete(handle);
+    else savedClearInterval(handle);
   };
 
   const windowSaved = {
@@ -887,6 +898,31 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
       }
     },
 
+    /**
+     * Moves the interval clock forward, firing whatever comes due.
+     *
+     * A module that polls every two seconds cannot be tested by waiting two
+     * seconds — and a test that tried would sometimes wait 1.99. Each callback
+     * is awaited between steps so a poll that fetches has somewhere to land
+     * before the next one is due.
+     */
+    async advanceTimers(ms) {
+      const target = clock + Math.max(0, Number(ms) || 0);
+      for (let guard = 0; guard < 1000; guard += 1) {
+        const due = [...intervals.entries()]
+          .filter(([, timer]) => timer.dueAt <= target)
+          .sort((a, b) => a[1].dueAt - b[1].dueAt)[0];
+        if (!due) break;
+        const [handle, timer] = due;
+        clock = timer.dueAt;
+        timer.dueAt = clock + timer.delay;
+        try { await timer.fn(); } catch { /* a throwing poll is the module's problem, not the clock's */ }
+        // The callback may have cleared itself; `intervals` is the record.
+        if (!intervals.has(handle)) continue;
+      }
+      clock = target;
+    },
+
     restore() {
       for (const [name, entry] of saved) {
         if (entry.present) globalThis[name] = entry.value; else delete globalThis[name];
@@ -895,7 +931,7 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
       globalThis.removeEventListener = windowSaved.removeEventListener;
       globalThis.dispatchEvent = windowSaved.dispatchEvent;
       globalThis.setInterval = savedSetInterval;
-      for (const handle of intervals) clearInterval(handle);
+      globalThis.clearInterval = savedClearInterval;
       intervals.clear();
       for (const handle of frames) clearTimeout(handle);
       frames.clear();
