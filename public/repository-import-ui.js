@@ -114,7 +114,7 @@ function importMarkup(organizations) {
           <div class="field"><label>Import into</label><select class="select" name="orgSlug">${organizations.map((org) => `<option value="${importEscape(org.slug)}">${importEscape(org.name)}</option>`).join('')}</select></div>
         </div>
         <div class="field" style="margin-top:12px"><label>Access token <span class="muted">(needed for private repositories)</span></label><input class="input" type="password" name="accessToken" autocomplete="off" placeholder="github_pat_… or glpat-…" /><div class="field-hint">Used for this import only and never stored. Read access to repository contents is all it needs.</div></div>
-        <div class="field"><label><input type="checkbox" name="includeForks" /> Include forks</label><label><input type="checkbox" name="includeArchived" /> Include archived repositories</label></div>
+        <div class="field"><label><input type="checkbox" name="includeForks" /> Include forks</label><label><input type="checkbox" name="includeArchived" /> Include archived repositories</label><label><input type="checkbox" name="includeIssues" checked /> Bring issues and their comments across (GitHub only)</label></div>
         <button type="button" class="btn btn-primary" id="kg-import-preview">See what would be imported</button>
       </form>
       <div id="kg-import-result"></div>
@@ -132,6 +132,7 @@ function importFormValues() {
     // An unchecked box is absent from FormData, which is what `has` reads.
     includeForks: values.has('includeForks'),
     includeArchived: values.has('includeArchived'),
+    includeIssues: values.has('includeIssues'),
     accessToken: String(values.get('accessToken') ?? ''),
   };
 }

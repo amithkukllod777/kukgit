@@ -140,6 +140,7 @@ export function createBulkImportApiHandler({ config, db, runJob = runBulkImportJ
           selected,
           skipped: preview.skipped,
           token,
+          includeIssues: Boolean(body.includeIssues),
         });
 
         // Deliberately not awaited: the clones take minutes and the caller gets

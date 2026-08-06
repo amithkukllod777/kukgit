@@ -143,13 +143,59 @@ Start the import again for what is left.
 **Limits.** 500 repositories enumerated per listing and 500 per job. An owner
 with more is reported as truncated rather than quietly cut off.
 
+## Issues and their conversations
+
+Ticked by default on a bulk import from GitHub. A mirror clone moves every
+commit and none of the argument about why — and for most repositories the
+argument is the part that cannot be reconstructed, because the reason a decision
+was made lives in a thread and not in a diff.
+
+**Comments are read in one list, not one request per issue.**
+`/repos/{owner}/{repo}/issues/comments` returns every comment in the repository
+with the issue it belongs to, so two hundred issues cost three requests instead
+of two hundred. That is the difference between fitting inside an hourly rate
+limit and not.
+
+**Pull requests are counted and left behind.** GitHub's issues endpoint returns
+them too — they share a number space — and a pull request whose branches were
+deleted years ago cannot become a KukGit pull request, which needs live refs.
+Importing them as issues would put closed code review in the bug tracker
+forever. The item's progress line says how many were left.
+
+**Numbers are kept when the repository has none of its own.** An imported body
+full of `#42` references is worth nothing if #42 here is a different issue. A
+repository that already has issues gets fresh numbers *and says so*, because
+silently renumbering half a tracker is worse than either choice alone.
+
+**Nobody is invented.** An issue or comment written by somebody with no account
+here is owned by the account that ran the import and displays the original
+author's name, marked as imported. See
+[ISSUE_COMMENTS.md](ISSUE_COMMENTS.md). Original dates are kept, so the thread
+still reads in the order it happened.
+
+**A tracker that will not come across does not fail the repository.** If GitHub
+rate-limits partway through, the code is still imported and the item says
+`code imported; issues did not: …`. Calling that a failure would have somebody
+re-run a clone that already worked.
+
+**It is all or nothing per repository.** The issues and comments for one
+repository are written in a single transaction: half a tracker is worse than
+none, because the obvious response is to run the import again and get the first
+half twice.
+
+Limits: 1000 issues and 5000 comments per repository, reported as truncated
+rather than quietly cut off. GitHub only — GitLab issue import is refused rather
+than half-attempted.
+
 ## What it does not do yet
 
-- **Issues, pull requests, labels, releases, wikis.** Only Git objects are
-  imported. Everything else stays on the old host.
+- **Labels, milestones, assignees, reactions, releases, wikis.** KukGit has
+  nowhere to put them. The number of issues that had labels is reported so the
+  loss is visible.
+- **Pull request history**, for the reason above.
 - **LFS objects.** A mirror clone brings the pointer files, not the contents.
   See [GIT_LFS.md](GIT_LFS.md) for uploading them afterwards.
 - **Re-sync.** One-shot. See "It is never stored", above.
 - **Bitbucket**, and self-hosted GitHub Enterprise or GitLab. The single-URL
-  import works with any of them today; the bulk listing does not.
+  import works with any of them today; bulk listing and issue import do not.
 - **Resuming a job across a restart**, for the reason given above.
