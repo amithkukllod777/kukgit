@@ -461,3 +461,67 @@ Plan capacity with these in mind:
 Do not expose this release as a public commercial service. Complete the production
 blockers in [SECURITY.md](../SECURITY.md) and the private-alpha exit work in
 [ROADMAP.md](ROADMAP.md) first.
+
+## Upgrading a running instance
+
+```bash
+# on the server, in the checkout the service runs from
+./scripts/deploy.sh                 # deploy origin/main
+./scripts/deploy.sh v0.3.0          # deploy a tag or commit
+./scripts/deploy.sh --dry-run       # say what would happen, change nothing
+```
+
+The live server was set up by hand, one command at a time. Nothing recorded how
+to put a new version on it, so every deploy was that evening again, from memory,
+at whatever hour the change was ready. This is that procedure, written down.
+
+In order:
+
+1. **Refuses a dirty working tree.** A deploy that quietly includes an edit made
+   on the server is a deploy nobody can reproduce, and somebody's `console.log`
+   ends up in production.
+2. Records the running commit, for the rollback.
+3. Fetches and checks out the requested ref, printing what is about to land.
+4. `npm ci --omit=dev --ignore-scripts` — no dev dependencies, and no
+   postinstall script from a package we did not review running as the user that
+   owns the repositories.
+5. `npm run deploy:check`. **Failing here stops the deploy before the restart**
+   and returns the checkout to what was running.
+6. `npm run backup` — **before** the restart. A deploy that has to be rolled back
+   needs the database as it was before the new code touched it; a backup taken
+   afterwards is a backup of the problem.
+7. `systemctl restart kukgit`.
+8. Polls the health URL for 60 seconds. If it never answers, **rolls the code
+   back and restarts again** — a server that is down has to be up before anybody
+   debugs why.
+
+### It does not migrate down
+
+Schema migrations are forward-only. A rollback restores the **code** and leaves
+the newer schema in place.
+
+That is survivable for an additive migration — a column the old code ignores —
+and is not survivable for anything else. A release that changes a table in a way
+the previous version cannot read needs a person, and the automatic rollback will
+have made things worse rather than better. **Read the migration before deploying
+it.** The rollback message says this too, because nobody remembers it at 2am.
+
+### Settings
+
+| Variable | Default | What it is |
+| --- | --- | --- |
+| `KUKGIT_SERVICE` | `kukgit` | The systemd unit to restart |
+| `KUKGIT_HEALTH_URL` | `http://127.0.0.1:$PORT/` | What has to answer 200 |
+| `KUKGIT_HEALTH_TIMEOUT` | `60` | Seconds to wait before rolling back |
+
+### What it does not do
+
+- **It does not run the test suite.** Dev dependencies are not installed on the
+  server and the suite needs a scratch database. `npm run ci` is the gate, and
+  it runs before the change is merged — not here.
+- **It does not deploy to more than one machine.** There is one server.
+- **It does not drain connections.** `systemctl restart` stops the process; a
+  request in flight is a request that failed. The graceful-shutdown path exists
+  in the server and this does not use it yet.
+- **It does not check that the migration is additive.** That is the judgement
+  above, and it is a person's.

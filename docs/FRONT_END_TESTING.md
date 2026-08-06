@@ -155,6 +155,25 @@ All five are one defect: **the guard tests for a rendered element, and a
 refused load never renders one.** 403, 404 and a failed load are answers, and an
 answer has to be remembered until navigation.
 
+### Confirmed in a real browser
+
+The five fixes were found and fixed in the harness. On a live instance, opening
+a repository settings page for a repository that does not exist — every
+repo-scoped panel gets a refusal at once:
+
+```
+8× /api/repos/kuklabs/no-such-repo/branches
+5× /api/repository-access/kuklabs/no-such-repo
+5× /api/webhooks/kuklabs/no-such-repo
+…
+error cards: 1
+growth after 16 more seconds: none
+```
+
+The 120× is gone and the counts stop rising. The 4–8 that remain are the
+settling phase — each module fetching a few times while the others render into
+the page — and they converge rather than climbing.
+
 **It is still a net, not a proof.** Reintroducing the collaboration panel's
 *success-path* storm passes the sweep, because a generic payload does not
 reproduce the exact render that drives that loop; `ui-behaviour.test.mjs`
@@ -200,8 +219,8 @@ shortens what browser verification has to catch, and does not replace it.
 
 - Anything visual. Spacing, contrast, whether a panel is readable on a phone.
 - **Most of what each module does.** Twenty-five modules are swept for storms;
-  five are driven through their actual behaviour. The other twenty could render
-  nonsense and pass.
+  eight are driven through their actual behaviour. The other seventeen could
+  render nonsense and pass.
 - Real event ordering, focus, scrolling, and anything the browser does that we
   do not.
 
