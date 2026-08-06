@@ -116,6 +116,42 @@ test('creating a repository over the limit is refused, and leaves nothing behind
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM repositories WHERE slug = ?').get('one-too-many').count, 0);
 });
 
+test('importing over the limit is refused too, and before the network call', async (t) => {
+  // The limit was enforced on `Create new` and not on `Import existing`. Same
+  // resource, same storage, same bill — reached by a different button. Anybody
+  // at their plan's ceiling could carry on by importing instead of creating,
+  // which is not a limit, it is a suggestion.
+  const { config, db, organization } = workspace(t);
+  addRepositories(db, config, organization, PLANS.free.repositories);
+  const app = createApp({ config, db });
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+
+  const login = await fetch(`${origin}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'founder@kuklabs.com', password: 'secure-test-password' }),
+  });
+  const cookie = login.headers.get('set-cookie').split(';')[0];
+
+  const started = Date.now();
+  const response = await fetch(`${origin}/api/repos/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({ orgSlug: 'kuklabs', name: 'One Too Many', slug: 'one-too-many', sourceUrl: 'https://github.com/kuklabs/does-not-exist.git' }),
+  });
+
+  assert.equal(response.status, 402);
+  assert.equal((await response.json()).error.code, 'PLAN_LIMIT_EXCEEDED');
+  // Refused before the clone, not after it: the URL above does not exist, and
+  // an answer this fast is proof nothing was fetched.
+  assert.ok(Date.now() - started < 5000, 'the refusal waited for a network call');
+  assert.equal(fs.existsSync(path.join(config.repositoriesDir, 'kuklabs', 'one-too-many.git')), false);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM repositories WHERE slug = ?').get('one-too-many').count, 0);
+});
+
 test('reading is never refused for being over a limit', async (t) => {
   const { config, db, organization } = workspace(t);
   addRepositories(db, config, organization, PLANS.free.repositories + 5);

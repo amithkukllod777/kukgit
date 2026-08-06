@@ -495,7 +495,8 @@ async function openRepositoryModal(initialMode = 'create') {
       <div class="field"><label>Organization</label><select class="select" name="orgSlug">${orgs.map((org) => `<option value="${escapeHtml(org.slug)}">${escapeHtml(org.name)}</option>`).join('')}</select></div>
       <div class="form-grid"><div class="field"><label>Repository name</label><input class="input" name="name" placeholder="KukGit Platform" required /></div><div class="field"><label>Repository slug</label><input class="input" name="slug" placeholder="kukgit-platform" pattern="[a-z0-9][a-z0-9-]{1,62}" required /></div></div>
       <div class="field"><label>Description</label><textarea class="textarea" name="description" placeholder="What is this repository for?"></textarea></div>
-      <div class="field import-field ${mode === 'import' ? '' : 'hidden'}"><label>Source repository URL</label><input class="input" name="sourceUrl" placeholder="https://github.com/owner/repository.git" /><div class="field-hint">Foundation import supports public HTTPS or SSH repositories. Credentials embedded in URLs are blocked.</div></div>
+      <div class="field import-field ${mode === 'import' ? '' : 'hidden'}"><label>Source repository URL</label><input class="input" name="sourceUrl" placeholder="https://github.com/owner/repository.git" /><div class="field-hint">HTTPS or SSH. Credentials embedded in the URL are blocked — use the token field below instead.</div></div>
+      <div class="field import-field ${mode === 'import' ? '' : 'hidden'}"><label>Access token <span class="muted">(only for a private repository)</span></label><input class="input" type="password" name="accessToken" autocomplete="off" placeholder="github_pat_… or glpat-…" /><div class="field-hint">Used for this one import and never stored. It needs read access to the repository contents and nothing else.</div></div>
       <div class="field"><label>Visibility</label><select class="select" name="visibility"><option value="private">Private — organization members only</option><option value="public">Public — anyone can clone</option><option value="internal">Internal — Kuklabs users</option></select></div>
     </form>`, '<button class="btn" data-close-modal>Cancel</button><button class="btn btn-primary" id="repo-submit">Create repository</button>');
   const nameInput = wrapper.querySelector('[name="name"]');
@@ -506,7 +507,9 @@ async function openRepositoryModal(initialMode = 'create') {
   function updateMode(next) {
     mode = next;
     wrapper.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
-    wrapper.querySelector('.import-field').classList.toggle('hidden', mode !== 'import');
+    // All of them. There is more than one import field now, and hiding only the
+    // first left a token box on screen in create mode.
+    wrapper.querySelectorAll('.import-field').forEach((field) => field.classList.toggle('hidden', mode !== 'import'));
     wrapper.querySelector('[name="sourceUrl"]').required = mode === 'import';
     wrapper.querySelector('#repo-submit').textContent = mode === 'import' ? 'Import repository' : 'Create repository';
   }
@@ -515,6 +518,9 @@ async function openRepositoryModal(initialMode = 'create') {
     const form = wrapper.querySelector('#repo-form');
     if (!form.reportValidity()) return;
     const data = Object.fromEntries(new FormData(form));
+    // A blank token is not a token, and a token has no business being in a
+    // create request at all.
+    if (mode !== 'import' || !data.accessToken) delete data.accessToken;
     const button = wrapper.querySelector('#repo-submit'); button.disabled = true; button.textContent = mode === 'import' ? 'Importing…' : 'Creating…';
     try {
       const payload = await api(mode === 'import' ? '/api/repos/import' : '/api/repos', { method: 'POST', body: data });

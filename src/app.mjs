@@ -21,6 +21,7 @@ import { handleGitHttp, isGitHttpPath } from './git-http.mjs';
 import { assertBranch, assertSlug, httpError, originAllowed, validateRemoteUrl } from './security.mjs';
 import { PUBLISHED_DEV_CREDENTIALS } from './config.mjs';
 import { assertWithinPlan } from './plan-limits.mjs';
+import { normalizeImportToken } from './repository-import.mjs';
 import { KUKGIT_VERSION } from './version.mjs';
 
 const MIME = {
@@ -279,9 +280,17 @@ export function createApp({ config, db }) {
         const orgSlug = assertSlug(body.orgSlug, 'organization slug');
         const slug = assertSlug(body.slug, 'repository slug');
         const sourceUrl = validateRemoteUrl(body.sourceUrl);
+        // Validated before the network call, so a malformed token is refused in
+        // a millisecond rather than after a three-minute clone.
+        const credential = normalizeImportToken(body.accessToken);
         const org = requireOrg(db, user, orgSlug, 'maintainer');
         if (findRepo(db, orgSlug, slug)) throw httpError(409, 'A repository with this name already exists.');
-        await importMirror(config, orgSlug, slug, sourceUrl);
+        // The same limit the create route enforces. Without it a plan's
+        // repository cap was enforced on `Create new` and bypassed by anybody
+        // who chose `Import existing` — the identical resource, billed the same,
+        // reached by a different button.
+        assertWithinPlan(db, config, { organizationId: org.id, resource: 'repositories' });
+        await importMirror(config, orgSlug, slug, sourceUrl, { credential });
         const branches = listBranches(config, orgSlug, slug);
         const defaultBranch = branches.some((branch) => branch.name === 'main') ? 'main' : branches.some((branch) => branch.name === 'master') ? 'master' : branches[0]?.name || 'main';
         const repoId = uid('repo');
@@ -292,7 +301,9 @@ export function createApp({ config, db }) {
           deleteBareRepository(config, orgSlug, slug);
           throw error;
         }
-        audit(db, { organizationId: org.id, userId: user.id, action: 'repository.imported', targetType: 'repository', targetId: repoId, metadata: { slug, sourceHost: sourceUrl.split('/')[2] || 'ssh' } });
+        audit(db, { organizationId: org.id, userId: user.id, action: 'repository.imported', targetType: 'repository', targetId: repoId, // Whether a token was used, never the token. An audit row is read by
+        // more people than a database row, and is exported.
+        metadata: { slug, sourceHost: sourceUrl.split('/')[2] || 'ssh', authenticated: Boolean(credential) } });
         return sendJson(res, 201, { repository: repoDto(config, findRepo(db, orgSlug, slug)) });
       }
 

@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { assertBranch, assertSlug, httpError, safeRepoRelativePath, validateRemoteUrl } from './security.mjs';
+import { importEnvironment, importHint, redactToken } from './repository-import.mjs';
 
 function gitFailure(status, stdout, stderr, allowFailure) {
   if (status === 0 || allowFailure) return null;
@@ -127,14 +128,19 @@ export function deleteBareRepository(config, orgSlug, repoSlug) {
 
 // Mirror import clones an entire remote repository over the network, so it is the
 // single longest-running Git operation KukGit performs. It must not block.
-export async function importMirror(config, orgSlug, repoSlug, remoteUrl) {
+//
+// `credential`, when given, is an access token for a private repository. It goes
+// through the environment rather than the URL or the command line; see
+// repository-import.mjs for why each of those is worse.
+export async function importMirror(config, orgSlug, repoSlug, remoteUrl, { credential = null } = {}) {
   const source = validateRemoteUrl(remoteUrl);
   const target = repoDiskPath(config, orgSlug, repoSlug);
   if (fs.existsSync(target)) throw httpError(409, 'Repository already exists on disk.');
+  const env = importEnvironment(source, credential);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   let result;
   try {
-    result = await execGitAsync(['clone', '--mirror', source, target], { allowFailure: true, maxBuffer: 50 * 1024 * 1024, timeout: 180000 });
+    result = await execGitAsync(['clone', '--mirror', source, target], { allowFailure: true, maxBuffer: 50 * 1024 * 1024, timeout: 180000, env });
   } catch (error) {
     // A timeout or output overflow leaves a partial clone behind; clear it so a
     // retry is not blocked by the "already exists on disk" guard above.
@@ -143,7 +149,9 @@ export async function importMirror(config, orgSlug, repoSlug, remoteUrl) {
   }
   if (result.status !== 0) {
     fs.rmSync(target, { recursive: true, force: true });
-    throw httpError(400, `Import failed: ${(result.stderr || result.stdout).trim().slice(0, 700)}`, 'IMPORT_FAILED');
+    const detail = redactToken((result.stderr || result.stdout).trim(), credential).slice(0, 700);
+    const hint = importHint(result.stderr || result.stdout, { hadToken: Boolean(credential) });
+    throw httpError(400, `Import failed: ${detail}${hint ? ` — ${hint}` : ''}`, 'IMPORT_FAILED');
   }
   await execGitAsync(['--git-dir', target, 'config', 'http.receivepack', 'true']);
   await execGitAsync(['--git-dir', target, 'update-server-info']);

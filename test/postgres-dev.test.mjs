@@ -87,6 +87,20 @@ test('the launcher checks the URL it prints', async () => {
   assert.match(script, /if \(!reachable\(port\)\)/);
 });
 
+test('a recorded cluster that is no longer running is replaced, not reported', async () => {
+  const script = fs.readFileSync(new URL('../scripts/postgres-dev.mjs', import.meta.url), 'utf8');
+  // The state file says a cluster was started; whether one is running is a
+  // different question. A container restart leaves the file and kills the port,
+  // and trusting the file printed a URL nothing was listening on — so the next
+  // command failed in a way that read like the code's fault.
+  const stale = script.slice(script.indexOf('if (fs.existsSync(STATE))'));
+  assert.match(stale.slice(0, 700), /reachable\(existing\.port\)/);
+  assert.match(stale.slice(0, 700), /nothing is listening there/);
+  // And the abandoned data directory goes with it, rather than being left to
+  // fill the disk one restart at a time.
+  assert.match(stale.slice(0, 700), /rmSync\(existing\.dataDir/);
+});
+
 test('both scripts are wired into package.json', async () => {
   const manifest = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   assert.equal(manifest.scripts['postgres:dev'], 'node scripts/postgres-dev.mjs');
