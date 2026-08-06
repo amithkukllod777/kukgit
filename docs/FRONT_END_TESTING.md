@@ -226,3 +226,23 @@ shortens what browser verification has to catch, and does not replace it.
 
 Browser verification before a release stays in the process. This suite shortens
 the list of things that verification has to catch; it does not replace it.
+
+## Never assert on an element
+
+```js
+assert.equal(browser.present('#kg-panel'), false);   // yes
+assert.equal(document.querySelector('#kg-panel'), null);   // no
+```
+
+`node:assert` formats a failure by inspecting the actual value **with custom
+inspection disabled**, so a custom `inspect` hook on the element class cannot
+help. An element has a parent pointer and a child list, so inspecting one walks
+the whole tree — and the assertion never finishes rendering.
+
+The test does not fail. It *hangs*, which is much worse: the run stops with no
+output, and the obvious first guess is a render loop in the module under test
+rather than a diff in the assertion. This cost an afternoon once; `present()`
+exists so it cannot cost another.
+
+Use `browser.present(selector)` for existence, `.length` for counts, and
+`browser.html()` with a regular expression for content.

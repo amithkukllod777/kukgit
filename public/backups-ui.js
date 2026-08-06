@@ -1,5 +1,6 @@
 const BACKUPS_API = '/api/backups';
 let backupRenderKey = '';
+let backupRefusedKey = '';
 let backupScheduled = false;
 
 function backupEscape(value = '') {
@@ -140,6 +141,11 @@ async function mountBackups(force = false) {
   if (!content) return;
   const key = location.hash;
   if (!force && backupRenderKey === key && document.querySelector('#kg-backups-panel')) return;
+  // A refusal renders no panel, so the guard above can never be satisfied by
+  // one. Without remembering it, everybody who is not an instance administrator
+  // re-asks on every DOM change the settings page makes — which is most of
+  // them, since half a dozen other modules render there too.
+  if (!force && backupRefusedKey === key) return;
   backupRenderKey = key;
   backupStyles();
   try {
@@ -148,7 +154,7 @@ async function mountBackups(force = false) {
     content.insertAdjacentHTML('beforeend', panelMarkup(data));
     bindBackupPanel(data);
   } catch (error) {
-    if (error.status === 403 || error.status === 401) return;
+    if (error.status === 403 || error.status === 401) { backupRefusedKey = key; return; }
     if (!document.querySelector('#kg-backups-panel')) content.insertAdjacentHTML('beforeend', `<section class="card kg-backups" id="kg-backups-panel"><div class="card-body kg-backup-empty">${backupEscape(error.message)}</div></section>`);
   }
 }
