@@ -683,9 +683,19 @@ class KgFormData {
     this.entries = [];
     if (!form) return;
     for (const field of form.querySelectorAll('[name]')) {
-      this.entries.push([field.getAttribute('name'), field.value]);
+      // An unchecked box is absent, not empty — which is why the code under
+      // test can write `values.has('blockDirectPushes')` and mean it. Including
+      // them would make every checkbox read as ticked and every test about
+      // them pass for the wrong reason.
+      const type = String(field.getAttribute('type') ?? '').toLowerCase();
+      if ((type === 'checkbox' || type === 'radio') && !field.checked) continue;
+      this.entries.push([field.getAttribute('name'), field.value || (type === 'checkbox' ? 'on' : '')]);
     }
   }
+
+  has(name) { return this.entries.some(([key]) => key === name); }
+
+  getAll(name) { return this.entries.filter(([key]) => key === name).map(([, value]) => value); }
 
   get(name) { return this.entries.find(([key]) => key === name)?.[1] ?? null; }
 
@@ -792,6 +802,15 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
   set('cancelAnimationFrame', (handle) => { frames.delete(handle); clearTimeout(handle); });
   set('sessionStorage', memoryStorage());
   set('localStorage', memoryStorage());
+  // Removing a collaborator asks first. A test that could not answer would
+  // either hang or silently take the "cancel" branch and assert that nothing
+  // happened — which is true, and about the wrong thing.
+  const confirmations = [];
+  set('confirm', (message) => {
+    confirmations.push(String(message ?? ''));
+    return harness.confirmAnswer;
+  });
+  set('alert', () => {});
   set('MutationObserver', KgMutationObserver);
   set('FormData', KgFormData);
   set('Element', KgElement);
@@ -827,6 +846,10 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
     document,
     location,
     calls,
+
+    /** What `window.confirm` answers next, and what it has been asked. */
+    confirmAnswer: true,
+    confirmations,
 
     /** Requests made so far, as `"GET /api/thing"` strings. */
     requests() { return calls.map((call) => `${call.method} ${call.path}`); },
