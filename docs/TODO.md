@@ -297,3 +297,23 @@ not the boundary being trusted. Those items stay in scope here.
 4. A green test suite is necessary but not sufficient; migration, identity, authorization and recovery contracts require targeted review.
 5. Obsolete or superseded PRs are closed rather than force-merged.
 6. A PR whose jobs never execute remains unvalidated regardless of mergeability or branch age.
+## A private repository answers 403, not 404, to a stranger
+
+`requireRepositoryAccess` refuses somebody with no access to a private
+repository with `403 Repository read permission is required`. That confirms the
+repository exists — and its organization and slug are in the URL that produced
+it, so a stranger can enumerate what a private organization owns by asking.
+
+The codebase already cares about this elsewhere: the abuse-disabled path in the
+same function deliberately answers 404 to a non-member, on the grounds that
+"disabled for abuse" is not a fact to hand a passing stranger. The ordinary
+no-permission path does not.
+
+Found while writing `test/issue-comments.test.mjs`, which expected 404 and got
+403. Not changed there: `requireRepositoryAccess` is the gate for roughly twenty
+routes, and turning every one of their 403s into 404s underneath them is its own
+change with its own test surface. The test records the actual behaviour and
+points here.
+
+Worth doing before external customers, since that is the point at which
+"strangers" stop being hypothetical.
