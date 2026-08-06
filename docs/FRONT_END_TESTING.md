@@ -108,7 +108,29 @@ throwing: an exception raised in a microtask takes the whole test process with
 it, and the count is the finding anyway. A test that spins therefore **fails**
 instead of hanging the run.
 
-## The two test files
+## The sweep
+
+`test/no-storms.test.mjs` imports **every** file in `public/` into a page,
+changes the DOM under it, and asserts it does not spiral — in two worlds, one
+where every request 404s and one where every request succeeds.
+
+It says nothing about whether a module works. It says only that the module does
+not do the one thing that has broken the live site four times. A module added
+later is covered without anybody remembering to add it, which matters more here
+than the depth of any single case.
+
+It found the fourth instance the day it was written: `collaboration-ui.js`
+refetched and appended another copy of its error card on every DOM change when
+its load failed — the guard tested for the panel, which a failed load never
+renders.
+
+**It is a net, not a proof.** Reintroducing the collaboration panel's
+*success-path* storm still passes the sweep, because a generic payload does not
+reproduce the exact render that drives that loop; `ui-behaviour.test.mjs`
+catches that one. Between the two files all four known storms are covered.
+Neither covers them alone.
+
+## The test files
 
 - `test/browser-harness.test.mjs` — the shim, tested before anything is tested
   with it. Parser, selectors, `closest`, `<select>` values, `FormData`, event
@@ -147,8 +169,9 @@ shortens what browser verification has to catch, and does not replace it.
 ## What is still not covered
 
 - Anything visual. Spacing, contrast, whether a panel is readable on a phone.
-- `app.js` routing as a whole. Only the extension-route guard is asserted, and
-  only by reading the source.
+- **Most of what each module does.** Twenty-five modules are swept for storms;
+  five are driven through their actual behaviour. The other twenty could render
+  nonsense and pass.
 - Real event ordering, focus, scrolling, and anything the browser does that we
   do not.
 
