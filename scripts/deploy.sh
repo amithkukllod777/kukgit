@@ -40,6 +40,9 @@ if [ "${REF}" = "--dry-run" ]; then DRY_RUN="yes"; REF="origin/main"; fi
 if [ "${2:-}" = "--dry-run" ]; then DRY_RUN="yes"; fi
 
 SERVICE="${KUKGIT_SERVICE:-kukgit}"
+# The file systemd loads for the service. The check in step 5 has to read the
+# same one, or it reports on a configuration nobody runs.
+KUKGIT_ENV_FILE="${KUKGIT_ENV_FILE:-$HOME/kukgit.env}"
 HEALTH_URL="${KUKGIT_HEALTH_URL:-http://127.0.0.1:${PORT:-8787}/}"
 HEALTH_TIMEOUT="${KUKGIT_HEALTH_TIMEOUT:-60}"
 
@@ -86,11 +89,40 @@ say "Installing production dependencies"
 run npm ci --omit=dev --ignore-scripts
 
 # 5 ----------------------------------------------------------------- checks
+#
+# With the service's own environment, not the deploying shell's. The first real
+# use of this script ran the check bare and it reported no base URL, no founder
+# password and a data directory inside the checkout — none of which was true of
+# the running service. A check reading the wrong environment is worse than no
+# check, because its output looks like findings.
 say "Checking the deployment"
+if [ -f "${KUKGIT_ENV_FILE}" ]; then
+  echo "  environment: ${KUKGIT_ENV_FILE}"
+  set -a; . "${KUKGIT_ENV_FILE}"; set +a
+else
+  echo "  no environment file at ${KUKGIT_ENV_FILE}; checking with this shell's environment" >&2
+fi
+
 if [ -z "${DRY_RUN}" ]; then
-  if ! npm run --silent deploy:check; then
+  # The port check always fails here: the service holding the port is the one we
+  # are about to restart. Everything else still has to pass, so the report is
+  # read rather than the exit code.
+  CHECKS="$(npm run --silent deploy:check -- --json || true)"
+  BLOCKING="$(printf '%s' "${CHECKS}" | node -e '
+    let raw = "";
+    process.stdin.on("data", (chunk) => { raw += chunk; });
+    process.stdin.on("end", () => {
+      let report;
+      try { report = JSON.parse(raw); } catch { console.log("the deploy check produced no readable report"); return; }
+      const failed = (report.checks || []).filter((entry) => entry.status === "fail" && entry.id !== "port");
+      console.log(failed.map((entry) => entry.message).join("; "));
+    });
+  ')"
+  npm run --silent deploy:check || true
+  if [ -n "${BLOCKING}" ]; then
     echo >&2
-    echo "Deployment checks failed. Returning to ${PREVIOUS} without restarting." >&2
+    echo "Deployment checks failed: ${BLOCKING}" >&2
+    echo "Returning to ${PREVIOUS} without restarting." >&2
     git checkout --detach "${PREVIOUS}"
     npm ci --omit=dev --ignore-scripts
     exit 1
@@ -100,10 +132,12 @@ else
 fi
 
 # 6 ---------------------------------------------------------------- backup
-# Before the restart, not after. A deploy that has to be rolled back needs the
-# database as it was before the new code touched it.
+#
+# `create`, not bare. Without the subcommand the backup script prints its usage
+# and exits zero, so the first real use of this took no backup at all and said
+# nothing about it.
 say "Backing up before the restart"
-run npm run --silent backup
+run npm run --silent backup -- create
 
 # 7 --------------------------------------------------------------- restart
 say "Restarting ${SERVICE}"

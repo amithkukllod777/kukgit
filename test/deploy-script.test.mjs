@@ -120,3 +120,27 @@ test('the guide explains it', async () => {
   assert.match(guide, /scripts\/deploy\.sh/);
   assert.match(guide, /does not migrate down/i);
 });
+
+test('the check reads the service environment, not the deploying shell', async () => {
+  // The first real use ran the check bare, and it reported no base URL, no
+  // founder password and a data directory inside the checkout — none of which
+  // was true of the running service. A check reading the wrong environment is
+  // worse than no check, because its output looks like findings.
+  assert.match(source, /KUKGIT_ENV_FILE/);
+  assert.match(source, /set -a; \. "\$\{KUKGIT_ENV_FILE\}"; set \+a/);
+});
+
+test('the port already being in use does not stop a deploy', async () => {
+  // The process holding the port is the one about to be restarted. Treating
+  // that as a failure means the script can never deploy to a running server —
+  // which is every server it exists for.
+  assert.match(source, /entry\.id !== "port"/);
+  assert.match(source, /--json/);
+});
+
+test('the backup is asked for by name', async () => {
+  // `npm run backup` with no subcommand prints its usage and exits zero. The
+  // first real use took no backup at all and said nothing about it.
+  assert.match(source, /npm run --silent backup -- create/);
+  assert.doesNotMatch(source, /run npm run --silent backup$/m);
+});

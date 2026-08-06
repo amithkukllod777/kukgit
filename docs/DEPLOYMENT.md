@@ -485,11 +485,14 @@ In order:
 4. `npm ci --omit=dev --ignore-scripts` — no dev dependencies, and no
    postinstall script from a package we did not review running as the user that
    owns the repositories.
-5. `npm run deploy:check`. **Failing here stops the deploy before the restart**
-   and returns the checkout to what was running.
-6. `npm run backup` — **before** the restart. A deploy that has to be rolled back
-   needs the database as it was before the new code touched it; a backup taken
-   afterwards is a backup of the problem.
+5. `npm run deploy:check`, **with the service's own environment** — it sources
+   `$KUKGIT_ENV_FILE` first. **Failing here stops the deploy before the restart**
+   and returns the checkout to what was running. The one failure it ignores is
+   the port already being in use: the process holding it is the one about to be
+   restarted.
+6. `npm run backup -- create` — **before** the restart. A deploy that has to be
+   rolled back needs the database as it was before the new code touched it; a
+   backup taken afterwards is a backup of the problem.
 7. `systemctl restart kukgit`.
 8. Polls the health URL for 60 seconds. If it never answers, **rolls the code
    back and restarts again** — a server that is down has to be up before anybody
@@ -511,6 +514,7 @@ it.** The rollback message says this too, because nobody remembers it at 2am.
 | Variable | Default | What it is |
 | --- | --- | --- |
 | `KUKGIT_SERVICE` | `kukgit` | The systemd unit to restart |
+| `KUKGIT_ENV_FILE` | `$HOME/kukgit.env` | The file systemd loads for the service, sourced before the check |
 | `KUKGIT_HEALTH_URL` | `http://127.0.0.1:$PORT/` | What has to answer 200 |
 | `KUKGIT_HEALTH_TIMEOUT` | `60` | Seconds to wait before rolling back |
 
