@@ -133,6 +133,7 @@ import {
 } from './src/repository-lifecycle.mjs';
 import { createBulkImportApiHandler, migrateRepositoryImportJobs } from './src/repository-import-api.mjs';
 import { createIssueCommentsApiHandler, migrateIssueComments } from './src/issue-comments.mjs';
+import { createIssueTaxonomyApiHandler, migrateIssueTaxonomy } from './src/issue-taxonomy.mjs';
 import {
   createReviewThreadMergeGuard,
   createReviewThreadsApiHandler,
@@ -200,6 +201,7 @@ withSchemaLock(db, () => {
   migrateRepositoryLifecycle(db);
   migrateRepositoryImportJobs(db);
   migrateIssueComments(db);
+  migrateIssueTaxonomy(db);
   migrateSshKeys(db);
   migrateGitLfs(db);
   migrateInstanceAdminSafe(db);
@@ -332,6 +334,7 @@ registerSupportOperators(db, (user) => isInstanceAdmin(config, user));
 const repositoryLifecycleApi = createRepositoryLifecycleApiHandler({ config, db });
 const bulkImportApi = createBulkImportApiHandler({ config, db });
 const issueCommentsApi = createIssueCommentsApiHandler({ config, db });
+const issueTaxonomyApi = createIssueTaxonomyApiHandler({ config, db });
 const sshKeysApi = createSshKeysApiHandler({ config, db });
 const branchGovernanceApi = createBranchGovernanceApiHandler({ config, db });
 const pullRequestDiffsApi = createPullRequestDiffsApiHandler({ config, db });
@@ -379,6 +382,7 @@ async function dispatch(req, res) {
   if (await repositoryLifecycleApi(req, res)) return;
   if (await bulkImportApi(req, res)) return;
   if (await issueCommentsApi(req, res)) return;
+  if (await issueTaxonomyApi(req, res)) return;
   if (await sshKeysApi(req, res)) return;
   if (await externalAccessPrivacyApi(req, res)) return;
   if (await repositoryAccessApi(req, res)) return;

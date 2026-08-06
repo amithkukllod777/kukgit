@@ -3,6 +3,7 @@ import { uid } from './db.mjs';
 import { normalizeForge, DISCOVERY_LIMITS } from './forge-discovery.mjs';
 import { normalizeImportToken } from './repository-import.mjs';
 import { addIssueComment } from './issue-comments.mjs';
+import { ensureLabel, ensureMilestone, migrateIssueTaxonomy } from './issue-taxonomy.mjs';
 
 /**
  * Bringing an issue tracker across, not just the code.
@@ -38,17 +39,11 @@ export const ISSUE_IMPORT_LIMITS = Object.freeze({
   maxPages: 30,
 });
 
-function ensureColumn(db, table, column, definition) {
-  const columns = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((row) => row.name));
-  if (!columns.has(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-}
-
 export function migrateImportedIssues(db) {
-  // `issues` predates any of this, so the two columns are added rather than
-  // declared. An issue carried in from elsewhere needs to say so for the same
-  // reason a comment does.
-  ensureColumn(db, 'issues', 'imported_author', 'TEXT');
-  ensureColumn(db, 'issues', 'imported_from', 'TEXT');
+  // `issues` predates all of this, so its later columns are added rather than
+  // declared — and they all live in issue-taxonomy.mjs, which is the module the
+  // thread screen reads them through.
+  migrateIssueTaxonomy(db);
 }
 
 function normalizeName(value) {
@@ -80,9 +75,24 @@ function githubIssue(entry) {
     authorLogin: entry.user?.login ? String(entry.user.login) : 'unknown',
     createdAt: sqliteTime(entry.created_at),
     updatedAt: sqliteTime(entry.updated_at),
-    // Read, not imported: KukGit has no labels. Kept so the count can be
-    // reported rather than the loss being silent.
-    labels: Array.isArray(entry.labels) ? entry.labels.map((label) => String(label?.name ?? label)).filter(Boolean) : [],
+    labels: Array.isArray(entry.labels)
+      ? entry.labels.map((label) => ({
+          name: String(label?.name ?? label ?? ''),
+          colour: String(label?.color ?? '').toLowerCase(),
+          description: String(label?.description ?? ''),
+        })).filter((label) => label.name)
+      : [],
+    milestone: entry.milestone?.title
+      ? {
+          title: String(entry.milestone.title),
+          description: String(entry.milestone.description ?? ''),
+          dueOn: sqliteTime(entry.milestone.due_on),
+          status: entry.milestone.state === 'closed' ? 'closed' : 'open',
+        }
+      : null,
+    // A login, not an email — so there is nothing to match a KukGit account
+    // against. Recorded and shown rather than guessed at.
+    assigneeLogin: entry.assignee?.login ? String(entry.assignee.login) : null,
     comments: [],
   };
 }
@@ -204,20 +214,28 @@ export function importForgeIssues(db, { repositoryId, actorId, listing, keepNumb
   let next = existing.highest;
 
   const insertIssue = db.prepare(`
-    INSERT INTO issues (id, repository_id, number, title, body, status, priority, author_id, imported_author, imported_from, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'medium', ?, ?, ?, ?, ?)
+    INSERT INTO issues (id, repository_id, number, title, body, status, priority, author_id, imported_author, imported_from, imported_assignee, milestone_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'medium', ?, ?, ?, ?, ?, ?, ?)
   `);
+  const linkLabel = db.prepare('INSERT INTO issue_label_links (issue_id, label_id) VALUES (?, ?) ON CONFLICT DO NOTHING');
 
   const written = [];
   const write = db.transaction(() => {
     for (const issue of listing.issues) {
       const number = renumbered ? (next += 1) : issue.number;
       const id = uid('iss');
+      // Created once per name, not once per use: a label arrives attached to
+      // every issue that carries it, not as a list.
+      const milestoneId = issue.milestone ? ensureMilestone(db, repositoryId, issue.milestone) : null;
       insertIssue.run(
         id, repositoryId, number, issue.title || `Imported issue ${issue.number}`, issue.body,
         issue.status, actorId, issue.authorLogin, listing.source,
+        issue.assigneeLogin ?? null, milestoneId,
         issue.createdAt ?? null, issue.updatedAt ?? issue.createdAt ?? null,
       );
+      for (const label of issue.labels ?? []) {
+        linkLabel.run(id, ensureLabel(db, repositoryId, label));
+      }
       for (const comment of issue.comments) {
         // An empty comment is skipped rather than refused: one blank reply must
         // not fail an import of four hundred.
@@ -231,7 +249,7 @@ export function importForgeIssues(db, { repositoryId, actorId, listing, keepNumb
           createdAt: comment.createdAt ?? issue.createdAt ?? null,
         });
       }
-      written.push({ from: issue.number, to: number, comments: issue.comments.length });
+      written.push({ from: issue.number, to: number, comments: issue.comments.length, labels: (issue.labels ?? []).length });
     }
   });
   write();
@@ -246,6 +264,10 @@ export function importForgeIssues(db, { repositoryId, actorId, listing, keepNumb
       ? 'This repository already had issues, so imported issues were given new numbers. References like #42 inside imported text still point at the old numbering.'
       : null,
     pullRequestsSkipped: listing.pullRequests,
-    labelsDropped: listing.labelledIssues,
+    labels: db.prepare('SELECT COUNT(*) AS count FROM issue_labels WHERE repository_id = ?').get(repositoryId).count,
+    milestones: db.prepare('SELECT COUNT(*) AS count FROM issue_milestones WHERE repository_id = ?').get(repositoryId).count,
+    // Recorded as text, because a forge gives a login and KukGit needs an
+    // account. Inventing one would invent somebody who can be granted access.
+    assigneesRecorded: written.length ? listing.issues.filter((issue) => issue.assigneeLogin).length : 0,
   };
 }

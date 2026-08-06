@@ -167,9 +167,15 @@ full of `#42` references is worth nothing if #42 here is a different issue. A
 repository that already has issues gets fresh numbers *and says so*, because
 silently renumbering half a tracker is worse than either choice alone.
 
+**Labels, milestones and assignee names come across** — see
+[ISSUE_TAXONOMY.md](ISSUE_TAXONOMY.md). Labels and milestones are created once
+per name rather than once per use, since they arrive attached to every issue that
+carries them rather than as a list.
+
 **Nobody is invented.** An issue or comment written by somebody with no account
 here is owned by the account that ran the import and displays the original
-author's name, marked as imported. See
+author's name, marked as imported. An assignee is recorded the same way: a forge
+gives a login, not an email, so there is nothing to match an account against. See
 [ISSUE_COMMENTS.md](ISSUE_COMMENTS.md). Original dates are kept, so the thread
 still reads in the order it happened.
 
@@ -187,14 +193,49 @@ Limits: 1000 issues and 5000 comments per repository, reported as truncated
 rather than quietly cut off. GitHub only — GitLab issue import is refused rather
 than half-attempted.
 
+## Git LFS files
+
+Ticked by default. `git clone --mirror` copies every object in a repository, and
+a repository using Git LFS **does not contain its large files** — it contains
+130-byte text files that name them. Without this an imported repository looks
+complete, clones without error, and hands whoever checks it out a pointer where
+their model weights or their video used to be. The failure is silent, and it is
+found later by somebody who assumed the migration worked.
+
+**What comes back is verified before it is kept.** The pointer states the file's
+SHA-256; the bytes are hashed as they download and discarded if they disagree.
+Without that, whatever the far end sends is what KukGit serves under a name that
+promises otherwise — and that host is one we were told to trust by somebody
+pasting a URL.
+
+**A download is cut off the moment it exceeds the declared size**, rather than
+checked afterwards. Both reject the object; only one of them stops before the
+disk has taken whatever the far end felt like sending.
+
+**The pointer parser is strict on purpose.** A blob that merely mentions the LFS
+spec URL — a README explaining how to install it — is a file somebody committed,
+and treating it as a pointer would replace their file with whatever an LFS
+server returns for that OID.
+
+**Objects KukGit already holds are attached, not fetched again.** Storage is
+content-addressed, so the bytes are already right; but the attachment still has
+to be made, or the repository's own LFS listing is empty for a file it points
+at.
+
+**One object's failure is one object's failure.** A migration of four hundred
+files does not stop at the one deleted from the source last year, and everything
+that did not arrive is named in the progress line.
+
+Requires HTTPS: the batch API is where a token goes, and an SSH remote
+authenticates at the transport layer instead. A repository with no pointers
+costs no requests at all.
+
 ## What it does not do yet
 
-- **Labels, milestones, assignees, reactions, releases, wikis.** KukGit has
-  nowhere to put them. The number of issues that had labels is reported so the
-  loss is visible.
-- **Pull request history**, for the reason above.
-- **LFS objects.** A mirror clone brings the pointer files, not the contents.
-  See [GIT_LFS.md](GIT_LFS.md) for uploading them afterwards.
+- **Reactions, releases, wikis.** No home for them yet.
+- **Pull request history.** This one is permanent rather than pending: a KukGit
+  pull request needs live head and base refs, and a pull request closed three
+  years ago has neither. They are counted and reported instead.
 - **Re-sync.** One-shot. See "It is never stored", above.
 - **Bitbucket**, and self-hosted GitHub Enterprise or GitLab. The single-URL
   import works with any of them today; bulk listing and issue import do not.

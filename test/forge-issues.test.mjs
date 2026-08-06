@@ -7,6 +7,7 @@ import { loadConfig } from '../src/config.mjs';
 import { openDatabase, seedCore, uid } from '../src/db.mjs';
 import { createBareRepository } from '../src/git.mjs';
 import { listIssueComments, migrateIssueComments } from '../src/issue-comments.mjs';
+import { labelsForIssue, listLabels, listMilestones } from '../src/issue-taxonomy.mjs';
 import {
   ISSUE_IMPORT_LIMITS,
   importForgeIssues,
@@ -35,6 +36,8 @@ function issue(number, overrides = {}) {
     created_at: '2024-03-01T09:00:00Z',
     updated_at: '2024-03-02T09:00:00Z',
     labels: [],
+    milestone: null,
+    assignee: null,
     ...overrides,
   };
 }
@@ -131,6 +134,32 @@ test('comments are read in one list and land on the right issue', async () => {
   assert.equal(calls.filter((url) => url.includes('/issues/comments')).length, 1);
 });
 
+test("GitHub's label, milestone and assignee shapes are read", async () => {
+  const { fetchImpl } = forge((url) => {
+    if (url.includes('/issues?')) {
+      return {
+        body: [issue(1, {
+          labels: [{ name: 'bug', color: 'D73A4A', description: 'Something is broken' }, { name: 'area/api' }],
+          milestone: { title: 'v1.0', description: 'First release', due_on: '2024-06-01T00:00:00Z', state: 'open' },
+          assignee: { login: 'octocat' },
+        })],
+      };
+    }
+    return { body: [] };
+  });
+
+  const listing = await listForgeIssues({ forge: 'github', owner: 'acme', repo: 'thing' }, { fetchImpl });
+  const [entry] = listing.issues;
+
+  // GitHub spells it `color` and upper-cases it; KukGit stores `colour`, lower.
+  assert.deepEqual(entry.labels.map((label) => `${label.name}:${label.colour}`), ['bug:d73a4a', 'area/api:']);
+  assert.equal(entry.milestone.title, 'v1.0');
+  assert.match(entry.milestone.dueOn, /^2024-06-01/);
+  // A login, not an email — so there is nothing to match a KukGit account
+  // against, and the name is carried as text instead.
+  assert.equal(entry.assigneeLogin, 'octocat');
+});
+
 test('no issues means no comment request at all', async () => {
   const { fetchImpl, calls } = forge(() => ({ body: [] }));
   const listing = await listForgeIssues({ forge: 'github', owner: 'acme', repo: 'thing' }, { fetchImpl });
@@ -187,7 +216,10 @@ function listing(overrides = {}) {
     issues: [
       {
         number: 7, title: 'Login is slow', body: 'It takes eight seconds. See #9.', status: 'open',
-        authorLogin: 'octocat', createdAt: '2024-03-01 09:00:00', updatedAt: '2024-03-02 09:00:00', labels: ['bug'],
+        authorLogin: 'octocat', createdAt: '2024-03-01 09:00:00', updatedAt: '2024-03-02 09:00:00',
+        labels: [{ name: 'bug', colour: 'd73a4a', description: 'Something is broken' }, { name: 'area/api', colour: '', description: '' }],
+        milestone: { title: 'v1.0', description: 'First release', dueOn: '2024-06-01 00:00:00', status: 'open' },
+        assigneeLogin: 'octocat',
         comments: [
           { issueNumber: 7, body: 'Reproduced.', authorLogin: 'hubber', createdAt: '2024-03-03 09:00:00' },
           { issueNumber: 7, body: '   ', authorLogin: 'hubber', createdAt: '2024-03-04 09:00:00' },
@@ -195,7 +227,8 @@ function listing(overrides = {}) {
       },
       {
         number: 9, title: 'Closed one', body: '', status: 'closed',
-        authorLogin: 'someone', createdAt: '2024-04-01 09:00:00', updatedAt: '2024-04-02 09:00:00', labels: [],
+        authorLogin: 'someone', createdAt: '2024-04-01 09:00:00', updatedAt: '2024-04-02 09:00:00',
+        labels: [{ name: 'bug', colour: 'd73a4a', description: '' }], milestone: { title: 'v1.0' }, assigneeLogin: null,
         comments: [],
       },
     ],
@@ -269,13 +302,58 @@ test('comments arrive attributed, dated, and without the blank one', async (t) =
   assert.equal(result.comments, 2, 'the count reports what was offered');
 });
 
+test('labels arrive, once each, with their colours', async (t) => {
+  const { db, actor, repositoryId } = workspace(t);
+  const result = importForgeIssues(db, { repositoryId, actorId: actor.id, listing: listing() });
+
+  // `bug` is on both issues. One label, two attachments — not two labels.
+  const labels = listLabels(db, repositoryId);
+  assert.deepEqual(labels.map((label) => label.name).sort(), ['area/api', 'bug']);
+  assert.equal(labels.find((label) => label.name === 'bug').colour, 'd73a4a');
+  assert.equal(labels.find((label) => label.name === 'bug').issues, 2);
+  // A label with no colour on the far end gets the default rather than failing
+  // the whole import.
+  assert.equal(labels.find((label) => label.name === 'area/api').colour, '888888');
+  assert.equal(result.labels, 2);
+
+  const issueId = db.prepare('SELECT id FROM issues WHERE repository_id = ? AND number = 7').get(repositoryId).id;
+  assert.deepEqual(labelsForIssue(db, issueId).map((label) => label.name), ['area/api', 'bug']);
+});
+
+test('a milestone shared by two issues is one milestone', async (t) => {
+  const { db, actor, repositoryId } = workspace(t);
+  const result = importForgeIssues(db, { repositoryId, actorId: actor.id, listing: listing() });
+
+  const milestones = listMilestones(db, repositoryId);
+  assert.deepEqual(milestones.map((milestone) => milestone.title), ['v1.0']);
+  assert.equal(milestones[0].issues, 2);
+  assert.match(milestones[0].dueOn, /^2024-06-01/);
+  assert.equal(result.milestones, 1);
+  // Both issues point at it.
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM issues WHERE repository_id = ? AND milestone_id IS NOT NULL').get(repositoryId).count, 2);
+});
+
+test('an assignee is recorded by name, and no account is created for them', async (t) => {
+  const { db, actor, repositoryId } = workspace(t);
+  const usersBefore = db.prepare('SELECT COUNT(*) AS count FROM users').get().count;
+  const result = importForgeIssues(db, { repositoryId, actorId: actor.id, listing: listing() });
+
+  const row = db.prepare('SELECT imported_assignee AS importedAssignee, assignee_id AS assigneeId FROM issues WHERE repository_id = ? AND number = 7').get(repositoryId);
+  // A forge gives a login, not an email, so there is nothing to match a KukGit
+  // account against. Inventing one would invent somebody who can be granted
+  // access and cannot sign in to object.
+  assert.equal(row.importedAssignee, 'octocat');
+  assert.equal(row.assigneeId, null);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM users').get().count, usersBefore);
+  assert.equal(result.assigneesRecorded, 1);
+});
+
 test('what could not come across is reported rather than dropped quietly', async (t) => {
   const { db, actor, repositoryId } = workspace(t);
   const result = importForgeIssues(db, { repositoryId, actorId: actor.id, listing: listing() });
-  // KukGit has neither pull request history nor labels to put these in. Silence
-  // here reads as "everything came across".
+  // KukGit has nowhere to put pull request history. Silence here reads as
+  // "everything came across".
   assert.equal(result.pullRequestsSkipped, 2);
-  assert.equal(result.labelsDropped, 1);
 });
 
 test('a failed import writes nothing at all', async (t) => {

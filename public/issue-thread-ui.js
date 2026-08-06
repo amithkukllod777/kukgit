@@ -1,4 +1,5 @@
 const THREAD_API = '/api/issue-comments';
+const TAXONOMY_API = '/api/issue-taxonomy';
 let threadRenderKey = '';
 let threadRefusedKey = '';
 let threadScheduled = false;
@@ -66,6 +67,10 @@ function threadStyles() {
     .kg-thread-controls { display:flex; gap:7px; margin-left:auto; }
     .kg-thread-empty { padding:18px 8px; text-align:center; color:var(--muted); }
     .kg-thread-compose { margin-top:16px; }
+    .kg-thread-side { display:flex; gap:9px; flex-wrap:wrap; align-items:center; padding:11px 0; border-bottom:1px solid var(--border); margin-bottom:6px; }
+    .kg-thread-label { display:inline-flex; align-items:center; gap:5px; border-radius:99px; padding:3px 10px; font-size:11px; font-weight:600; border:1px solid rgba(255,255,255,.14); }
+    .kg-thread-side .muted { font-size:11px; }
+    .kg-thread-side select { max-width:190px; }
   `;
   document.head.append(style);
 }
@@ -84,7 +89,53 @@ function commentMarkup(comment, canComment) {
   </article>`;
 }
 
-function threadMarkup(payload, route) {
+/**
+ * Readable on the colour the label was given.
+ *
+ * A hex colour from another host is whatever somebody picked there, and a
+ * light-on-light or dark-on-dark label is a label nobody can read. The
+ * coefficients are the standard luminance weights.
+ */
+function readableOn(hex) {
+  const value = String(hex || '888888').padEnd(6, '8').slice(0, 6);
+  const [r, g, b] = [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16) || 0);
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#0b1220' : '#ffffff';
+}
+
+function labelChip(label) {
+  return `<span class="kg-thread-label" style="background:#${threadEscape(label.colour)};color:${readableOn(label.colour)}">${threadEscape(label.name)}</span>`;
+}
+
+function taxonomyMarkup(payload, taxonomy) {
+  if (!taxonomy) return '';
+  const labels = payload.issue.labels ?? [];
+  const assignee = payload.issue.assigneeName || payload.issue.importedAssignee;
+  return `<div class="kg-thread-side" id="kg-thread-side">
+    ${labels.length ? labels.map(labelChip).join('') : '<span class="muted">No labels</span>'}
+    ${payload.issue.milestoneTitle ? `<span class="badge">◷ ${threadEscape(payload.issue.milestoneTitle)}</span>` : ''}
+    ${assignee ? `<span class="muted">Assigned to ${threadEscape(assignee)}${payload.issue.assigneeName ? '' : ' (imported)'}</span>` : '<span class="muted">Unassigned</span>'}
+    ${taxonomy.canManage ? '<button class="btn btn-ghost" id="kg-thread-edit-side" style="margin-left:auto">Edit</button>' : ''}
+  </div>`;
+}
+
+function taxonomyEditor(payload, taxonomy) {
+  const chosen = new Set((payload.issue.labels ?? []).map((label) => label.id));
+  return `<div class="kg-thread-side" id="kg-thread-side">
+    <div style="display:grid;gap:9px;width:100%">
+      <div>${taxonomy.labels.length
+        ? taxonomy.labels.map((label) => `<label class="kg-thread-label" style="background:#${threadEscape(label.colour)};color:${readableOn(label.colour)}"><input type="checkbox" name="label" value="${threadEscape(label.id)}"${chosen.has(label.id) ? ' checked' : ''} /> ${threadEscape(label.name)}</label>`).join(' ')
+        : '<span class="muted">This repository has no labels yet.</span>'}</div>
+      <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+        <select class="select" id="kg-thread-milestone"><option value="">No milestone</option>${taxonomy.milestones.map((milestone) => `<option value="${threadEscape(milestone.id)}"${payload.issue.milestoneId === milestone.id ? ' selected' : ''}>${threadEscape(milestone.title)}</option>`).join('')}</select>
+        <select class="select" id="kg-thread-assignee"><option value="">Unassigned</option>${taxonomy.assignable.map((person) => `<option value="${threadEscape(person.id)}"${payload.issue.assigneeId === person.id ? ' selected' : ''}>${threadEscape(person.name)}</option>`).join('')}</select>
+        <button class="btn btn-primary" id="kg-thread-save-side">Save</button>
+        <button class="btn" id="kg-thread-cancel-side">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function threadMarkup(payload, route, taxonomy) {
   const { issue, comments, canComment } = payload;
   return `<section class="card kg-thread-panel" id="kg-thread-panel">
     <div class="card-header">
@@ -95,6 +146,7 @@ function threadMarkup(payload, route) {
       </div>
     </div>
     <div class="card-body">
+      <div id="kg-thread-side-wrap">${taxonomyMarkup(payload, taxonomy)}</div>
       ${issue.body ? `<div class="kg-thread-comment"><div class="kg-thread-body">${threadEscape(issue.body)}</div></div>` : ''}
       <div id="kg-thread-comments">
         ${comments.length ? comments.map((comment) => commentMarkup(comment, canComment)).join('') : '<div class="kg-thread-empty">No replies yet.</div>'}
@@ -163,8 +215,42 @@ function bindComments(canComment) {
   }));
 }
 
-function bindThread(canComment) {
+function bindTaxonomy(payload, taxonomy) {
+  if (!taxonomy?.canManage) return;
+  document.querySelector('#kg-thread-edit-side')?.addEventListener('click', () => {
+    document.querySelector('#kg-thread-side-wrap').innerHTML = taxonomyEditor(payload, taxonomy);
+    document.querySelector('#kg-thread-cancel-side').addEventListener('click', () => {
+      document.querySelector('#kg-thread-side-wrap').innerHTML = taxonomyMarkup(payload, taxonomy);
+      bindTaxonomy(payload, taxonomy);
+    });
+    document.querySelector('#kg-thread-save-side').addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      const { org, repo, number } = threadContext.route;
+      try {
+        await threadRequest(`${TAXONOMY_API}/${encodeURIComponent(org)}/${encodeURIComponent(repo)}/issues/${encodeURIComponent(number)}`, {
+          method: 'PATCH',
+          body: {
+            labelIds: [...document.querySelectorAll('input[name="label"]:checked')].map((input) => input.value),
+            milestoneId: document.querySelector('#kg-thread-milestone').value || null,
+            assigneeId: document.querySelector('#kg-thread-assignee').value || null,
+          },
+        });
+        // Re-read rather than guess: the server decides what the issue now
+        // looks like, and an assignment it refuses must not appear to have
+        // worked.
+        await mountThread(true);
+      } catch (error) {
+        threadNotify('Could not save', error.message, 'error');
+        button.disabled = false;
+      }
+    });
+  });
+}
+
+function bindThread(canComment, payload, taxonomy) {
   bindComments(canComment);
+  bindTaxonomy(payload, taxonomy);
   document.querySelector('#kg-thread-submit')?.addEventListener('click', async (event) => {
     const button = event.currentTarget;
     const textarea = document.querySelector('#kg-thread-form [name="body"]');
@@ -201,9 +287,12 @@ async function mountThread(force = false) {
   threadStyles();
   try {
     const payload = await threadRequest(commentPath());
+    // A repository whose taxonomy cannot be read is not a reason to hide the
+    // conversation, so this failure is absorbed rather than raised.
+    const taxonomy = await threadRequest(`${TAXONOMY_API}/${encodeURIComponent(route.org)}/${encodeURIComponent(route.repo)}`).catch(() => null);
     document.querySelector('#kg-thread-panel')?.remove();
-    content.insertAdjacentHTML('beforeend', threadMarkup(payload, route));
-    bindThread(payload.canComment);
+    content.insertAdjacentHTML('beforeend', threadMarkup(payload, route, taxonomy));
+    bindThread(payload.canComment, payload, taxonomy);
   } catch (error) {
     if ([401, 403, 404].includes(error.status)) { threadRefusedKey = key; return; }
     if (!document.querySelector('#kg-thread-panel')) {

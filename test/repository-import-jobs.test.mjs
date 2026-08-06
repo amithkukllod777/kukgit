@@ -306,6 +306,60 @@ test('a tracker that will not come across does not fail the repository', async (
   assert.match(status.items[0].message, /code imported; issues did not: GitHub rate limit/);
 });
 
+test('Git LFS objects are fetched alongside the code, and reported', async (t) => {
+  const { config, db, organization, user } = workspace(t);
+  const jobId = createBulkImportJob(db, {
+    organizationId: organization.id,
+    userId: user.id,
+    forge: 'github',
+    owner: 'acme',
+    authenticated: false,
+    selected: [{ name: 'weights', slug: 'weights', cloneUrl: 'https://github.com/acme/weights.git', private: false }],
+    skipped: [],
+    includeLfs: true,
+  });
+
+  let asked = null;
+  const status = await runBulkImportJob(db, config, jobId, {
+    importRepository: importer(),
+    fetchLfs: async (_db, _config, options) => {
+      asked = options;
+      return { found: 4, imported: 3, alreadyHeld: 0, bytes: 900, failures: [{ oid: 'a', size: 1, reason: 'gone' }] };
+    },
+  });
+
+  assert.equal(status.counts.imported, 1);
+  assert.match(status.items[0].message, /3 of 4 Git LFS objects fetched/);
+  // What did not come across is named, because a repository that clones fine
+  // and hands somebody a pointer is a failure discovered much later.
+  assert.match(status.items[0].message, /1 could not be fetched/);
+  assert.equal(asked.sourceUrl, 'https://github.com/acme/weights.git');
+  assert.equal(asked.repository.slug, 'weights');
+});
+
+test('a repository with no Git LFS says nothing about it', async (t) => {
+  const { config, db, organization, user } = workspace(t);
+  const jobId = createBulkImportJob(db, {
+    organizationId: organization.id,
+    userId: user.id,
+    forge: 'github',
+    owner: 'acme',
+    authenticated: false,
+    selected: [{ name: 'plain', slug: 'plain', cloneUrl: 'https://github.com/acme/plain.git', private: false }],
+    skipped: [],
+    includeLfs: true,
+  });
+
+  const status = await runBulkImportJob(db, config, jobId, {
+    importRepository: importer(),
+    fetchLfs: async () => ({ found: 0, imported: 0, alreadyHeld: 0, bytes: 0, failures: [] }),
+  });
+
+  // "0 of 0 Git LFS objects fetched" on every ordinary repository is noise that
+  // buries the line that matters on the one repository that has them.
+  assert.equal(status.items[0].message, null);
+});
+
 test("one organization cannot read another's import job", async (t) => {
   const { db, organization, user } = workspace(t);
   const jobId = createBulkImportJob(db, {
