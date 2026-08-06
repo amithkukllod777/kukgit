@@ -5,6 +5,7 @@ import { assertWithinPlan } from './plan-limits.mjs';
 import { listForgeRepositories, planImport } from './forge-discovery.mjs';
 import { importForgeIssues, listForgeIssues, migrateImportedIssues } from './forge-issues.mjs';
 import { migrateIssueComments } from './issue-comments.mjs';
+import { importLfsObjects } from './lfs-import.mjs';
 
 /**
  * Importing more than one repository, without holding a request open.
@@ -48,6 +49,7 @@ export function migrateRepositoryImportJobs(db) {
       status TEXT NOT NULL DEFAULT 'running',
       authenticated INTEGER NOT NULL DEFAULT 0,
       include_issues INTEGER NOT NULL DEFAULT 0,
+      include_lfs INTEGER NOT NULL DEFAULT 0,
       note TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       finished_at TEXT
@@ -78,7 +80,7 @@ export function migrateRepositoryImportJobs(db) {
 function jobRow(db, jobId) {
   const job = db.prepare(`
     SELECT id, organization_id AS organizationId, created_by AS createdBy, forge, owner,
-           status, authenticated, include_issues AS includeIssues, note,
+           status, authenticated, include_issues AS includeIssues, include_lfs AS includeLfs, note,
            created_at AS createdAt, finished_at AS finishedAt
     FROM repository_import_jobs WHERE id = ?
   `).get(jobId);
@@ -143,22 +145,22 @@ export async function previewBulkImport({ forge, owner, token = null, includeFor
 /**
  * Records the plan and returns a job to watch. Does not wait for the work.
  */
-export function createBulkImportJob(db, { organizationId, userId, forge, owner, authenticated, note, selected, skipped, token = null, includeIssues = false }) {
+export function createBulkImportJob(db, { organizationId, userId, forge, owner, authenticated, note, selected, skipped, token = null, includeIssues = false, includeLfs = false }) {
   if (!selected.length) throw httpError(400, 'Nothing here can be imported. Check the skipped list for why.', 'IMPORT_NOTHING_TO_DO');
   if (selected.length > IMPORT_JOB_LIMITS.maxItems) {
     throw httpError(400, `An import job may cover at most ${IMPORT_JOB_LIMITS.maxItems} repositories.`, 'IMPORT_TOO_MANY');
   }
   const jobId = uid('impjob');
   const insertJob = db.prepare(`
-    INSERT INTO repository_import_jobs (id, organization_id, created_by, forge, owner, authenticated, include_issues, note)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO repository_import_jobs (id, organization_id, created_by, forge, owner, authenticated, include_issues, include_lfs, note)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertItem = db.prepare(`
     INSERT INTO repository_import_items (id, job_id, name, slug, source_url, visibility, status, message)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const write = db.transaction(() => {
-    insertJob.run(jobId, organizationId, userId ?? null, forge, owner, authenticated ? 1 : 0, includeIssues ? 1 : 0, note ?? null);
+    insertJob.run(jobId, organizationId, userId ?? null, forge, owner, authenticated ? 1 : 0, includeIssues ? 1 : 0, includeLfs ? 1 : 0, note ?? null);
     for (const repository of selected) {
       insertItem.run(uid('impitem'), jobId, repository.name, repository.slug, repository.cloneUrl, repository.private ? 'private' : 'public', 'pending', null);
     }
@@ -195,7 +197,7 @@ function finishItem(db, itemId, status, message) {
  * must not stop the thirty after it, because the whole point of a bulk import is
  * not having to babysit it.
  */
-export async function runBulkImportJob(db, config, jobId, { onProgress = null, importRepository = importMirror, readIssues = listForgeIssues } = {}) {
+export async function runBulkImportJob(db, config, jobId, { onProgress = null, importRepository = importMirror, readIssues = listForgeIssues, fetchLfs = importLfsObjects } = {}) {
   const job = jobRow(db, jobId);
   const token = TOKENS.get(jobId) ?? null;
   const orgSlug = db.prepare('SELECT slug FROM organizations WHERE id = ?').get(job.organizationId)?.slug;
@@ -249,6 +251,27 @@ export async function runBulkImportJob(db, config, jobId, { onProgress = null, i
       // The tracker, if it was asked for. A repository whose code arrived and
       // whose issues did not is still an imported repository, so this cannot
       // turn a success into a failure — it says what happened on the item.
+      const notes = [];
+      // The files a mirror clone did not bring. A repository using Git LFS
+      // contains pointers, not contents, so without this it looks complete and
+      // hands whoever clones it a 130-byte text file where their weights were.
+      if (job.includeLfs) {
+        try {
+          const lfs = await fetchLfs(db, config, {
+            repository: { id: repoId, slug: item.slug, orgSlug },
+            sourceUrl: item.source_url,
+            token,
+            attachedBy: job.createdBy,
+          });
+          if (lfs.found) {
+            notes.push(`${lfs.imported} of ${lfs.found} Git LFS objects fetched`
+              + (lfs.alreadyHeld ? `, ${lfs.alreadyHeld} already held` : '')
+              + (lfs.failures.length ? `, ${lfs.failures.length} could not be fetched` : ''));
+          }
+        } catch (error) {
+          notes.push(`code imported; Git LFS objects did not: ${String(error?.message ?? error).slice(0, 200)}`);
+        }
+      }
       let note = null;
       if (job.includeIssues) {
         try {
@@ -261,7 +284,8 @@ export async function runBulkImportJob(db, config, jobId, { onProgress = null, i
           note = `code imported; issues did not: ${String(error?.message ?? error).slice(0, 300)}`;
         }
       }
-      finishItem(db, item.id, 'imported', note);
+      if (note) notes.push(note);
+      finishItem(db, item.id, 'imported', notes.length ? notes.join('. ') : null);
     } catch (error) {
       // One repository's failure is one repository's failure. Thirty more are
       // waiting, and nobody is watching this run.
