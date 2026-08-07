@@ -29,8 +29,12 @@ after a forgotten password is not one to put in front of customers.
 - [x] password records carry their own cost parameters, so the cost can be
       raised later; raised from Node's default 16384 to 32768 and rewritten
       transparently on the next sign-in
-- [ ] verified email — an address has to be proved before the account works
-- [ ] password reset, single-use and expiring
+- [x] verified email and password reset — `src/account-verification.mjs`: a long
+      random token rather than a six-digit code, stored hashed, single-use,
+      expiring, throttled from the table so a deploy cannot reset the throttle,
+      and a reset ends every session the account has
+- [ ] wire both to HTTP routes and screens — the module is done and tested, the
+      endpoints and the two pages are not
 - [ ] lift the production refusal, once the two above are done
 - [ ] two-factor authentication
 - [ ] account recovery when 2FA is lost, which is the part that decides whether
