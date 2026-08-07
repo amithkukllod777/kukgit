@@ -3,6 +3,7 @@ const ACCEPTED_MESSAGE = 'Check your inbox — if that address can be used, a li
 
 let rendered = false;
 let scheduled = false;
+let authModePromise = null;
 
 function signupEscape(value = '') {
   return String(value).replace(/[&<>'"]/g, (char) => ({
@@ -13,6 +14,17 @@ function signupEscape(value = '') {
 export function isSignupRoute(hash = location.hash) {
   const [path] = String(hash).replace(/^#/, '').split('?');
   return path.split('/').filter(Boolean)[0] === SIGNUP_ROUTE;
+}
+
+async function signupAuthMode() {
+  authModePromise ||= fetch('/api/auth/status', { credentials: 'same-origin' })
+    .then(async (response) => {
+      if (!response.ok) return null;
+      const payload = await response.json().catch(() => ({}));
+      return typeof payload?.mode === 'string' ? payload.mode : null;
+    })
+    .catch(() => null);
+  return authModePromise;
 }
 
 async function postSignup(body) {
@@ -71,7 +83,7 @@ function renderUnavailable(root) {
   root.innerHTML = card(`
     <h2>Signup is not available here</h2>
     <p>This KukGit instance is not currently offering self-service email signup.</p>
-    <p class="kg-signup-note">Use an available provider sign-in, an invitation, or ask the instance administrator how accounts are created.</p>
+    <p class="kg-signup-note">Use an available provider sign-in, a Kuklabs Account option if this instance offers one, an invitation, or ask the instance administrator how accounts are created.</p>
     ${signInLink()}
   `);
 }
@@ -148,7 +160,7 @@ function addSignupLink() {
   );
 }
 
-export function mountSignupUi() {
+export async function mountSignupUi() {
   const root = document.querySelector('#app');
   if (!root) return;
   signupStyles();
@@ -164,6 +176,17 @@ export function mountSignupUi() {
   // app.js briefly draws the sign-in form and the observer below restores this
   // screen after that render lands.
   if (document.querySelector('.app-shell')) return;
+
+  const authMode = await signupAuthMode();
+  // Navigation or authentication may have changed while the status request was
+  // in flight. Never let that old answer repaint a page the person has left.
+  if (!isSignupRoute() || document.querySelector('.app-shell')) return;
+  if (authMode && authMode !== 'local') {
+    rendered = true;
+    if (!document.querySelector('#kg-signup-card')) renderUnavailable(root);
+    return;
+  }
+
   if (rendered && document.querySelector('#kg-signup-card')) return;
   rendered = true;
   renderSignup(root);
@@ -172,9 +195,9 @@ export function mountSignupUi() {
 function scheduleSignupUi() {
   if (scheduled) return;
   scheduled = true;
-  requestAnimationFrame(() => requestAnimationFrame(() => {
+  requestAnimationFrame(() => requestAnimationFrame(async () => {
     scheduled = false;
-    mountSignupUi();
+    await mountSignupUi();
   }));
 }
 
