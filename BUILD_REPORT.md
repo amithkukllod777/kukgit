@@ -9,17 +9,16 @@ release-level verification.
 
 ## v0.2.0 — Private Alpha
 
-Date: 29 July 2026
+Updated: 7 August 2026
 
 ### Delivered
 
-Phase 1 of the roadmap, substantially complete: One Kuklabs Account identity, Git
-authentication over HTTP and SSH, the repository permission hierarchy, external
-collaborators with time-bounded access, branch governance, review threads, required
-status checks, webhooks, repository lifecycle, Git LFS, notifications with real-time
-WebSocket delivery and bounce/complaint suppression, verified backups, the
-instance-admin console, and PostgreSQL migration Stages 1-6 (read-only; SQLite
-remains authoritative).
+Phase 1 of the roadmap is substantially complete: KukGit-owned accounts with
+signup, verification, reset, OAuth, TOTP and recovery codes; optional AuthKit;
+Git authentication over HTTP and SSH; repository permissions and external
+collaboration; governance and review; self-hosted workflows; billing/metering;
+abuse and secret controls; object storage; verified backups; multi-instance job
+coordination; and PostgreSQL migration Stages 1–7. SQLite remains authoritative.
 
 Built without cloning a competing Git platform repository. One npm dependency:
 `pg`, added with the PostgreSQL write service, imported lazily and only when that
@@ -28,11 +27,17 @@ else, including the UI, the HTTP server and the workflow engine, has none.
 
 ### Verification completed
 
+The old hard-coded test count was removed because it became false after every
+feature batch. Release evidence is the complete exact-head result of:
+
 ```text
-npm run doctor    passed
-npm run check     passed (globs server.mjs, src/, scripts/, public/)
-npm test          passed: 198/198
+npm run postgres:dev
+export KUKGIT_TEST_POSTGRES_URL=<the printed URL>
+npm run ci
 ```
+
+A skipped PostgreSQL step or a hosted job with zero executed steps is not a full
+pass.
 
 Coverage spans identity and encryption, authorization boundaries, cross-tenant
 isolation, external collaborator privacy, access expiry, Git HTTP and SSH auth, LFS,
@@ -53,10 +58,11 @@ production-boundary behavior.
 
 ### Open before public beta
 
-PostgreSQL write path and verified cutover, async Git execution behind a job queue,
-external worker scheduling, cross-instance WebSocket fan-out, rate limiting, hosted
-CI runners, registries, billing and abuse controls. See [SECURITY.md](SECURITY.md)
-and [docs/ROADMAP.md](docs/ROADMAP.md).
+Trustworthy repository CI execution, real Resend/Razorpay/Stripe validation,
+PostgreSQL cutover and backend-aware restore, hosted-runner isolation, complete
+quota enforcement, registries, code search and deployment-specific high
+availability evidence. See [SECURITY.md](SECURITY.md) and
+[docs/ROADMAP.md](docs/ROADMAP.md).
 
 ---
 

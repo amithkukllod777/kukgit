@@ -98,7 +98,8 @@ KUKGIT_RESEND_API_KEY=<the Resend API key>
 KUKGIT_INSTANCE_ADMIN_EMAILS=support@example.com
 ```
 
-KukGit fails to start if any of these is missing or malformed:
+When `KUKGIT_AUTH_MODE=authkit`, KukGit fails to start if any of these is missing
+or malformed:
 
 - `KUKGIT_AUTHKIT_BASE_URL` must be absolute, HTTPS in production, and must not
   contain embedded credentials.
@@ -112,7 +113,7 @@ token is rejected when `NODE_ENV=production`. Git HTTP authentication uses scope
 personal access tokens instead.
 
 `KUKGIT_ADMIN_EMAIL`, `KUKGIT_ADMIN_PASSWORD` and `KUKGIT_ADMIN_NAME` seed the local
-development founder. In AuthKit mode the password is never used;
+founder in local mode. In AuthKit mode the password is never used;
 `KUKGIT_ADMIN_EMAIL` still acts as the fallback instance-admin allowlist entry when
 `KUKGIT_INSTANCE_ADMIN_EMAILS` is unset.
 

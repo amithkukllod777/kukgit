@@ -34,7 +34,7 @@ proposed after it should have to argue against that same bar.
 ```text
 Edge / WAF / CDN
       │
-API Gateway + Kuklabs AuthKit
+API Gateway + KukGit Identity / optional AuthKit
       │
  ┌────┼─────────────┬──────────────┬───────────────┐
  │    │             │              │               │
@@ -51,7 +51,7 @@ Web  Core API    Git Gateway    Event Bus       Webhooks
 
 ### Identity and tenant service
 
-Authoritative Kuklabs Account users, organizations, memberships, entitlements and billing identity.
+Authoritative KukGit accounts, optional external identity links, organizations, memberships, entitlements and billing identity. AuthKit is an optional delegated sign-in integration rather than a required service boundary.
 
 ### Repository service
 

@@ -87,23 +87,56 @@ operator information and is available only through
 
 ## Authentication
 
+`src/app.mjs`, `src/account-api.mjs`, `src/oauth-api.mjs`,
+`src/two-factor-api.mjs` (local mode)
+
 `src/authkit-identity.mjs`, `src/authkit-secure-login.mjs` (AuthKit mode)
-`src/app.mjs` (local development mode)
 
 ```text
 GET  /api/auth/status          Which auth mode this instance runs
 POST /api/auth/login           Password login
-POST /api/auth/signup          Create a One Kuklabs Account
-POST /api/auth/otp/request     Request an email OTP
-POST /api/auth/otp/verify      Verify an email OTP
-POST /api/auth/google          Exchange a Google ID token
-POST /api/auth/logout          Destroy the local bridge session
+POST /api/auth/logout          Destroy the local session or AuthKit bridge
 GET  /api/auth/me              Current user and organization memberships
 ```
 
-In AuthKit mode these proxy the central `/v1/auth/*` contract with the
-`X-Kuklabs-Product: kukgit` header. In local development mode only `login`,
-`logout` and `me` exist and are served by `src/app.mjs`.
+Local mode is supported in development and production. It adds KukGit-owned
+account lifecycle routes:
+
+```text
+POST   /api/account/signup                    Create an unverified local account
+POST   /api/account/verify-email/send         Send or resend a verification link
+POST   /api/account/verify-email/confirm      Spend a verification token
+POST   /api/account/password-reset/request    Request a reset link
+POST   /api/account/password-reset/complete   Spend a reset token and end sessions
+GET    /api/account/phone/config              Public Firebase phone configuration
+POST   /api/account/phone/verify              Link a Firebase-verified phone number
+POST   /api/account/phone/remove              Remove the linked phone number
+GET    /api/auth/providers                    Available GitHub/Google providers
+GET    /api/auth/:provider/start              Begin OAuth sign-in or account linking
+GET    /api/auth/:provider/callback           Complete OAuth sign-in or linking
+GET    /api/auth/identities                   Linked identities for the current user
+DELETE /api/auth/identities/:provider         Remove a linked identity
+GET    /api/account/two-factor                TOTP and recovery-code status
+POST   /api/account/two-factor/start          Start TOTP enrolment
+POST   /api/account/two-factor/confirm        Enable TOTP and return recovery codes
+POST   /api/account/two-factor/recovery-codes Replace recovery codes
+POST   /api/account/two-factor/disable        Disable TOTP with a current code
+POST   /api/auth/two-factor                   Complete a challenged sign-in
+```
+
+Self-service signup is absent unless email delivery is configured. Its response
+does not reveal whether an address already has an account. OAuth and two-factor
+routes are absent in AuthKit mode.
+
+AuthKit mode additionally proxies the central `/v1/auth/*` signup, OTP and
+Google flows with the `X-Kuklabs-Product: kukgit` header:
+
+```text
+POST /api/auth/signup
+POST /api/auth/otp/request
+POST /api/auth/otp/verify
+POST /api/auth/google
+```
 
 ## Dashboard and organizations
 

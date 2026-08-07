@@ -9,7 +9,7 @@
 > Everything below still describes the integration accurately, and it is still
 > tested and drilled. What changed is that production no longer requires it.
 
-KukGit production authentication uses central Kuklabs AuthKit. KukGit does not own a separate production password system, Google identity, OTP database or primary user identity.
+When `KUKGIT_AUTH_MODE=authkit` is selected, KukGit delegates browser authentication to central Kuklabs AuthKit. In the default product architecture KukGit owns its first-party accounts; this document describes only the optional delegated mode.
 
 ## What AuthKit actually is, as deployed
 
@@ -94,9 +94,9 @@ a limit for a login form, not for a service integration. A raised limit, or a
 separate bucket for `/sessions`, would let the window shrink and revocation get
 closer to immediate.
 
-## Identity boundary
+## Identity boundary in AuthKit mode
 
-AuthKit owns:
+With AuthKit mode selected, AuthKit owns:
 
 - signup and verified-email identity
 - password authentication
@@ -109,7 +109,7 @@ AuthKit owns:
 - product membership status
 - the stable `kuklabs_user_id`
 
-KukGit owns:
+KukGit still owns:
 
 - repositories, organizations, teams and repository permissions
 - KukGit personal access tokens, SSH keys and deploy keys
@@ -335,7 +335,9 @@ A rollback must preserve central identity mappings.
 5. Do not enable local production passwords as a fallback.
 6. Do not delete `kuklabs_user_id` mappings.
 
-A legacy build that requires local production authentication is not an approved rollback target.
+For an AuthKit-mode rollout, a build or configuration that silently changes the
+instance to local authentication is not an approved rollback target. Moving an
+instance between identity modes is a planned migration, not an outage fallback.
 
 ## Encryption-key rotation
 

@@ -44,21 +44,24 @@ webhooks, lifecycle, LFS, notifications (including real-time WebSocket delivery 
 bounce/complaint suppression), backups and the instance-admin console all ship in
 v0.2.0. See `CHANGELOG.md` for the delivery log.
 
-The PostgreSQL program has delivered Stages 1–6. SQLite is still authoritative;
-PostgreSQL observation is read-only and disabled by default.
+The PostgreSQL program has delivered Stages 1–7. SQLite is still authoritative;
+PostgreSQL observation is read-only and disabled by default, and production
+cutover remains open under issue #43.
+
+KukGit now owns first-party accounts. Verified email, password reset,
+self-service signup, GitHub/Google OAuth, optional phone verification, TOTP and
+recovery codes are implemented. AuthKit remains an optional mode.
 
 ## Immediate sprint
 
-`docs/TODO.md` holds the ordered queue. The headline item is the remaining
-PostgreSQL work under issue #43: the write path, PostgreSQL-backed integration CI,
-an explicit maintenance-window cutover with rollback evidence, and backend-aware
-backup/restore.
+`docs/TODO.md` holds the ordered queue. The immediate gates are trustworthy
+repository CI execution, real-provider validation, production recovery evidence
+for the selected identity mode and the remaining PostgreSQL cutover work under
+issue #43.
 
-If a driver decision is still open, the recorded intent is to adopt `pg` as KukGit's
-first runtime npm dependency rather than hand-writing a wire-protocol client. When
-that lands, correct the "no runtime npm dependencies" claim honestly in the same
-change — it appears in `README.md`, `docs/ARCHITECTURE.md`, `BUILD_REPORT.md` and
-`docs/DEPLOYMENT.md`.
+`pg` is KukGit's only declared runtime npm dependency. It is lazily loaded for
+PostgreSQL paths and must stay covered by licence, vulnerability and lockfile
+checks.
 
 ## Structural work worth doing alongside
 
@@ -72,9 +75,11 @@ Not roadmap features, but they compound if deferred:
   deliberately. What remains is a durable job queue so a long mirror import does
   not occupy its request for minutes.
 
-- **Single-node workers.** Email, webhook, notification and access-review workers run
-  on in-process timers, and the WebSocket registry is per process. Two instances
-  against one database double-fire the workers and split real-time delivery.
+- **Prove the multi-instance deployment.** Job leases, stranded-row recovery,
+  cross-instance notification fan-out, concurrent migration locking and
+  connection draining are implemented. They still need a real load balancer,
+  shared storage/object store and failure rehearsal before high availability can
+  be claimed.
 - **Fold the `-safe` wrappers into their core modules.** Several modules patch
   behavior from outside rather than being fixed in place.
   `src/instance-admin-safe.mjs` creates SQLite triggers at runtime to reconcile a

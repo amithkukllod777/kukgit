@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Documentation
+
+- Synchronized the identity, deployment, API, onboarding, integrations,
+  PostgreSQL, workflow and production-readiness documents with current `main`:
+  KukGit-owned accounts are production-capable, AuthKit is optional, Stage 7 is
+  merged, self-hosted workflow execution and multi-instance coordination are
+  delivered, and hard-coded test counts are no longer release evidence.
+
 ### Security
 
 - AuthKit bridge sessions now bind to a specific central device session in every

@@ -73,4 +73,6 @@ npm run sbom           # CycloneDX bill of materials
 
 ## Next target
 
-Private alpha with Kuklabs Account, invitations, scoped PATs, SSH keys, PostgreSQL, branch protection, review comments, webhooks and production backup/observability.
+Private-alpha external-user readiness: trustworthy exact-head CI, real-provider
+validation, production recovery evidence for KukGit-owned accounts and optional
+AuthKit, and the remaining guarded PostgreSQL cutover work.

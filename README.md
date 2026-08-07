@@ -2,19 +2,20 @@
 
 **KukGit is an AI-first Git hosting and developer operating system from Kuklabs Inc.**
 
-This repository contains the working KukGit foundation. It is not a visual mockup: it creates real bare Git repositories, supports Git smart HTTP and SSH clone/push, stores multi-tenant metadata, offers repository browsing, issues, pull requests, governed reviews, verified backups, Git LFS, notifications, transactional email, external repository collaboration, One Kuklabs Account, self-service organization onboarding and local repository-health analysis.
+This repository contains the working KukGit foundation. It is not a visual mockup: it creates real bare Git repositories, supports Git smart HTTP and SSH clone/push, stores multi-tenant metadata, offers repository browsing, issues, pull requests, governed reviews, verified backups, Git LFS, notifications, transactional email, external repository collaboration, first-party accounts, optional One Kuklabs Account sign-in, self-service organization onboarding and local repository-health analysis.
 
 > Product direction: Git hosting + collaboration + AI review + CI/CD + package/container registries + cloud development and deployment.
 
 ## What works in v0.2.0
 
-- One Kuklabs Account production authentication through central AuthKit
-- Stable central `kuklabs_user_id` mapped one-to-one to KukGit product profiles
-- AuthKit password, signup, OTP and Google ID-token flows
-- Server-side encrypted access and rotating refresh-token custody
-- Central product-access and signed-in device-session validation
-- Verified-email identity linking with duplicate-account conflict protection
-- Production local-password authentication disabled by default
+- KukGit-owned email/password accounts for development and production
+- Self-service signup with privacy-preserving duplicate-address handling
+- Verified-email, password-reset and session-revocation flows
+- TOTP two-factor authentication with one-time recovery codes
+- Optional GitHub and Google OAuth sign-in with verified identity linking
+- Optional One Kuklabs Account/AuthKit mode with stable `kuklabs_user_id` mapping
+- Encrypted AuthKit access/refresh-token custody and device-session validation
+- Production defaults to AuthKit for compatibility; explicit `local` mode is supported with HTTPS, Secure cookies and working email delivery
 - Self-service organization workspace creation for authenticated users
 - Atomic Owner membership and default Developers-team provisioning
 - Configurable organization ownership limits and reserved-slug protection
@@ -84,11 +85,11 @@ This repository contains the working KukGit foundation. It is not a visual mocku
 
 ## Getting to production
 
-What is finished, what is left, and which parts cannot be finished by writing code — a Linux host, a reachable AuthKit, six independent secret keys, an SMTP sender with SPF/DKIM/DMARC, off-instance backup storage. Read [Getting to Production](docs/GETTING_TO_PRODUCTION.md) before the first external user.
+What is finished, what is left, and which parts cannot be finished by writing code — a Linux host, an explicit identity-mode decision, independent secret keys, a real email sender, off-instance backup storage and provider validation. Read [Getting to Production](docs/GETTING_TO_PRODUCTION.md) before the first external user.
 
 ## Important scope boundary
 
-This is the **Private Alpha foundation**, not yet a GitHub/GitLab replacement. Production work still required includes hosted CI runners and workflow execution, the PostgreSQL runtime driver/import/cutover stages and distributed jobs, package/container registries, billing and usage metering, abuse controls, scalable object storage, broader administration, enterprise SSO/MFA policy controls and high-availability deployment.
+This is the **Private Alpha foundation**, not yet a GitHub/GitLab replacement. Self-hosted workflow execution, billing/metering, abuse controls, secret scanning, push protection, multi-instance job coordination and S3-compatible LFS storage now exist. Production work still required includes real-provider validation, trustworthy hosted CI execution for this repository, PostgreSQL runtime cutover, hosted-runner isolation, package/container registries, code search, quota enforcement, enterprise SSO policy and high-availability deployment evidence.
 
 ## Local quick start
 
@@ -117,15 +118,17 @@ Email: admin@kuklabs.local
 Password: KukGit@2026
 ```
 
-These defaults are strictly for isolated local development. Local password authentication is rejected by default in production.
+These defaults are strictly for isolated local development. Production still
+defaults to AuthKit when the mode is omitted; explicit `local` mode is supported
+only with the production safeguards documented below.
 
-## One Kuklabs Account
+## Authentication modes
 
-Production defaults to central AuthKit. KukGit sends `X-Kuklabs-Product: kukgit` to the shared `/v1/auth/*` contract and never creates or verifies a separate production password.
+KukGit owns its own accounts. In `local` mode it stores password hashes, verifies email addresses, resets forgotten passwords, supports self-service signup and provides TOTP two-factor authentication with recovery codes. Production local mode requires an HTTPS base URL, Secure cookies and a working Resend or SMTP sender.
 
-The browser receives only a random HttpOnly KukGit bridge cookie. AuthKit access and rotating refresh tokens remain encrypted server-side with AES-256-GCM. Protected requests validate the central account, KukGit product membership and the current AuthKit device session; centrally revoked sessions are removed locally and require a new login.
+One Kuklabs Account remains available as optional `authkit` mode. KukGit sends `X-Kuklabs-Product: kukgit` to the shared `/v1/auth/*` contract. The browser receives only a random HttpOnly KukGit bridge cookie; AuthKit access and rotating refresh tokens remain encrypted server-side with AES-256-GCM.
 
-Required production configuration:
+Production still defaults to `authkit` when `KUKGIT_AUTH_MODE` is omitted for backward compatibility. Choose the mode explicitly. AuthKit configuration is required only when that mode is selected:
 
 ```bash
 NODE_ENV=production
@@ -139,11 +142,14 @@ KUKGIT_ADMIN_EMAIL=<verified-founder-email>
 
 Existing KukGit users are linked lazily by verified normalized email while keeping the same local product user ID, repository ownership, organization membership, PATs and SSH keys. Conflicting identities fail closed instead of being automatically merged.
 
-Read [One Kuklabs Account and AuthKit](docs/ONE_KUKLABS_ACCOUNT.md) before staging or production deployment.
+Read [Self-service Signup](docs/SELF_SERVICE_SIGNUP.md) and
+[Deployment](docs/DEPLOYMENT.md) for local mode, and
+[One Kuklabs Account and AuthKit](docs/ONE_KUKLABS_ACCOUNT.md) before enabling
+the optional integration.
 
 ## Organization self-service onboarding
 
-A verified Kuklabs Account user can create a free organization workspace from **Organizations → Create organization**. A user with no organization and no repository-only access is guided automatically to the onboarding screen after sign-in.
+A signed-in user can create a free organization workspace from **Organizations → Create organization**. A self-service local signup must verify its email first; AuthKit mode requires the verified central identity. A user with no organization and no repository-only access is guided automatically to the onboarding screen after sign-in.
 
 Workspace creation is one database transaction: KukGit creates the organization, assigns the creator as Owner, creates a default Developers team and adds the creator as Team Maintainer. Any failure rolls back the complete workspace.
 
@@ -294,19 +300,19 @@ The drill restores the newest archive into a throwaway directory, confirms every
 
 ## PostgreSQL migration readiness
 
-KukGit still runs on SQLite. Stage 1 adds deterministic source manifests, complete protected metadata export, SQL portability findings, PostgreSQL URL redaction and checksummed cutover-readiness validation. Selecting `KUKGIT_DATABASE_DRIVER=postgresql` currently fails closed instead of silently continuing on SQLite.
+KukGit still runs on SQLite. PostgreSQL migration Stages 1–7 deliver deterministic exports, schema translation/import tooling, shadow verification, selected driver-neutral reads and the first guarded write-service slice. Selecting `KUKGIT_DATABASE_DRIVER=postgresql` still fails closed instead of silently continuing on SQLite.
 
 Use `npm run database -- inventory`, `export`, `verify-export`, `verify-live`, `audit-sql` and `postgresql-status` to prepare migration evidence. Full PostgreSQL runtime, schema import, dual-read validation, cutover and PostgreSQL backup/restore remain open under issue #43. Read [PostgreSQL Metadata Migration](docs/POSTGRESQL_MIGRATION.md).
 
 ## Instance administration
 
-Configure `KUKGIT_INSTANCE_ADMIN_EMAILS` with a minimal comma-separated allowlist of verified One Kuklabs Account operators. Authorized operators receive a separate **Instance Admin** navigation entry with adoption metrics, bounded cross-tenant search, tenant and user diagnostics, redacted audit lookup, support notes, and confirmed retry controls for terminal email and webhook failures.
+Configure `KUKGIT_INSTANCE_ADMIN_EMAILS` with a minimal comma-separated allowlist of verified operator emails in the selected identity mode. Authorized operators receive a separate **Instance Admin** navigation entry with adoption metrics, bounded cross-tenant search, tenant and user diagnostics, redacted audit lookup, support notes, and confirmed retry controls for terminal email and webhook failures.
 
 Instance authority is independent from organization roles. The console never exposes passwords, OTPs, AuthKit tokens, PAT material, webhook secrets or SSH private keys, and it does not support impersonation. Read [Instance Admin Console](docs/INSTANCE_ADMIN_CONSOLE.md) before enabling production support access.
 
 ## Workflow files
 
-Hosted CI begins with a file format. Workflows live in `.kukgit/workflows/*.yml` and are parsed by KukGit's own YAML subset, which refuses anchors, aliases, merge keys, tags, multiple documents and tab indentation rather than silently reinterpreting them.
+KukGit workflow automation begins with files in `.kukgit/workflows/*.yml`. They are parsed by KukGit's own YAML subset, which refuses anchors, aliases, merge keys, tags, multiple documents and tab indentation rather than silently reinterpreting them. Jobs execute on registered self-hosted runners; hosted multi-tenant runners remain future work.
 
 The rule that matters most: a value supplied by whoever triggered the workflow — a pull-request title, a fork branch name — **cannot be interpolated into a `run:` script**, because there it is code rather than data. Only an allow-list of repository-controlled fields may appear inline; everything else, including every secret, goes through `env:`.
 
@@ -341,7 +347,7 @@ An organization can be deleted, and the deletion **proved**. The list of tables 
 
 `npm run scan` finds what was committed *before* scanning existed — a repository migrated in from elsewhere would otherwise show an empty findings list and look clean. It defaults to current branch tips, because that is what an attacker finds by cloning and it is the mode that finishes; `--history` walks every commit and finds credentials that were committed and later removed, which still need rotating because the bytes are in every clone anybody took in between.
 
-Every push is scanned for **committed credentials**, and the scanner never stores one: a finding holds a truncated fingerprint and a redacted preview, because a scanner's database is otherwise a list of where the credentials are — a better target than the repository itself, since somebody has already done the searching. Where a format carries a checksum, the checksum decides, so "looks like a GitHub token" becomes "is one" — which matters more than adding detectors, because a scanner that cries wolf is one an author learns to ignore. Reading findings needs repository **write**, not read: a finding is a map to a credential for anyone who can also read the repository. Blocking a push is deliberately *not* included yet, and the documentation says why. Read [Secret Scanning](docs/SECRET_SCANNING.md).
+Every push is scanned for **committed credentials**, and the scanner never stores one: a finding holds a truncated fingerprint and a redacted preview, because a scanner's database is otherwise a list of where the credentials are — a better target than the repository itself, since somebody has already done the searching. Where a format carries a checksum, the checksum decides, so "looks like a GitHub token" becomes "is one" — which matters more than adding detectors, because a scanner that cries wolf is one an author learns to ignore. Reading findings needs repository **write**, not read: a finding is a map to a credential for anyone who can also read the repository. Repository administrators can enable push protection to reject a push that introduces a detected credential, with narrowly scoped, expiring and audited bypasses. Read [Secret Scanning](docs/SECRET_SCANNING.md) and [Push Protection](docs/PUSH_PROTECTION.md).
 
 A notification created on one instance reaches a WebSocket held by another. A **permanent** SQL trigger writes to a shared fan-out log and every instance polls it — permanent rather than `TEMP`, because a `TEMP` trigger only fires for writes on the connection that created it, which is exactly why this never worked across instances. There is one delivery path, not a local fast path plus a remote one: two behaviours to keep in sync would mean the local one is the only one that gets tested. The inbox remains the delivery guarantee and the socket is an accelerator, so a fan-out failure degrades to a badge that updates on reload. Read [Real-time Notifications](docs/REALTIME_NOTIFICATIONS.md).
 
