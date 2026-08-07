@@ -1,4 +1,5 @@
 import { withSchemaLock } from './db.mjs';
+import { migrateAccountVerification } from './account-verification.mjs';
 import { migrateAbuseReports } from './abuse-reports.mjs';
 import { ensureAuthKitCoreOrganization } from './authkit-bootstrap.mjs';
 import { migrateAuthKitIdentity } from './authkit-identity.mjs';
@@ -68,6 +69,7 @@ export function applySchema(db, config) {
   let seeded = { seeded: false };
   withSchemaLock(db, () => {
   migrateAuthKitIdentity(db);
+  migrateAccountVerification(db);
   migrateCollaboration(db);
   migrateOrganizationOnboarding(db);
   migrateRepositoryAccess(db);
