@@ -1,4 +1,5 @@
 import { renderMarkdown } from './markdown.js';
+import { signedOutPage } from './brand-hero.js';
 
 const app = document.querySelector('#app');
 const toastRoot = document.querySelector('#toast-root');
@@ -116,32 +117,14 @@ async function fillDemoAccount() {
 }
 
 function renderLogin() {
-  app.innerHTML = `
-    <main class="login-page">
-      <section class="login-hero">
-        <div class="brand-lockup"><img class="brand-logo" src="/assets/kuklabs-k.png" alt="Kuklabs K" /> KukGit</div>
-        <div class="login-copy">
-          <div class="eyebrow">AI Developer Operating System</div>
-          <h1>Build, review and deploy with <span class="gradient-text">one intelligent platform.</span></h1>
-          <p>KukGit combines secure Git hosting, team collaboration, repository intelligence and deployment workflows inside the Kuklabs ecosystem.</p>
-          <div class="login-points">
-            <div class="login-point"><b>Real Git hosting</b><span>Bare repositories, branches, commits and Git smart HTTP transport.</span></div>
-            <div class="login-point"><b>AI repo health</b><span>Security, quality, DevOps and documentation checks in one score.</span></div>
-            <div class="login-point"><b>Business ready</b><span>Organizations, roles, private repositories and auditable activity.</span></div>
-          </div>
-        </div>
-      </section>
-      <section class="login-panel">
-        <form class="login-card" id="login-form">
+  app.innerHTML = signedOutPage(`<form class="login-card" id="login-form">
           <h2>Welcome to KukGit</h2>
           <p>Sign in with your KukGit account. Kuklabs Account remains an option an instance may offer, not one it needs.</p>
           <div class="field"><label>Email address</label><input class="input" name="email" type="email" autocomplete="username" required /></div>
           <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="current-password" required /></div>
           <div class="login-demo" id="login-demo" hidden></div>
           <button class="btn btn-primary btn-block" type="submit">Sign in to KukGit <span>→</span></button>
-        </form>
-      </section>
-    </main>`;
+        </form>`);
   fillDemoAccount();
   document.querySelector('#login-form').addEventListener('submit', async (event) => {
     event.preventDefault();

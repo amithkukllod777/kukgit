@@ -80,9 +80,22 @@ function assertEmail(value) {
   return email;
 }
 
-function assertDisplayName(value, email) {
+/**
+ * Asked for, not inferred.
+ *
+ * This used to fall back to the part of the address before the `@`, which is
+ * how a repository page fills up with `a.kukllod`, `devops2` and `info` — a
+ * display name is what everybody else in an organization sees next to a commit,
+ * a review and a pull request, and an address is not one. Somebody who does not
+ * want to give their real name can type anything; what they cannot do is skip
+ * the question and have the address answer it.
+ *
+ * Refused before the address is looked up, like every other check here, so the
+ * shape of the failure does not depend on whether the account exists.
+ */
+function assertDisplayName(value) {
   const name = String(value ?? '').trim().replace(/\s+/g, ' ');
-  if (!name) return email.split('@')[0];
+  if (!name) throw httpError(400, 'Tell us what to call you.', 'SIGNUP_NAME_REQUIRED');
   if (name.length > MAX_DISPLAY_NAME) throw httpError(400, 'That name is too long.', 'SIGNUP_NAME_INVALID');
   return name;
 }
@@ -156,7 +169,7 @@ function warnExistingAccount(db, config, user) {
  */
 export function signUp(db, config, { email, password, displayName, now = new Date() }) {
   const address = assertEmail(email);
-  const name = assertDisplayName(displayName, address);
+  const name = assertDisplayName(displayName);
   // Hashed before the address is looked up, so a password the rules refuse is
   // refused whether or not the address exists — otherwise the shape of the
   // failure answers the question this endpoint refuses to answer.

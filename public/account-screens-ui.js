@@ -39,6 +39,8 @@
  * address gets, and the person who really owns the address is told by email.
  */
 
+import { signedOutPage } from './brand-hero.js';
+
 const ROUTES = new Set(['signup', 'verify-email', 'reset-password', 'forgot-password']);
 
 /**
@@ -109,15 +111,17 @@ function accountStyles() {
   if (document.querySelector('#kg-account-styles')) return;
   const style = document.createElement('style');
   style.id = 'kg-account-styles';
+  // Only what the sign-in card does not already provide. The frame, the panel
+  // and the card itself are `.login-page` / `.login-panel` / `.login-card` from
+  // the main style sheet, so these screens inherit the sign-in page's
+  // proportions, its responsive breakpoints and any future change to them
+  // rather than carrying a second, slowly diverging copy.
   style.textContent = `
-    .kg-account { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:32px 20px; }
-    .kg-account-card { width:100%; max-width:440px; display:grid; gap:14px; padding:28px; border:1px solid var(--border); border-radius:16px; }
-    .kg-account-card h2 { margin:0; }
-    .kg-account-card p { margin:0; line-height:1.55; }
-    .kg-account-note { font-size:13px; color:var(--muted); line-height:1.55; }
+    .kg-account-form { display:grid; gap:14px; margin-top:4px; }
+    .kg-account-note { font-size:13px; color:var(--muted); line-height:1.55; margin:0; }
     .kg-account-bad { border:1px solid #d9534f66; background:#d9534f14; border-radius:10px; padding:11px 13px; font-size:13px; line-height:1.5; }
     .kg-account-good { border:1px solid #3aa06655; background:#3aa06614; border-radius:10px; padding:11px 13px; font-size:13px; line-height:1.5; }
-    .kg-account-links { display:flex; justify-content:center; gap:10px; margin-top:2px; flex-wrap:wrap; }
+    .kg-account-links { display:flex; justify-content:center; gap:10px; margin-top:18px; flex-wrap:wrap; }
     .kg-account-links a { font-size:13px; }
     .kg-account-links span { font-size:13px; color:var(--muted); }
   `;
@@ -125,7 +129,7 @@ function accountStyles() {
 }
 
 function card(inner) {
-  return `<main class="kg-account"><section class="card kg-account-card" id="kg-account-card">${inner}</section></main>`;
+  return signedOutPage(`<section class="login-card kg-account-card" id="kg-account-card">${inner}</section>`);
 }
 
 function backLink(text = 'Back to sign in') {
@@ -142,6 +146,18 @@ function backLink(text = 'Back to sign in') {
  * disagree the server wins and the message it sends is what goes on screen.
  */
 const MIN_PASSWORD = 10;
+
+/**
+ * The longest name the server stores, repeated here for the same reason.
+ *
+ * A name is asked for rather than offered as optional. It is what everybody
+ * else in an organization sees next to a commit, a review and a pull request,
+ * and defaulting it to the part of an address before the `@` means a repository
+ * page full of `a.kukllod`, `devops2`, `info`. Somebody who does not want to
+ * give a real one can type anything; what they cannot do is skip the question
+ * and have the address answer it for them.
+ */
+const MAX_NAME = 191;
 
 /**
  * Whether this instance offers signup at all, asked once per page load.
@@ -173,15 +189,15 @@ function signupAcceptedCard(message) {
 
 function renderSignup(root) {
   root.innerHTML = card(`<h2>Create your KukGit account</h2>
-    <p class="kg-account-note">An email address and a password. You will get a link to confirm the address.</p>
-    <form id="kg-signup-form" class="kg-account-card" style="padding:0;border:0;gap:12px">
-      <div class="field"><label>Your name</label><input class="input" name="displayName" autocomplete="name" placeholder="Optional" /></div>
+    <p>Your name, an address you can read email at, and a password. We will send a link to confirm the address.</p>
+    <form id="kg-signup-form" class="kg-account-form">
+      <div class="field"><label>Your name</label><input class="input" name="displayName" autocomplete="name" maxlength="${MAX_NAME}" required /></div>
       <div class="field"><label>Email address</label><input class="input" name="email" type="email" autocomplete="username" required /></div>
-      <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="new-password" required /></div>
-      <div class="field"><label>Type it again</label><input class="input" name="confirm" type="password" autocomplete="new-password" required /></div>
+      <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="new-password" minlength="${MIN_PASSWORD}" required /></div>
+      <div class="field"><label>Type it again</label><input class="input" name="confirm" type="password" autocomplete="new-password" minlength="${MIN_PASSWORD}" required /></div>
       <div id="kg-signup-error" class="kg-account-bad" hidden></div>
       <p class="kg-account-note">At least ${MIN_PASSWORD} characters. Signing up does not sign you in — the link in the email does.</p>
-      <button class="btn btn-primary btn-block" type="submit">Create my account</button>
+      <button class="btn btn-primary btn-block" type="submit">Create my account <span>→</span></button>
     </form>
     ${backLink('Already have an account? Sign in')}`);
 
@@ -213,9 +229,16 @@ function renderSignup(root) {
       box.textContent = message;
       box.hidden = false;
       button.disabled = false;
-      button.textContent = 'Create my account';
+      button.innerHTML = 'Create my account <span>→</span>';
     };
     box.hidden = true;
+
+    // Checked here as well as by the `required` attribute, because that
+    // attribute is enforced by the browser and this handler is what a test can
+    // drive. A check only the browser makes is a check no test holds.
+    const displayName = String(data.get('displayName') ?? '').trim();
+    if (!displayName) return fail('Tell us what to call you.');
+    if (displayName.length > MAX_NAME) return fail(`That name is longer than ${MAX_NAME} characters.`);
 
     const password = String(data.get('password') ?? '');
     // Both checked here as well as on the server. A mistyped password is worth
@@ -230,7 +253,7 @@ function renderSignup(root) {
       const result = await post('/api/account/signup', {
         email: data.get('email'),
         password,
-        displayName: data.get('displayName'),
+        displayName,
       });
       root.innerHTML = signupAcceptedCard(result.message);
     } catch (error) {
@@ -330,7 +353,7 @@ async function renderVerifyEmail(root, token) {
 function renderForgotPassword(root) {
   root.innerHTML = card(`<h2>Reset your password</h2>
     <p class="kg-account-note">Tell us the address on your account and we will send a link.</p>
-    <form id="kg-forgot-form" class="kg-account-card" style="padding:0;border:0;gap:12px">
+    <form id="kg-forgot-form" class="kg-account-form">
       <div class="field"><label>Email address</label><input class="input" name="email" type="email" autocomplete="username" required /></div>
       <button class="btn btn-primary btn-block" type="submit">Send the link</button>
     </form>
@@ -366,7 +389,7 @@ function renderResetPassword(root, token) {
     return;
   }
   root.innerHTML = card(`<h2>Choose a new password</h2>
-    <form id="kg-reset-form" class="kg-account-card" style="padding:0;border:0;gap:12px">
+    <form id="kg-reset-form" class="kg-account-form">
       <div class="field"><label>New password</label><input class="input" name="password" type="password" autocomplete="new-password" required /></div>
       <div class="field"><label>Type it again</label><input class="input" name="confirm" type="password" autocomplete="new-password" required /></div>
       <div id="kg-reset-error" class="kg-account-bad" hidden></div>

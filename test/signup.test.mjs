@@ -80,7 +80,7 @@ async function workspace(t, { authMode = 'local', email = true } = {}) {
   };
 
   const outbox = (match) => db.prepare('SELECT to_email AS recipient, subject, text_body AS body FROM email_outbox WHERE subject LIKE ? ORDER BY rowid DESC').all(`%${match}%`);
-  const userFor = (address) => db.prepare("SELECT id, email, COALESCE(email_verified, 0) AS verified, COALESCE(auth_source, 'local') AS authSource FROM users WHERE email = ?").get(address);
+  const userFor = (address) => db.prepare("SELECT id, email, display_name AS displayName, COALESCE(email_verified, 0) AS verified, COALESCE(auth_source, 'local') AS authSource FROM users WHERE email = ?").get(address);
 
   return { config, db, origin, call, ask, outbox, userFor };
 }
@@ -139,7 +139,7 @@ test('a weak password is refused whether or not the address exists', async (t) =
   const space = await workspace(t);
   await space.call(GOOD);
 
-  const forNew = await space.call({ email: 'someone-new@example.com', password: 'short' });
+  const forNew = await space.call({ ...GOOD, email: 'someone-new@example.com', password: 'short' });
   const forExisting = await space.call({ ...GOOD, password: 'short' });
   // Same failure for both. If the rules ran after the lookup, the shape of the
   // error would answer the question this endpoint refuses to answer.
@@ -166,10 +166,41 @@ test('the address is stored in one shape', async (t) => {
   assert.equal(space.db.prepare('SELECT COUNT(*) AS count FROM users').get().count, 2, 'founder plus one');
 });
 
-test('no name is not an error — the address supplies one', async (t) => {
+test('a name is asked for, not guessed from the address', async (t) => {
   const space = await workspace(t);
-  await space.call({ email: 'quiet@example.com', password: 'a-real-enough-password' });
-  assert.equal(space.db.prepare("SELECT display_name AS name FROM users WHERE email = 'quiet@example.com'").get().name, 'quiet');
+  // It used to fall back to the part before the `@`. A display name is what
+  // everybody else in an organization sees next to a commit, a review and a
+  // pull request, and `info`, `devops2` or `a.kukllod` is not one.
+  for (const displayName of [undefined, '', '   ']) {
+    const response = await space.call({ email: 'quiet@example.com', password: 'a-real-enough-password', displayName });
+    assert.equal(response.status, 400, JSON.stringify(displayName));
+    assert.equal(response.body.error.code, 'SIGNUP_NAME_REQUIRED');
+  }
+  assert.equal(space.db.prepare('SELECT COUNT(*) AS count FROM users').get().count, 1, 'only the founder');
+});
+
+test('the name is refused before the address is looked up', async (t) => {
+  const space = await workspace(t);
+  await space.call(GOOD);
+  // Same failure for an address that exists and one that does not — otherwise
+  // the shape of the error answers the question this endpoint refuses to.
+  const forNew = await space.call({ email: 'someone-new@example.com', password: 'a-real-enough-password', displayName: '' });
+  const forExisting = await space.call({ ...GOOD, displayName: '' });
+  assert.equal(forNew.status, forExisting.status);
+  assert.equal(forNew.body.error.message, forExisting.body.error.message);
+});
+
+test('surrounding and repeated whitespace in a name is tidied, not refused', async (t) => {
+  const space = await workspace(t);
+  await space.call({ ...GOOD, displayName: '  Amith   Kukllod  ' });
+  assert.equal(space.userFor('newcomer@example.com').displayName, 'Amith Kukllod');
+});
+
+test('a name longer than the column is refused rather than truncated', async (t) => {
+  const space = await workspace(t);
+  const response = await space.call({ ...GOOD, displayName: 'x'.repeat(192) });
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error.code, 'SIGNUP_NAME_INVALID');
 });
 
 /* ------------------------------------------------------- what it does not do */
