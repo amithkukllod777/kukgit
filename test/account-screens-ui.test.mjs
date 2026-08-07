@@ -568,6 +568,48 @@ test('the signup link is on the real sign-in page, once', async (t) => {
   assert.equal(browser.countPath('/api/account/signup'), 1);
 });
 
+/**
+ * Clicked, not typed.
+ *
+ * Every test above opens the address directly, which is a page load: `app.js`
+ * runs `bootstrap()`, sees nobody signed in, draws the sign-in page, and never
+ * looks at the fragment. A *click* is a `hashchange`, and `app.js` listens for
+ * that too — it parses the route, does not recognise the name, and sends the
+ * hash back to `#/`. Nothing this module does can survive that, because the
+ * address it would render from has already been changed.
+ *
+ * It is the same failure the instance administration panel had, and the comment
+ * on `EXTENSION_ROUTES` in `app.js` describes it exactly. These routes were
+ * never added.
+ */
+for (const [name, form] of [['signup', '#kg-signup-form'], ['forgot-password', '#kg-forgot-form']]) {
+  test(`clicking through to ${name} from the sign-in page gets there`, async (t) => {
+    const browser = await realPage(t, { hash: '#/', routes: SIGNUP_OPEN });
+    assert.ok(browser.document.querySelector(`#login-form a[href="#/${name}"]`), 'the link is on the page');
+
+    browser.navigate(`#/${name}`);
+    await browser.settle();
+
+    assert.equal(browser.location.hash, `#/${name}`, 'the address was not dragged back');
+    assert.equal(browser.present(form), true, 'the screen is on the page');
+  });
+}
+
+test('and the way back to the sign-in form works', async (t) => {
+  const browser = await realPage(t, { hash: '#/', routes: SIGNUP_OPEN });
+  browser.navigate('#/signup');
+  await browser.settle();
+  assert.equal(browser.present('#kg-signup-form'), true);
+
+  // The link every one of these screens ends with. Leaving somebody on a
+  // signup form with no way back to sign in is the other half of this bug.
+  browser.navigate('#/');
+  await browser.settle();
+
+  assert.equal(browser.present('#login-form'), true, 'the sign-in form is back');
+  assert.equal(browser.present('.kg-account'), false, 'and the signup card is gone');
+});
+
 test('the reset screen survives the sign-in page rendering underneath it', async (t) => {
   const browser = await realPage(t, { hash: '#/forgot-password' });
 

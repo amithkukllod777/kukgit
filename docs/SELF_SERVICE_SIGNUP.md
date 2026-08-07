@@ -2,6 +2,12 @@
 
 KukGit can offer email/password self-service signup when the instance owns local accounts and has a working transactional email sender.
 
+The whole browser side lives in `public/account-screens-ui.js`, alongside email verification, password reset and the forgot-password form. It is one module because the four screens are one journey: they share a card, a style sheet, the links row on the sign-in form, and the rule that none of them may say whether an address has an account.
+
+**One fragment, one owner.** `#/signup` is claimed by that module and nothing else. A second module claiming the same route does not fail — both write the whole of `#app`, each one's `MutationObserver` fires on the other's write, and the page rewrites itself forever with the form destroyed and rebuilt on every pass. That shipped once, when `signup-ui.js` arrived on a route `account-screens-ui.js` already owned. `test/public-page-routes.test.mjs` loads every module `index.html` lists and asserts the page comes to rest.
+
+`app.js` must leave these routes alone entirely — see `WHOLE_PAGE_ROUTES` there. It listens for `hashchange` too, and a route it does not recognise is sent back to `#/`, which is not a rendering problem but an address problem: the fragment is gone before the owning module is scheduled to read it. Opening the address directly hides this, because a page load fires no `hashchange`; clicking the link is what exposes it.
+
 ## Browser flow
 
 1. The sign-in form shows **Create an account**.
@@ -34,7 +40,11 @@ On recoverable validation errors the form stays mounted. Passwords remain only i
 - `KUKGIT_AUTH_MODE=local`, and
 - Resend or SMTP delivery is configured.
 
-A signup route with a non-local authentication mode shows an instance-wide unavailable state without offering the local form. If local auth is enabled but email delivery is unavailable, the server returns `404` and the browser switches to the same unavailable state.
+Both conditions are answered by one route. `GET /api/account/signup` returns `{"available":true}` where signup is offered and `404` where it is not — the same 404 the `POST` gives, because a route that answers "no" is still a route. It is public, like `/api/auth/providers`, because the sign-in screen renders before there is a session; it says whether this instance takes signups and nothing about any account.
+
+The sign-in form's **Create an account** link is drawn only on that answer. A link to a form that collects a password and then reports the route as missing is worse than no link at all.
+
+The `#/signup` screen draws its form without waiting for that answer, and replaces it with the unavailable state if the answer says so. Waiting would be the bug: the module renders before the application has finished asking who is signed in, and a screen that has drawn nothing yet is a screen `renderLogin()` paints over. Everything the late answer does is therefore conditional on that screen still being the one on the page — it must not land on a page somebody has navigated away to, and it must not overwrite an account that was just made.
 
 This prevents creation of accounts that cannot receive the verification link required to finish setup.
 
@@ -60,17 +70,16 @@ organization they can already access.
 
 ## Tests
 
-`test/signup-ui.test.mjs` covers:
+`test/signup.test.mjs` covers the server: the identical answer for a new and an existing address, the warning email the existing address's owner gets instead, the availability route, and the 404 in AuthKit mode or with no mail sender.
 
-- route ownership and sign-in link idempotence,
-- request shape,
-- generic success output independent of server response text,
-- no authentication bootstrap after signup,
-- password-confirmation preflight,
-- recoverable validation behavior,
-- signup-unavailable behavior,
-- HTML escaping,
-- signed-in shell isolation,
-- the real `app.js` render race.
+`test/account-screens-ui.test.mjs` covers the browser:
 
-`test/signup-ui-authkit.test.mjs` separately pins the AuthKit-mode boundary.
+- request shape, and the one accepted message whatever the server's body says,
+- password-confirmation and length preflight, neither of which reaches the server,
+- the server's own refusal on screen, escaped, with the form still there,
+- `404` on submit reading as policy rather than as a broken site,
+- the sign-in link present only where signup is offered, and asked for once,
+- the two late-answer cases above,
+- the screens with `app.js` running underneath, reached by **navigating** rather than by opening the address — a page load fires no `hashchange`, and every bug in this area so far has lived in the difference.
+
+`test/public-page-routes.test.mjs` loads every module `index.html` lists and asserts the page comes to rest, with one signup card and one link to it.
