@@ -1,12 +1,12 @@
 /**
- * The three screens somebody reaches from an email, plus the link that starts
- * one.
+ * The screens somebody reaches without an account, or from an email.
  *
+ *   #/signup                  making one
  *   #/verify-email?token=…    confirming an address
  *   #/reset-password?token=…  choosing a new password
  *   #/forgot-password         asking for the link
  *
- * All three are reached **without being signed in** — that is the whole point
+ * All of them are reached **without being signed in** — that is the whole point
  * of them — so they take over the page rather than living inside the app shell.
  * Somebody who has forgotten their password cannot sign in to ask for a reset,
  * and somebody clicking a link out of their inbox has no session yet.
@@ -32,9 +32,14 @@
  * address registered" is "does this company keep its code here" — and a screen
  * that helpfully said "no account found" would give away exactly what the
  * server refused to.
+ *
+ * The signup screen has the same rule and it is easier to get wrong there,
+ * because the obvious thing for a signup form to say is "that address is
+ * already taken". It does not say it. It says the same sentence as a brand new
+ * address gets, and the person who really owns the address is told by email.
  */
 
-const ROUTES = new Set(['verify-email', 'reset-password', 'forgot-password']);
+const ROUTES = new Set(['signup', 'verify-email', 'reset-password', 'forgot-password']);
 
 /**
  * Which screen is currently on the page, as `name:token`.
@@ -112,8 +117,9 @@ function accountStyles() {
     .kg-account-note { font-size:13px; color:var(--muted); line-height:1.55; }
     .kg-account-bad { border:1px solid #d9534f66; background:#d9534f14; border-radius:10px; padding:11px 13px; font-size:13px; line-height:1.5; }
     .kg-account-good { border:1px solid #3aa06655; background:#3aa06614; border-radius:10px; padding:11px 13px; font-size:13px; line-height:1.5; }
-    .kg-account-links { display:flex; justify-content:center; margin-top:2px; }
+    .kg-account-links { display:flex; justify-content:center; gap:10px; margin-top:2px; flex-wrap:wrap; }
     .kg-account-links a { font-size:13px; }
+    .kg-account-links span { font-size:13px; color:var(--muted); }
   `;
   document.head.append(style);
 }
@@ -124,6 +130,126 @@ function card(inner) {
 
 function backLink(text = 'Back to sign in') {
   return `<div class="kg-account-links"><a href="#/">${accEscape(text)}</a></div>`;
+}
+
+/* ------------------------------------------------------------------ signup */
+
+/**
+ * The shortest password the server will hash, repeated here.
+ *
+ * Not a second policy — the same one, said before the person has waited for a
+ * round trip. The server is still the one that decides; if these two ever
+ * disagree the server wins and the message it sends is what goes on screen.
+ */
+const MIN_PASSWORD = 10;
+
+/**
+ * Whether this instance offers signup at all, asked once per page load.
+ *
+ * The answer is a deployment fact — local accounts, and a way to send the
+ * verification email — so it cannot change while somebody is looking at the
+ * page. Cached as the promise rather than the value, because the observer on
+ * `#app` fires on every write anywhere in the application and an uncached check
+ * here is a request per redraw.
+ */
+let signupOffering = null;
+function signupOffered() {
+  if (!signupOffering) {
+    signupOffering = fetch('/api/account/signup', { credentials: 'same-origin' })
+      // 404 is the honest answer where signup is not offered: no link, no
+      // error on screen, nothing wrong.
+      .then((response) => response.ok)
+      .catch(() => false);
+  }
+  return signupOffering;
+}
+
+function signupAcceptedCard(message) {
+  return card(`<h2>Check your inbox</h2>
+    <div class="kg-account-good">${accEscape(message || 'If that address can be used, a link to finish setting up is on its way.')}</div>
+    <p class="kg-account-note">The link proves the address is yours. Until it is opened you can sign in and look around, but not create an organization or a repository.</p>
+    ${backLink()}`);
+}
+
+function renderSignup(root) {
+  root.innerHTML = card(`<h2>Create your KukGit account</h2>
+    <p class="kg-account-note">An email address and a password. You will get a link to confirm the address.</p>
+    <form id="kg-signup-form" class="kg-account-card" style="padding:0;border:0;gap:12px">
+      <div class="field"><label>Your name</label><input class="input" name="displayName" autocomplete="name" placeholder="Optional" /></div>
+      <div class="field"><label>Email address</label><input class="input" name="email" type="email" autocomplete="username" required /></div>
+      <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="new-password" required /></div>
+      <div class="field"><label>Type it again</label><input class="input" name="confirm" type="password" autocomplete="new-password" required /></div>
+      <div id="kg-signup-error" class="kg-account-bad" hidden></div>
+      <p class="kg-account-note">At least ${MIN_PASSWORD} characters. Signing up does not sign you in — the link in the email does.</p>
+      <button class="btn btn-primary btn-block" type="submit">Create my account</button>
+    </form>
+    ${backLink('Already have an account? Sign in')}`);
+
+  // Asked after the form is on screen rather than before it. The render stays
+  // synchronous on purpose: this module runs before the application has
+  // finished asking who is signed in, and a screen that waits for a round trip
+  // before drawing anything is a screen the sign-in page renders over. That is
+  // exactly how the forgot-password screen went missing on the live instance.
+  signupOffered().then((available) => {
+    if (available) return;
+    // Still here, and still this screen. A slow answer that lands after
+    // somebody has navigated away must not put a card on top of where they
+    // went.
+    if (accountRoute()?.name !== 'signup') return;
+    const current = document.querySelector('#app');
+    if (!current || !current.querySelector('#kg-signup-form')) return;
+    current.innerHTML = card(`<h2>Accounts here are by invitation</h2>
+      <p>This instance does not take open signups. Ask somebody in the organization to invite you, and the invitation arrives by email.</p>
+      ${backLink()}`);
+  });
+
+  const form = root.querySelector('#kg-signup-form');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const box = root.querySelector('#kg-signup-error');
+    const button = form.querySelector('button');
+    const fail = (message) => {
+      box.textContent = message;
+      box.hidden = false;
+      button.disabled = false;
+      button.textContent = 'Create my account';
+    };
+    box.hidden = true;
+
+    const password = String(data.get('password') ?? '');
+    // Both checked here as well as on the server. A mistyped password is worth
+    // catching before an account exists with it, because the way to fix it
+    // afterwards is a password reset on an address that is not yet confirmed.
+    if (password !== String(data.get('confirm') ?? '')) return fail('Those two do not match.');
+    if (password.length < MIN_PASSWORD) return fail(`Password must be at least ${MIN_PASSWORD} characters.`);
+
+    button.disabled = true;
+    button.textContent = 'Creating…';
+    try {
+      const result = await post('/api/account/signup', {
+        email: data.get('email'),
+        password,
+        displayName: data.get('displayName'),
+      });
+      root.innerHTML = signupAcceptedCard(result.message);
+    } catch (error) {
+      // The one failure that is not about what was typed: the route is not
+      // there. Saying "not found" would read as a broken site rather than as a
+      // deliberate policy.
+      if (error.status === 404) {
+        root.innerHTML = card(`<h2>Accounts here are by invitation</h2>
+          <p>This instance does not take open signups. Ask somebody in the organization to invite you.</p>
+          ${backLink()}`);
+        return;
+      }
+      // Everything else is the server's own message — a malformed address, a
+      // password it refuses. Never a hint about whether the address is already
+      // registered: it does not send one, because it does not check before it
+      // has hashed the password.
+      fail(error.message);
+    }
+  });
 }
 
 /* ------------------------------------------------------------ verify email */
@@ -297,7 +423,40 @@ function addForgotLink() {
   const form = document.querySelector('#login-form');
   if (!form || form.dataset.kgForgot === 'done') return;
   form.dataset.kgForgot = 'done';
-  form.insertAdjacentHTML('beforeend', '<div class="kg-account-links"><a href="#/forgot-password">Forgot your password?</a></div>');
+  form.insertAdjacentHTML('beforeend', '<div class="kg-account-links" id="kg-account-links"><a href="#/forgot-password">Forgot your password?</a></div>');
+}
+
+/**
+ * "Create an account", but only where there is one to create.
+ *
+ * Gated on the server's answer rather than shown always, because a link to a
+ * form that collects a password and then says the route does not exist is worse
+ * than no link. On an invitation-only instance nothing appears and nothing is
+ * said, which is the truth: there is no signup here.
+ *
+ * The flag goes on the form before the await, so the observer firing on the
+ * application's own redraws cannot start a second check — that is how a page
+ * ends up asking the same question forty times in two seconds.
+ */
+async function addSignupLink() {
+  const form = document.querySelector('#login-form');
+  if (!form || form.dataset.kgSignup === 'done') return;
+  form.dataset.kgSignup = 'done';
+  if (!(await signupOffered())) return;
+  // The application re-renders on navigation and may have done so while the
+  // answer was in flight. Appending to a form that is no longer on screen puts
+  // the link nowhere.
+  //
+  // No test kills this line: without it the link goes onto a detached form and
+  // the fresh one — which has no flag — asks again from the cache and gets its
+  // own, so the page ends up the same either way. It is here because "write
+  // into the element you looked up before the await" is the shape of a bug this
+  // file has already had twice.
+  if (document.querySelector('#login-form') !== form) return;
+  const links = form.querySelector('#kg-account-links') ?? form.querySelector('.kg-account-links');
+  const html = '<span>·</span><a href="#/signup">Create an account</a>';
+  if (links) links.insertAdjacentHTML('beforeend', html);
+  else form.insertAdjacentHTML('beforeend', `<div class="kg-account-links">${html.replace('<span>·</span>', '')}</div>`);
 }
 
 /* ------------------------------------------------------------------ mount */
@@ -310,6 +469,10 @@ export async function mountAccountScreen() {
     rendered = '';
     accountStyles();
     addForgotLink();
+    // Not awaited. The forgot-password link is on the page either way, and a
+    // sign-in form that waits for this one before it has any links is a form
+    // somebody sees without a way to reset their password.
+    addSignupLink();
     return;
   }
   accountStyles();
@@ -324,6 +487,7 @@ export async function mountAccountScreen() {
   if (rendered === key && document.querySelector('#kg-account-card')) return;
   rendered = key;
 
+  if (route.name === 'signup') return renderSignup(root);
   if (route.name === 'verify-email') return renderVerifyEmail(root, route.token);
   if (route.name === 'reset-password') return renderResetPassword(root, route.token);
   return renderForgotPassword(root);
