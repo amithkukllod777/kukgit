@@ -39,8 +39,11 @@ after a forgotten password is not one to put in front of customers.
 - [x] one person, several ways in — `user_identities` links a provider account
       to a KukGit user rather than making a second one, and refuses to join two
       accounts on an address neither side has proved
-- [ ] sign in with GitHub
-- [ ] sign in with Google
+- [x] the OAuth sign-in flow for GitHub and Google — state stored hashed and
+      spent once, the landing route checked against an open redirect, the
+      provider's `verified` flag read rather than assumed, and the access token
+      used and thrown away
+- [ ] wire the two callback routes and the buttons
 - [ ] verify a mobile number — needs an SMS provider, and is an abuse target
       (SMS pumping) so it comes last and with its own limits
 - [ ] lift the production refusal, once the two above are done

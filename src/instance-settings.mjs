@@ -75,7 +75,7 @@ export const INTEGRATIONS = Object.freeze({
   },
   'auth.google': {
     label: 'Google',
-    summary: 'Sign-in with Google. Production identity is One Kuklabs Account — federate this inside AuthKit rather than beside it.',
+    summary: 'Sign in with Google, as one more way into a KukGit account. Optional: an instance without it still has email and password.',
     fields: [
       { key: 'clientId', label: 'Client ID', secret: false, env: 'KUKGIT_GOOGLE_CLIENT_ID' },
       { key: 'clientSecret', label: 'Client secret', secret: true, env: 'KUKGIT_GOOGLE_CLIENT_SECRET' },
@@ -83,7 +83,7 @@ export const INTEGRATIONS = Object.freeze({
   },
   'auth.github': {
     label: 'GitHub',
-    summary: 'Sign-in with GitHub. Same caveat as Google.',
+    summary: 'Sign in with GitHub — the one developers already have. Optional, like Google.',
     fields: [
       { key: 'clientId', label: 'Client ID', secret: false, env: 'KUKGIT_GITHUB_CLIENT_ID' },
       { key: 'clientSecret', label: 'Client secret', secret: true, env: 'KUKGIT_GITHUB_CLIENT_SECRET' },
