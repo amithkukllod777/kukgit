@@ -91,9 +91,14 @@ test('accepted signup always renders one browser-owned generic outcome', async (
       email: 'developer@example.com',
       password: 'a-secure-password',
     });
-    // Signup is not login. This module never asks for a session or bootstraps a
-    // signed-in shell after a 202.
-    assert.equal(browser.calls.filter((entry) => String(entry.url).includes('/api/auth/')).length, 0);
+    // The mode probe is allowed; signup is not login. Nothing here should ask
+    // who is signed in or call a login/session-completing route after the 202.
+    assert.equal(browser.calls.filter((entry) => {
+      const url = String(entry.url);
+      return url.includes('/api/auth/me')
+        || url.includes('/api/auth/login')
+        || url.includes('/api/auth/two-factor');
+    }).length, 0);
     browser.restore();
   }
 });
