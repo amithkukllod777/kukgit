@@ -18,6 +18,24 @@ This is the prioritized execution list for KukGit. The phase-level direction is 
 
 ## P0 — Current private-alpha critical path
 
+### 0a. KukGit's own accounts
+
+Decided 2026-08-07: KukGit owns its login, and Kuklabs Account becomes optional.
+Reasons and the reversal are in `CLAUDE.md`. Production still refuses
+`KUKGIT_AUTH_MODE=local`, and that refusal is correct until the list below is
+done — an account system with no way to prove an address and no way back in
+after a forgotten password is not one to put in front of customers.
+
+- [x] password records carry their own cost parameters, so the cost can be
+      raised later; raised from Node's default 16384 to 32768 and rewritten
+      transparently on the next sign-in
+- [ ] verified email — an address has to be proved before the account works
+- [ ] password reset, single-use and expiring
+- [ ] lift the production refusal, once the two above are done
+- [ ] two-factor authentication
+- [ ] account recovery when 2FA is lost, which is the part that decides whether
+      2FA is safe to turn on at all
+
 ### 0. Restore trustworthy CI execution
 
 Current blocker: **GitHub Actions billing on the account.** Confirmed by the

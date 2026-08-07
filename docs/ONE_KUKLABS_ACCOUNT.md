@@ -1,5 +1,14 @@
 # One Kuklabs Account and AuthKit
 
+> **Superseded as a requirement, 2026-08-07.** KukGit now owns its own accounts,
+> and this integration is an **optional** sign-in path rather than the only one.
+> See the identity mandate in `CLAUDE.md` for why: AuthKit is a router on the
+> KukBook ERP with no staging and no redundancy, and KukGit is meant to serve
+> customers outside Kuklabs who will not create a Kuklabs Account.
+>
+> Everything below still describes the integration accurately, and it is still
+> tested and drilled. What changed is that production no longer requires it.
+
 KukGit production authentication uses central Kuklabs AuthKit. KukGit does not own a separate production password system, Google identity, OTP database or primary user identity.
 
 ## What AuthKit actually is, as deployed

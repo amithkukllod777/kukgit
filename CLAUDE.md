@@ -16,7 +16,25 @@ Build a commercial platform that can host and manage repositories for Kuklabs an
 
 ## Identity mandate
 
-Production must use One Kuklabs Account/AuthKit. A user may belong to multiple organizations. Every repository belongs to one organization. Authorization must be enforced server-side for every read and write.
+**KukGit owns its own accounts.** Email and password, verified email, password
+reset — production-grade, in this repository. One Kuklabs Account/AuthKit stays
+supported as an **optional** sign-in path, not a requirement.
+
+This reverses the earlier mandate, on the owner's decision (2026-08-07), for two
+reasons found by reading the AuthKit service rather than its documentation:
+
+- **Blast radius.** AuthKit is not a separate service. It is a router mounted on
+  the KukBook ERP — one process, one MySQL database, one deploy, no staging, no
+  redundancy. Every ERP deploy restarts authentication; an ERP outage is a
+  sign-in outage. A Git host whose login falls over when the accounting system
+  ships is not a Git host anybody can rely on.
+- **External customers.** KukGit is meant to host repositories for customers
+  outside Kuklabs. Requiring an outside developer to create a Kuklabs Account —
+  on the same system that runs Kuklabs' own ERP — is not a thing that sells.
+
+A user may belong to multiple organizations. Every repository belongs to one
+organization. Authorization must be enforced server-side for every read and
+write.
 
 ## Engineering standards
 

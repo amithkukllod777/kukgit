@@ -18,23 +18,95 @@ function authSchema(db) {
   return cached;
 }
 
+/**
+ * What a password costs to guess.
+ *
+ * `N` doubles the memory *and* the time; `r` sets how much memory each unit is.
+ * At r=8 the working set is `128 * N * r` bytes — 32 MB here — and the whole
+ * point of scrypt is that memory is what makes a GPU farm expensive.
+ *
+ * 32768 rather than Node's default 16384: twice the memory hardness for about a
+ * quarter more time (233 ms against 188 ms on the machine this was measured on).
+ * 65536 was measured too and is 480 ms and 64 MB per hash, which is too much to
+ * spend on a login endpoint that several people can hit at once.
+ *
+ * `maxmem` has to be passed explicitly. Node's default ceiling is 32 MB and this
+ * working set is 33.5 MB, so without it every hash throws — which is exactly the
+ * kind of thing that looks like "logins are broken" in production and nothing at
+ * all in a test.
+ */
+export const PASSWORD_COST = Object.freeze({ N: 32768, r: 8, p: 1 });
+const KEY_BYTES = 64;
+
+// What the first version of this used: Node's defaults, with nothing recorded.
+const LEGACY_COST = Object.freeze({ N: 16384, r: 8, p: 1 });
+
+function scryptOptions({ N, r, p }) {
+  return { N, r, p, maxmem: 256 * N * r };
+}
+
+function derive(password, salt, cost) {
+  return crypto.scryptSync(String(password), salt, KEY_BYTES, scryptOptions(cost));
+}
+
+/**
+ * Splits a stored record into its parameters.
+ *
+ * The original format was `scrypt$salt$hash` — the cost was whatever Node
+ * happened to default to, and nothing wrote it down. That means raising the
+ * cost would have made every existing password unverifiable, so the parameters
+ * are recorded now and a record without them is read as the old defaults.
+ */
+function decodePassword(encoded) {
+  const parts = String(encoded ?? '').split('$');
+  if (parts[0] !== 'scrypt') return null;
+  if (parts.length === 3) return { cost: LEGACY_COST, salt: parts[1], hash: parts[2], legacy: true };
+  if (parts.length === 4) {
+    const cost = {};
+    for (const pair of parts[1].split(',')) {
+      const [key, value] = pair.split('=');
+      cost[key] = Number(value);
+    }
+    if (![cost.N, cost.r, cost.p].every((value) => Number.isInteger(value) && value > 0)) return null;
+    return { cost, salt: parts[2], hash: parts[3], legacy: false };
+  }
+  return null;
+}
+
 export function hashPassword(password) {
   const value = String(password ?? '');
   if (value.length < 10) throw httpError(400, 'Password must be at least 10 characters.');
   const salt = crypto.randomBytes(16);
-  const hash = crypto.scryptSync(value, salt, 64);
-  return `scrypt$${salt.toString('base64url')}$${hash.toString('base64url')}`;
+  const hash = derive(value, salt, PASSWORD_COST);
+  const { N, r, p } = PASSWORD_COST;
+  return `scrypt$N=${N},r=${r},p=${p}$${salt.toString('base64url')}$${hash.toString('base64url')}`;
 }
 
 export function verifyPassword(password, encoded) {
   try {
-    const [scheme, saltRaw, hashRaw] = String(encoded).split('$');
-    if (scheme !== 'scrypt') return false;
-    const actual = crypto.scryptSync(String(password), Buffer.from(saltRaw, 'base64url'), 64);
-    return safeEqual(actual, Buffer.from(hashRaw, 'base64url'));
+    const record = decodePassword(encoded);
+    if (!record) return false;
+    const actual = derive(password, Buffer.from(record.salt, 'base64url'), record.cost);
+    return safeEqual(actual, Buffer.from(record.hash, 'base64url'));
   } catch {
     return false;
   }
+}
+
+/**
+ * Whether a stored password should be written again at the current cost.
+ *
+ * Raising the cost only protects people who sign in afterwards, and only if
+ * something actually rewrites their record. A cost that goes up and never
+ * reaches an existing account is a change to the documentation.
+ */
+export function passwordNeedsRehash(encoded) {
+  const record = decodePassword(encoded);
+  if (!record) return false;
+  return record.legacy
+    || record.cost.N < PASSWORD_COST.N
+    || record.cost.r < PASSWORD_COST.r
+    || record.cost.p < PASSWORD_COST.p;
 }
 
 export function createSession(db, userId) {
@@ -98,6 +170,12 @@ export function authenticate(db, email, password) {
   `).get(normalized);
   if (!user || (user.authSource && user.authSource !== 'local') || !verifyPassword(password, user.passwordHash)) {
     throw httpError(401, 'Incorrect email or password.', 'INVALID_CREDENTIALS');
+  }
+  // Signing in is the only moment the plaintext is available, so it is the only
+  // moment an old record can be rewritten at the current cost. Nobody is asked
+  // to do anything and nothing about the session changes.
+  if (passwordNeedsRehash(user.passwordHash)) {
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), user.id);
   }
   return user;
 }
