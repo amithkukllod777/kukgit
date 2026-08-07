@@ -28,7 +28,8 @@ function resolveArchive(config, value) {
 function usage() {
   process.stdout.write(`KukGit production recovery rehearsal\n\n` +
     `  npm run rehearse -- [--archive <file>] [--target <empty-dir>] [--operator name]\n` +
-    `                      [--evidence <file.json>] [--keep-target]\n\n` +
+    `                      [--evidence <file.json>] [--authkit-evidence <file.json>]\n` +
+    `                      [--keep-target]\n\n` +
     `Restores a verified archive into a throwaway directory and proves the restored\n` +
     `instance is serviceable: every repository passes git fsck with its exact refs,\n` +
     `every Git LFS object matches its SHA-256, no credential is restored in the\n` +
@@ -50,7 +51,14 @@ function summary(record) {
   ];
   for (const failure of record.failures) lines.push(`  ! ${failure}`);
   lines.push('', 'Outstanding manual checks — the drill is not complete until these are signed off:');
-  for (const check of record.manualChecks) lines.push(`  [ ] ${check.id}: ${check.description}`);
+  for (const check of record.manualChecks) {
+    // `rehearsed` is not `verified`, and the box stays open for it. The drill
+    // ran against a stand-in AuthKit, which proves KukGit's half and nothing
+    // about the real service.
+    const box = check.status === 'verified' ? 'x' : ' ';
+    const note = check.status === 'rehearsed' ? ` — rehearsed against the ${check.evidence.authkit}, still to be verified` : '';
+    lines.push(`  [${box}] ${check.id}: ${check.description}${note}`);
+  }
   return `${lines.join('\n')}\n`;
 }
 
@@ -70,6 +78,7 @@ if (['help', '--help', '-h'].includes(process.argv[2])) {
       archivePath: archive,
       targetDir: target,
       operator: argument('--operator', process.env.USER || 'unknown'),
+      authkitEvidencePath: argument('--authkit-evidence'),
       keepTarget,
     });
 

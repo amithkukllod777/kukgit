@@ -60,7 +60,12 @@ function validateAuthKitUrl(value, isProduction) {
 
 export function loadConfig(overrides = {}) {
   const dataDir = path.resolve(overrides.dataDir ?? process.env.KUKGIT_DATA_DIR ?? path.join(root, 'data'));
-  const isProduction = (overrides.nodeEnv ?? process.env.NODE_ENV) === 'production';
+  // Kept on the config rather than read from `process.env` wherever it is
+  // needed. A harness that builds a config with `nodeEnv: 'test'` is asking for
+  // an instance that behaves as a test instance, and code reaching around the
+  // config to the environment quietly gives it a production one.
+  const nodeEnv = String(overrides.nodeEnv ?? process.env.NODE_ENV ?? 'development');
+  const isProduction = nodeEnv === 'production';
   const baseUrl = overrides.baseUrl ?? process.env.KUKGIT_BASE_URL ?? `http://localhost:${overrides.port ?? process.env.PORT ?? 8787}`;
   const cookieSecure = booleanValue(overrides.cookieSecure ?? process.env.KUKGIT_COOKIE_SECURE, isProduction);
   const authMode = String(overrides.authMode ?? process.env.KUKGIT_AUTH_MODE ?? (isProduction ? 'authkit' : 'local')).toLowerCase();
@@ -252,6 +257,7 @@ export function loadConfig(overrides = {}) {
     maintenancePath: path.resolve(overrides.maintenancePath ?? process.env.KUKGIT_MAINTENANCE_PATH ?? path.join(dataDir, 'maintenance.json')),
     backupLockPath: path.resolve(overrides.backupLockPath ?? process.env.KUKGIT_BACKUP_LOCK_PATH ?? path.join(dataDir, 'backup.lock')),
     publicDir: path.resolve(overrides.publicDir ?? process.env.KUKGIT_PUBLIC_DIR ?? path.join(root, 'public')),
+    nodeEnv,
     isProduction,
     cookieSecure,
     authMode,

@@ -499,7 +499,7 @@ export function createApp({ config, db }) {
       if (!res.headersSent) sendJson(res, status, { error: { code: error.code || 'INTERNAL_ERROR', message: status >= 500 ? 'An unexpected server error occurred.' : error.message, requestId } });
       else res.end();
     } finally {
-      if (process.env.NODE_ENV !== 'test') console.log(`${req.method} ${req.url} ${res.statusCode || 200} ${Date.now() - started}ms ${requestId}`);
+      if (config.nodeEnv !== 'test') console.log(`${req.method} ${req.url} ${res.statusCode || 200} ${Date.now() - started}ms ${requestId}`);
     }
   };
 }

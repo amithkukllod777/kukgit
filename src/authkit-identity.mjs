@@ -439,12 +439,23 @@ export function createAuthKitIdentityMiddleware({ config, db, next }) {
       return runWithRequestIdentity(identity ?? { mode: 'authkit', user: null }, () => next(req, res));
     } catch (error) {
       const status = Number(error.status) || 503;
+      // 401 here means the bridge is already gone — `validateSession` deleted
+      // it — so the browser is holding a cookie that resolves to nothing and
+      // will keep sending it on every request until the tab is closed. The
+      // central session guard clears it on the same outcome; this path did not,
+      // which left a centrally revoked device signed in as far as the cookie
+      // jar was concerned. Found by the AuthKit rollout drill.
+      //
+      // Only on 401. A 503 means AuthKit is unreachable, not that the session
+      // ended, and clearing cookies during an outage signs out an entire
+      // healthy instance.
+      const headers = status === 401 ? { 'Set-Cookie': clearAuthKitSessionCookie(config) } : {};
       return sendJson(res, status, {
         error: {
           code: error.code || 'AUTHKIT_UNAVAILABLE',
           message: status >= 500 ? 'Kuklabs Account is temporarily unavailable.' : error.message,
         },
-      });
+      }, headers);
     }
   };
 }

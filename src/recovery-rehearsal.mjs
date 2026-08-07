@@ -20,6 +20,44 @@ const SESSION_ENVELOPE = /^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 // authenticate on the operator's behalf. Each one is recorded as outstanding
 // until signed off, so a rehearsal is never reported complete on the automated
 // evidence by itself.
+/**
+ * Folds an AuthKit drill record into the manual checklist.
+ *
+ * `npm run authkit:rehearse` automates three of the checks below, and pointing
+ * this at its evidence file marks those `rehearsed` — **not** `verified`. The
+ * distinction is the whole point: the drill runs against a stand-in AuthKit, so
+ * it shows KukGit's half of the conversation is right and says nothing about
+ * the real service. A rehearsal is still not complete on the strength of it.
+ *
+ * A record that failed, or that was produced against a stand-in and claims
+ * otherwise, is ignored rather than trusted.
+ */
+export function applyAuthKitEvidence(checks, evidencePath) {
+  let record = null;
+  if (evidencePath) {
+    try { record = JSON.parse(fs.readFileSync(path.resolve(evidencePath), 'utf8')); }
+    catch { record = null; }
+  }
+  const covered = new Map();
+  if (record?.format === 'kukgit-authkit-rehearsal/1' && record.result === 'passed') {
+    for (const check of record.checks ?? []) if (check.ok) covered.set(check.id, record);
+  }
+  return checks.map((check) => {
+    const evidence = covered.get(check.id);
+    if (!evidence) return { ...check, status: 'outstanding' };
+    return {
+      ...check,
+      status: evidence.confidence === 'verified' ? 'verified' : 'rehearsed',
+      evidence: {
+        drill: 'kukgit-authkit-rehearsal/1',
+        authkit: evidence.authkit?.kind ?? 'unknown',
+        confidence: evidence.confidence ?? 'unknown',
+        finishedAt: evidence.finishedAt ?? null,
+      },
+    };
+  });
+}
+
 export const MANUAL_CHECKS = [
   {
     id: 'authkit.login',
@@ -309,6 +347,7 @@ export async function runRecoveryRehearsal(config, {
   sourceDatabasePath = config.databasePath,
   operator = 'unknown',
   keepTarget = true,
+  authkitEvidencePath = null,
 } = {}) {
   if (!archivePath) throw httpError(400, 'A backup archive path is required.', 'REHEARSAL_ARCHIVE_REQUIRED');
   if (!targetDir) throw httpError(400, 'A restore target directory is required.', 'REHEARSAL_TARGET_REQUIRED');
@@ -387,7 +426,7 @@ export async function runRecoveryRehearsal(config, {
         credentialsAtRest: credentials.safe,
         dataLoss,
       },
-      manualChecks: MANUAL_CHECKS.map((check) => ({ ...check, status: 'outstanding' })),
+      manualChecks: applyAuthKitEvidence(MANUAL_CHECKS, authkitEvidencePath),
       failures,
       // An automated pass is necessary but not sufficient: the drill is only
       // complete once the manual checks above are signed off too.

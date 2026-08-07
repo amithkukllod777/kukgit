@@ -122,6 +122,12 @@ credential a backup deliberately does not contain. Each is tracked as
 `outstanding` in the evidence record until confirmed:
 
 - [ ] test AuthKit login, refresh rotation and centrally revoked device sessions
+      — **rehearsed** by `npm run authkit:rehearse`, which drives all three
+      against a stand-in AuthKit over real HTTP and found a bug doing it
+      ([AUTHKIT_REHEARSAL.md](AUTHKIT_REHEARSAL.md)). Pass its evidence file to
+      `npm run rehearse -- --authkit-evidence <file>` and the three checks read
+      `rehearsed`. They stay unticked: a stand-in cannot sign off a production
+      check, and only a staging run against the real service can
 - [ ] test Git HTTP, SSH and Git LFS authorization after restore
 - [ ] test SMTP retry, provider suppression and WebSocket notification recovery
 - [ ] run the drill against a production-sized archive and file the evidence
@@ -297,6 +303,13 @@ not the boundary being trusted. Those items stay in scope here.
       renderer ([MARKDOWN.md](MARKDOWN.md)), notifications to the people in a
       conversation ([ISSUE_COMMENTS.md](ISSUE_COMMENTS.md)), and reactions
       ([ISSUE_REACTIONS.md](ISSUE_REACTIONS.md))
+- [x] the AuthKit rollout checklist became a command — `npm run authkit:rehearse`
+      drives fifteen flows against a stand-in Kuklabs AuthKit over real HTTP,
+      and four tests break the code to prove the drill notices,
+      [AUTHKIT_REHEARSAL.md](AUTHKIT_REHEARSAL.md)
+- [x] the schema stopped living inside `server.mjs` — `applySchema` is shared
+      with anything that needs a real instance, so a harness cannot quietly
+      test tables production does not have
 
 ## Triage rules
 
