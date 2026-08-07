@@ -3,6 +3,7 @@ import { audit, uid } from './db.mjs';
 import { httpError } from './security.mjs';
 import { PLANS, PURCHASABLE_PLANS, planFor } from './plans.mjs';
 import { leaseGate } from './job-leases.mjs';
+import { migrateBillingSuperseded, recordSupersededSubscription } from './billing-superseded.mjs';
 
 /**
  * The billing core: subscriptions, invoices, and the only writer of a plan.
@@ -96,6 +97,7 @@ export function forgetBillingProviders() {
 }
 
 export function migrateBilling(db) {
+  migrateBillingSuperseded(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS billing_subscriptions (
       organization_id TEXT PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
@@ -248,6 +250,22 @@ function applyChange(db, {
   const state = assertStatus(status);
   const organization = db.prepare('SELECT id, plan FROM organizations WHERE id = ?').get(organizationId);
   if (!organization) throw httpError(404, 'Organization not found.', 'ORG_NOT_FOUND');
+
+  // Before the upsert, because the upsert is what loses it. A provider
+  // reference that is replaced by a different one means a subscription is still
+  // live at the provider with nothing here pointing at it — see
+  // billing-superseded.mjs.
+  const previous = subscriptionFor(db, organizationId);
+  if (previous?.reference && reference && previous.reference !== reference) {
+    recordSupersededSubscription(db, {
+      organizationId,
+      provider: previous.provider,
+      previousReference: previous.reference,
+      previousPlan: previous.plan,
+      replacedByReference: reference,
+      replacedByPlan: wanted,
+    });
+  }
 
   db.prepare(`
     INSERT INTO billing_subscriptions (

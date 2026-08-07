@@ -1,6 +1,7 @@
 import { audit, uid } from './db.mjs';
 import { httpError } from './security.mjs';
 import { PURCHASABLE_PLANS, planFor } from './plans.mjs';
+import { subscriptionFor } from './billing.mjs';
 
 /**
  * Buying a plan without anybody at Kuklabs doing anything.
@@ -146,6 +147,44 @@ function shapeSession(row, { reused = false } = {}) {
  * money; this decides nothing about authorization and everything about not
  * creating two subscriptions for one intention.
  */
+/**
+ * Refuses to start a purchase while the customer already has one.
+ *
+ * `billing_subscriptions` holds one row per organization. A second provider
+ * subscription therefore does not sit beside the first — its activation event
+ * *replaces* the stored reference, the first subscription keeps charging the
+ * card every month, and `Cancel` on the billing screen can only ever reach the
+ * newer of the two. Somebody on Team who buys Business pays for both until
+ * they notice.
+ *
+ * So the second purchase is refused rather than made safe afterwards. There is
+ * no in-place plan change yet: Razorpay has no API for one, and building half
+ * of it — Stripe only — would mean the same button does different things to
+ * different customers' money.
+ *
+ * Three states are still allowed to buy:
+ *
+ *   * `past_due` and `canceled` — nothing is charging them; this is how they
+ *     come back
+ *   * a subscription already ending at cycle end — they have said they want it
+ *     gone, so the overlap is bounded and it is their decision
+ */
+function assertNoLiveSubscription(db, organizationId, planId) {
+  const subscription = subscriptionFor(db, organizationId);
+  if (!subscription) return;
+  if (!['active', 'trialing'].includes(subscription.status)) return;
+  if (subscription.cancelsAt) return;
+
+  if (subscription.plan === planId) {
+    throw httpError(409, 'This organization is already on that plan.', 'BILLING_ALREADY_ON_PLAN');
+  }
+  throw httpError(
+    409,
+    'This organization already has an active subscription. Cancel it first — it ends at the close of the period you have paid for, and buying now would mean paying for both.',
+    'BILLING_SUBSCRIPTION_ACTIVE',
+  );
+}
+
 export async function startCheckout(db, config, {
   organization,
   plan,
@@ -165,6 +204,8 @@ export async function startCheckout(db, config, {
   if (!adapter || !adapter.configured(db, config, planId)) {
     throw httpError(422, 'That payment provider is not available for this plan.', 'BILLING_CHECKOUT_UNAVAILABLE');
   }
+
+  assertNoLiveSubscription(db, organization.id, planId);
 
   const existing = reusableSession(db, { organizationId: organization.id, provider: providerId, plan: planId, now });
   if (existing) return shapeSession(existing, { reused: true });

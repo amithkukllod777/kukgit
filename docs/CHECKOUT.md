@@ -104,6 +104,51 @@ reused session is the only protection.
 After the window, a new checkout is created — an abandoned session from this
 morning is not what somebody is shown this afternoon.
 
+## Buying while you already have a subscription
+
+Refused, with a `409`.
+
+`billing_subscriptions` holds **one row per organization**, keyed on the
+organization. So a second provider subscription does not sit beside the first —
+its activation event *replaces* the stored reference. The first subscription is
+still live at the provider, still charging the card every month, and `Cancel` on
+the billing screen can only ever reach the newer of the two.
+
+Nothing prevented that until now. Somebody on Team who bought Business paid for
+both until they noticed, and after the swap the older reference existed nowhere
+in KukGit except the checkout-session row that started it — so a subscription
+created in the provider's dashboard was gone entirely.
+
+Three states may still buy:
+
+- **`past_due`** and **`canceled`** — nothing is charging them; this is how a
+  lapsed customer comes back.
+- **A subscription already ending at cycle end.** They have said they want it
+  gone, so the overlap is bounded and it is their decision.
+
+The refusal is on the *subscription*, not on `organizations.plan`. A `founder`
+organization has no subscription and never bought anything; checking the plan
+column would have refused it for no reason.
+
+### The net underneath
+
+Checkout is not the only way a second subscription appears — the provider's own
+dashboard, a race between two events, a restore taken mid-change. So when an
+activation replaces a stored reference, the old one is written to
+`billing_superseded_subscriptions` instead of vanishing, with the reference that
+replaced it, and it stays **open** until an operator says what happened to it.
+
+It is on the operator billing screen beside the rejected webhooks, at
+`GET /api/instance-admin/billing/events`. Closing one needs a written
+resolution: a row that says somebody looked, with no record of what they found,
+is the same as not looking.
+
+**Nothing is cancelled automatically.** Cancelling a subscription KukGit has
+lost track of, with no human looking, is how somebody's paid plan ends because
+two events arrived out of order. The reference is in the audit trail on purpose
+— it is not a secret, it is what an operator types into the provider's dashboard
+to find the subscription that is still charging a customer.
+
 ## Cancelling
 
 `free` is not sold at checkout, and neither is `founder`. Downgrading to free is
@@ -283,9 +328,16 @@ mail server is down is the more expensive failure by far.
   credentials — which proves the paths, the verbs and the auth shape, and
   nothing about what a successful response looks like. Razorpay and Stripe in
   test mode is the next step.
-- **No downgrade between paid plans.** Business to Team means cancelling and
-  buying, with no proration.
-- **No proration.** A plan change takes effect when the provider says so.
+- **No in-place plan change.** Business to Team means cancelling and buying
+  again. Razorpay has no API for changing a subscription's plan at all, and
+  building it for Stripe only would mean the same button did different things to
+  different customers' money. Buying while subscribed is now refused rather than
+  silently charging twice — see above — but the change itself is still two
+  steps.
+- **No proration.** A plan change takes effect when the provider says so. Note
+  that a downgrade taking effect at the end of the period the customer has paid
+  for needs no proration: nothing is refunded because nothing is taken away
+  early.
 - **No tax handling.** GST and VAT are the provider's, and `billing_invoices` is
   not a compliant tax document.
 - **No customer portal.** Changing a card means going to the provider.
