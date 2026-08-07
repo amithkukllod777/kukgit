@@ -33,6 +33,20 @@ import http from 'node:http';
 
 const CONTRACT = 'kuklabs-authkit-rest/1';
 
+/**
+ * The live service returns three different messages behind one status.
+ *
+ * "Sign in required." with no header, "Session expired. Please sign in again."
+ * for a bad or expired token, "Account not found." for a valid token whose user
+ * is gone. Anything distinguishing them has to match on the message, so the
+ * stand-in has to produce all three.
+ */
+function bearerRefusal(bearer, resolved) {
+  if (!bearer) return 'Sign in required.';
+  if (resolved?.reason === 'missing-user') return 'Account not found. Please sign in again.';
+  return 'Session expired. Please sign in again.';
+}
+
 function base64url(value) {
   return Buffer.from(value).toString('base64').replace(/=+$/, '').replaceAll('+', '-').replaceAll('/', '_');
 }
@@ -46,7 +60,7 @@ function base64url(value) {
  * stand-in that only ever put it in the envelope would leave the second path —
  * the one production actually uses — unexercised.
  */
-function issueAccessToken({ sid, subject, ttlSeconds, carrySidInClaims }) {
+function issueAccessToken({ sid, subject, ttlSeconds }) {
   const header = base64url(JSON.stringify({ alg: 'none', typ: 'JWT' }));
   const claims = {
     sub: String(subject),
@@ -55,7 +69,7 @@ function issueAccessToken({ sid, subject, ttlSeconds, carrySidInClaims }) {
     // tokens minted in the same second are byte-identical — and a rotation
     // check comparing them would pass while nothing rotated.
     jti: crypto.randomBytes(8).toString('hex'),
-    ...(carrySidInClaims ? { sid } : {}),
+    sid,
   };
   // Not signed, and it says so. Anything that verified this signature would be
   // verifying nothing; KukGit does not, and should not start because a
@@ -88,10 +102,15 @@ function json(res, status, payload) {
 
 export const SIMULATOR_DEFAULTS = Object.freeze({
   productId: 'kukgit',
-  accessTtlSeconds: 900,
+  // The live service's default: AUTHKIT_ACCESS_TTL_HOURS = 24.
+  accessTtlSeconds: 86_400,
   refreshTtlDays: 60,
   otpCode: '123456',
   googleIdToken: 'simulator-google-id-token',
+  // `/v1/auth/*` on the live service: twenty requests a minute, per source IP,
+  // in-memory per process. KukGit calls it server-to-server, so every user of
+  // an instance shares one bucket.
+  rateLimitPerMinute: 20,
 });
 
 /**
@@ -108,7 +127,19 @@ export function createAuthKitSimulator(options = {}) {
     offline: false,
     productAccess: 'active',
     missingProductHeader: [],
+    rateLimited: 0,
   };
+
+  // One bucket, because the live limiter keys on source IP and KukGit talks to
+  // it server-to-server: every user of an instance is the same IP.
+  const window = [];
+  function rateLimitExceeded(nowMs) {
+    if (!settings.rateLimitPerMinute) return false;
+    while (window.length && nowMs - window[0] >= 60_000) window.shift();
+    if (window.length >= settings.rateLimitPerMinute) return true;
+    window.push(nowMs);
+    return false;
+  }
 
   let nextUserId = 1001;
   for (const account of options.accounts ?? [{ email: 'founder@kuklabs.com', password: 'simulator-password', name: 'Founder' }]) {
@@ -131,13 +162,13 @@ export function createAuthKitSimulator(options = {}) {
     return rest;
   }
 
-  function openSession(account, { carrySidInClaims = true, sidInEnvelope = true } = {}) {
+  function openSession(account) {
     const sid = `sess_${crypto.randomBytes(9).toString('hex')}`;
     const session = {
       sid,
       userId: account.id,
       email: account.email,
-      accessToken: issueAccessToken({ sid, subject: account.id, ttlSeconds: settings.accessTtlSeconds, carrySidInClaims }),
+      accessToken: issueAccessToken({ sid, subject: account.id, ttlSeconds: settings.accessTtlSeconds }),
       accessExpiresAt: Date.now() + settings.accessTtlSeconds * 1000,
       refreshToken: `rt_${crypto.randomBytes(18).toString('hex')}`,
       refreshExpiresAt: Date.now() + settings.refreshTtlDays * 86400 * 1000,
@@ -152,7 +183,10 @@ export function createAuthKitSimulator(options = {}) {
         token_type: 'Bearer',
         expires_in: settings.accessTtlSeconds,
         user: publicUser(account),
-        ...(sidInEnvelope ? { sid } : {}),
+        // No top-level `sid`, on any route. The live service carries it only in
+        // the access token's claims — so the claims path is the one KukGit
+        // actually depends on, and a stand-in that also put it in the envelope
+        // would leave that path unexercised.
       },
       session,
     };
@@ -185,6 +219,15 @@ export function createAuthKitSimulator(options = {}) {
       // What an unreachable identity provider looks like from the other side:
       // the socket answers, the service does not.
       return json(res, 503, { error: true, message: 'AuthKit is unavailable.' });
+    }
+
+    if (rateLimitExceeded(Date.now())) {
+      state.rateLimited += 1;
+      // A different body shape from every other error on this service: `error`
+      // is a string here rather than `true` beside a `message`. Anything
+      // parsing the envelope has to survive that.
+      res.setHeader('Retry-After', '60');
+      return json(res, 429, { error: 'Too many requests. Please try again later.' });
     }
 
     const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req) : {};
@@ -241,7 +284,7 @@ export function createAuthKitSimulator(options = {}) {
       }
       // Signup completes without an envelope `sid`, so the claims path that
       // production depends on is the one under test here.
-      return json(res, 200, openSession(account, { sidInEnvelope: false }).body);
+      return json(res, 200, openSession(account).body);
     }
 
     if (req.method === 'POST' && url.pathname === '/v1/auth/google') {
@@ -272,7 +315,7 @@ export function createAuthKitSimulator(options = {}) {
       }
       const account = [...accounts.values()].find((item) => item.id === session.userId);
       spentRefreshTokens.set(session.refreshToken, session.sid);
-      session.accessToken = issueAccessToken({ sid: session.sid, subject: session.userId, ttlSeconds: settings.accessTtlSeconds, carrySidInClaims: true });
+      session.accessToken = issueAccessToken({ sid: session.sid, subject: session.userId, ttlSeconds: settings.accessTtlSeconds });
       session.accessExpiresAt = Date.now() + settings.accessTtlSeconds * 1000;
       session.refreshToken = `rt_${crypto.randomBytes(18).toString('hex')}`;
       return json(res, 200, {
@@ -281,20 +324,19 @@ export function createAuthKitSimulator(options = {}) {
         token_type: 'Bearer',
         expires_in: settings.accessTtlSeconds,
         user: publicUser(account),
-        sid: session.sid,
       });
     }
 
     const resolved = sessionForAccessToken(bearer);
 
     if (req.method === 'GET' && url.pathname === '/v1/auth/me') {
-      if (!resolved || resolved.reason) return json(res, 401, { error: true, message: 'Session expired.' });
+      if (!resolved || resolved.reason) return json(res, 401, { error: true, message: bearerRefusal(bearer, resolved) });
       const account = [...accounts.values()].find((item) => item.id === resolved.session.userId);
       return json(res, 200, { user: publicUser(account) });
     }
 
     if (req.method === 'GET' && url.pathname === '/v1/auth/sessions') {
-      if (!resolved || resolved.reason) return json(res, 401, { error: true, message: 'Session expired.' });
+      if (!resolved || resolved.reason) return json(res, 401, { error: true, message: bearerRefusal(bearer, resolved) });
       const live = [...sessions.values()].filter((item) => !item.revokedAt && item.userId === resolved.session.userId);
       return json(res, 200, {
         sessions: live.map((item) => ({
@@ -308,8 +350,11 @@ export function createAuthKitSimulator(options = {}) {
 
     if (req.method === 'GET' && url.pathname === `/v1/auth/products/${settings.productId}/access`) {
       if (!resolved || resolved.reason) return json(res, 401, { error: true, message: 'Session expired.' });
+      // 200 with `access: false`, not 403. The live service answers this way,
+      // and KukGit reads the field rather than the status — a stand-in that
+      // returned 403 would let a bug in that reading pass unnoticed.
       if (state.productAccess !== 'active') {
-        return json(res, 403, { product: settings.productId, status: state.productAccess, access: false });
+        return json(res, 200, { product: settings.productId, status: state.productAccess, access: false });
       }
       return json(res, 200, { product: settings.productId, status: 'active', access: true });
     }
@@ -340,9 +385,19 @@ export function createAuthKitSimulator(options = {}) {
       await new Promise((resolve) => server.close(resolve));
     },
 
-    /** Ages every live access token so the next protected call has to refresh. */
+    /**
+     * Ages every live access token so the next protected call has to refresh.
+     *
+     * The token is re-issued with a past `exp` as well as the bookkeeping being
+     * moved. A real expired access token *says* it is expired, and anything
+     * reading the claims locally — which is how KukGit avoids spending one of
+     * twenty requests a minute — has to be able to tell.
+     */
     expireAccessTokens() {
-      for (const session of sessions.values()) session.accessExpiresAt = Date.now() - 1000;
+      for (const session of sessions.values()) {
+        session.accessExpiresAt = Date.now() - 1000;
+        session.accessToken = issueAccessToken({ sid: session.sid, subject: session.userId, ttlSeconds: -60 });
+      }
     },
     /** What "sign this device out" does on the other side. */
     revokeSession(sid) {
@@ -362,5 +417,12 @@ export function createAuthKitSimulator(options = {}) {
     },
     setProductAccess(status) { state.productAccess = status; },
     setOffline(offline) { state.offline = Boolean(offline); },
+    /** Fills the bucket, so the next request is refused with a 429. */
+    exhaustRateLimit() {
+      const nowMs = Date.now();
+      window.length = 0;
+      for (let index = 0; index < (settings.rateLimitPerMinute || 0); index += 1) window.push(nowMs);
+    },
+    clearRateLimit() { window.length = 0; },
   };
 }

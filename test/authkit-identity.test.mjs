@@ -196,6 +196,11 @@ function setupDatabase(t, authkitBaseUrl) {
     authMode: 'authkit',
     authkitBaseUrl,
     authkitEncryptionKey: 'authkit-test-encryption-key-with-more-than-32-characters',
+    // Every check in this file is about what happens when KukGit *asks*
+    // AuthKit — revocation, rotation, product denial. The revalidation window
+    // exists so that most requests do not ask, so it is off here; the window
+    // itself is covered in authkit-session-window.test.mjs.
+    authkitSessionCheckSeconds: 0,
     authkitTimeoutMs: 2000,
     adminEmail: identity.email,
     adminPassword: 'unused-production-password',

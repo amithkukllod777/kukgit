@@ -1,4 +1,4 @@
-import { clearAuthKitSessionCookie, decryptAuthKitSecret, requestAuthKit } from './authkit-identity.mjs';
+import { clearAuthKitSessionCookie, decryptAuthKitSecret, requestAuthKit, withinSessionCheckWindow } from './authkit-identity.mjs';
 import { currentRequestIdentity } from './identity-context.mjs';
 import { hashToken, parseCookies } from './security.mjs';
 
@@ -33,7 +33,7 @@ function authKitSession(db, req) {
   const tokenHash = hashToken(token);
   return db.prepare(`
     SELECT token_hash AS tokenHash, authkit_access_ciphertext AS accessCiphertext,
-      authkit_sid AS authkitSid
+      authkit_sid AS authkitSid, last_validated_at AS lastValidatedAt
     FROM sessions
     WHERE token_hash = ? AND auth_mode = 'authkit'
   `).get(tokenHash);
@@ -54,6 +54,12 @@ export function createAuthKitCentralSessionGuard({ config, db, next }) {
     const session = authKitSession(db, req);
     if (!session) return next(req, res);
 
+    // The identity middleware ran first and, inside the revalidation window,
+    // answered without touching AuthKit. Asking `/v1/auth/sessions` here anyway
+    // would put the instance straight back over the twenty-requests-a-minute
+    // limit that window exists to stay under.
+    if (withinSessionCheckWindow(config, session)) return next(req, res);
+
     try {
       const accessToken = decryptAuthKitSecret(config, session.accessCiphertext, session.tokenHash);
       const { response, payload } = await requestAuthKit(config, '/v1/auth/sessions', { accessToken });
@@ -62,6 +68,14 @@ export function createAuthKitCentralSessionGuard({ config, db, next }) {
         return sendJson(res, 401, {
           error: { code: 'AUTHKIT_SESSION_REVOKED', message: 'This Kuklabs Account session was revoked. Sign in again.' },
         }, { 'Set-Cookie': clearAuthKitSessionCookie(config) });
+      }
+      if (response.status === 429) {
+        // Rate limited, not refused. The bridge stays exactly as it was and the
+        // cookie is untouched — the alternative is emptying every browser on
+        // the instance because one busy minute used the shared bucket.
+        return sendJson(res, 503, {
+          error: { code: 'AUTHKIT_RATE_LIMITED', message: 'Kuklabs Account is rate limiting this instance. Try again shortly.' },
+        }, { 'Retry-After': String(response.headers.get('Retry-After') ?? 30) });
       }
       if (!response.ok) {
         return sendJson(res, 503, {
@@ -87,7 +101,14 @@ export function createAuthKitCentralSessionGuard({ config, db, next }) {
         session.authkitSid = String(current.id);
       }
       const matchesStoredSid = !session.authkitSid || current?.id === session.authkitSid;
-      if (!current || !matchesStoredSid) {
+      // A live session that AuthKit does not mark `current` is not the same as
+      // a revoked one. AuthKit computes `current` by comparing the token's `sid`
+      // claim, and a token minted by a path that carries no `sid` marks nothing
+      // current while still returning the full list — so an empty answer is the
+      // only shape that means "this device is gone".
+      const listedByStoredSid = session.authkitSid
+        && sessions.some((item) => String(item?.id ?? '') === session.authkitSid);
+      if ((!current && !listedByStoredSid) || (current && !matchesStoredSid)) {
         revokeBridge(db, session);
         return sendJson(res, 401, {
           error: { code: 'AUTHKIT_SESSION_REVOKED', message: 'This Kuklabs Account session was revoked. Sign in again.' },

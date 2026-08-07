@@ -107,6 +107,10 @@ function createContext(t, authkitBaseUrl) {
     authMode: 'authkit',
     authkitBaseUrl,
     authkitEncryptionKey: 'hardening-test-encryption-key-with-at-least-32-characters',
+    // These tests are about what KukGit does when it asks AuthKit. The
+    // revalidation window exists so that most requests do not ask, and it is
+    // covered on its own in authkit-session-window.test.mjs.
+    authkitSessionCheckSeconds: 0,
     adminEmail: verifiedUser.email,
   });
   const db = openDatabase(config);

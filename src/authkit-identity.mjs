@@ -348,6 +348,12 @@ async function refreshSession(db, config, session, refreshToken) {
     method: 'POST',
     body: { refresh_token: refreshToken },
   });
+  if (response.status === 429) {
+    // The refresh was never attempted as far as AuthKit is concerned, so the
+    // session is still whatever it was. Deleting the bridge here would turn a
+    // busy minute into a forced sign-in.
+    throw httpError(503, 'Kuklabs Account is rate limiting this instance.', 'AUTHKIT_RATE_LIMITED');
+  }
   if (!response.ok) {
     revokeLocalSession(db, session.tokenHash);
     throw httpError(401, payload?.message || 'Kuklabs Account session expired.', 'AUTHKIT_SESSION_EXPIRED');
@@ -375,6 +381,68 @@ async function refreshSession(db, config, session, refreshToken) {
   return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
 }
 
+/**
+ * Whether a bridge session was checked with AuthKit recently enough to trust.
+ *
+ * The live AuthKit rate-limits `/v1/auth/*` to twenty requests a minute per
+ * source IP, and KukGit calls it server-to-server — so every user of an
+ * instance shares one bucket. Asking three questions on every protected request
+ * meant about six page loads a minute for the whole product before the
+ * twenty-first request came back `429`.
+ *
+ * So a session that was validated inside the window is trusted from the local
+ * row, and the access token's own `exp` is checked locally as well: the token
+ * is a JWT and carries its expiry, so an expired one is caught here without
+ * asking anybody.
+ *
+ * `KUKGIT_AUTHKIT_SESSION_CHECK_SECONDS=0` restores the old behaviour for an
+ * instance whose AuthKit does not rate-limit.
+ */
+export function withinSessionCheckWindow(config, session, now = new Date()) {
+  const window = Number(config.authkitSessionCheckSeconds ?? 0);
+  if (!window) return false;
+  const last = Date.parse(String(session?.lastValidatedAt ?? '').replace(' ', 'T').replace(/Z?$/, 'Z'));
+  if (!Number.isFinite(last)) return false;
+  return now.getTime() - last < window * 1000;
+}
+
+/**
+ * The access token's own expiry, read from its claims.
+ *
+ * KukGit cannot verify the signature — AuthKit signs with a secret KukGit does
+ * not have, and should not have — but the expiry is not a security claim here.
+ * It decides whether to spend one of twenty requests a minute asking, and a
+ * forged early expiry only causes an extra call.
+ */
+function accessTokenExpired(accessToken, now = new Date()) {
+  const claims = authKitTokenClaims(accessToken);
+  const exp = Number(claims?.exp);
+  if (!Number.isFinite(exp)) return false;
+  return exp * 1000 <= now.getTime();
+}
+
+/** The identity a trusted local row produces, without asking AuthKit. */
+function localIdentity(session) {
+  return {
+    mode: 'authkit',
+    user: {
+      id: session.id,
+      email: session.email,
+      displayName: session.displayName,
+      avatarUrl: session.avatarUrl,
+      kuklabsUserId: session.kuklabsUserId,
+      authSource: session.authSource,
+      emailVerified: session.emailVerified,
+      phone: session.phone,
+    },
+    session: {
+      tokenHash: session.tokenHash,
+      authkitSid: session.authkitSid,
+      lastValidatedAt: session.lastValidatedAt,
+    },
+  };
+}
+
 async function validateSession(db, config, session) {
   if (new Date(session.refreshExpiresAt || session.expiresAt).getTime() <= Date.now()) {
     revokeLocalSession(db, session.tokenHash);
@@ -382,6 +450,13 @@ async function validateSession(db, config, session) {
   }
   let accessToken = decryptAuthKitSecret(config, session.accessCiphertext, session.tokenHash);
   let refreshToken = decryptAuthKitSecret(config, session.refreshCiphertext, session.tokenHash);
+
+  // Nothing upstream when the session was checked recently and its access token
+  // has not run out. This is the whole of the rate-limit fix: steady-state
+  // browsing costs AuthKit nothing.
+  if (withinSessionCheckWindow(config, session) && !accessTokenExpired(accessToken)) {
+    return localIdentity(session);
+  }
 
   let me = await requestAuthKit(config, '/v1/auth/me', { accessToken });
   if (me.response.status === 401) {
@@ -393,6 +468,12 @@ async function validateSession(db, config, session) {
   if (me.response.status === 401) {
     revokeLocalSession(db, session.tokenHash);
     return null;
+  }
+  // A rate limit is not a rejection. Signing somebody out because the twenty
+  // requests in this minute were somebody else's would empty every browser on
+  // the instance during a busy minute.
+  if (me.response.status === 429) {
+    throw httpError(503, 'Kuklabs Account is rate limiting this instance.', 'AUTHKIT_RATE_LIMITED');
   }
   if (!me.response.ok) throw httpError(503, 'Kuklabs Account validation failed.', 'AUTHKIT_VALIDATION_FAILED');
 

@@ -127,7 +127,9 @@ credential a backup deliberately does not contain. Each is tracked as
       ([AUTHKIT_REHEARSAL.md](AUTHKIT_REHEARSAL.md)). Pass its evidence file to
       `npm run rehearse -- --authkit-evidence <file>` and the three checks read
       `rehearsed`. They stay unticked: a stand-in cannot sign off a production
-      check, and only a staging run against the real service can
+      check, and only a staging run against the real service can — **and there
+      is no staging environment**. AuthKit runs in one place, live, shared with
+      every Kuklabs product
 - [ ] test Git HTTP, SSH and Git LFS authorization after restore
 - [ ] test SMTP retry, provider suppression and WebSocket notification recovery
 - [ ] run the drill against a production-sized archive and file the evidence
@@ -311,6 +313,10 @@ not the boundary being trusted. Those items stay in scope here.
       drives fifteen flows against a stand-in Kuklabs AuthKit over real HTTP,
       and four tests break the code to prove the drill notices,
       [AUTHKIT_REHEARSAL.md](AUTHKIT_REHEARSAL.md)
+- [x] KukGit stopped asking AuthKit three questions per browser request — the
+      live service allows twenty a minute for the whole instance, so the old
+      design gave about six page loads a minute before `429`; ten page loads now
+      cost zero upstream requests, [ONE_KUKLABS_ACCOUNT.md](ONE_KUKLABS_ACCOUNT.md)
 - [x] a second subscription can no longer be bought while one is live — it used
       to overwrite the stored provider reference, leaving the first subscription
       charging the customer with nothing in KukGit pointing at it; a replaced

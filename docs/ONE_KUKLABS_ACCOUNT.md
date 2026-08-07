@@ -2,6 +2,89 @@
 
 KukGit production authentication uses central Kuklabs AuthKit. KukGit does not own a separate production password system, Google identity, OTP database or primary user identity.
 
+## What AuthKit actually is, as deployed
+
+Read before designing anything against it. Every line here was confirmed against
+the running service and its source, 2026-08-07.
+
+**It is not a separate service.** `auth.kuklabs.com` appears in the identity
+standard as a "recommended base URL", but the router is mounted on the KukBook
+ERP's own Express app, on one EC2 instance in `ap-south-1`, sharing its process,
+its MySQL database and its deploys. Unknown paths return the ERP's React shell,
+because it *is* the ERP. An ERP outage is an auth outage; every ERP deploy
+restarts authentication for every Kuklabs product. Backups are nightly
+`mysqldump` to S3 — that is database backup, not service redundancy.
+
+**`/v1/auth/*` allows twenty requests a minute, per source IP.** KukGit calls it
+server-to-server, so every user of an instance shares one bucket. This is the
+constraint that shapes the whole integration; see the next section.
+
+**There is no product registry.** Any `X-Kuklabs-Product` matching
+`[a-z0-9_-]{2,32}` is accepted, and a membership row is created on first
+authenticated call. `kukgit` needs no registration and never did. The
+consequence: `/products/kukgit/access` cannot deny a new user, because it
+creates the row it then reads. `blocked` and `inactive` exist in the response
+shape and nothing in the service ever writes them — it is a kill switch nobody
+has wired up, not an entitlement system. **KukGit must not depend on it to
+refuse anybody.**
+
+**Product access answers `200` with `access: false`**, not `403`. KukGit reads
+the field, which is correct, and the simulator matches.
+
+**There is no `sid` in any response envelope.** It is in the access token's
+claims and nowhere else, so the claims path is the only one that works.
+The token is HS256, signed with a secret KukGit does not have — the claims can
+be decoded, never verified.
+
+**Refresh tokens rotate, and reuse is not detected.** Replaying a spent refresh
+token is refused, but the session is not revoked, so a stolen token that has
+been rotated keeps working. KukGit must not assume otherwise. The simulator
+*does* detect reuse — deliberately stricter, because a stand-in more forgiving
+than production is a stand-in that certifies a bug.
+
+**`current` on `/v1/auth/sessions` can be absent entirely.** It is computed by
+comparing the token's `sid` claim, and tokens minted by the web cookie-SSO path
+carry none — the list still returns `200` with every session in it. A device
+binding that requires exactly one `current: true` would sign those users out.
+
+**There is no staging.** One environment, live, shared with every Kuklabs
+product. A drill that revokes sessions runs against real people's logins, which
+is why `npm run authkit:rehearse --url` refuses.
+
+**Three refusals share one 401**: `Sign in required.` (no header),
+`Session expired. Please sign in again.` (bad or expired token), and
+`Account not found. Please sign in again.`. Anything telling them apart has to
+match on the message.
+
+## Living inside twenty requests a minute
+
+KukGit used to ask AuthKit three questions on every protected browser request —
+`/me`, `/products/kukgit/access`, and `/sessions`. At twenty requests a minute
+for the whole instance that is about **six page loads per minute before the
+service starts refusing**, and the refusal is a `429` whose body is shaped
+differently from every other error the service returns.
+
+So a validated bridge session is now trusted from the local row for
+`KUKGIT_AUTHKIT_SESSION_CHECK_SECONDS` (default 300), and the access token's own
+`exp` is checked locally — it is a JWT and carries its expiry, so an expired one
+is caught without asking anybody. Ten page loads now cost **zero** upstream
+requests, measured by the drill.
+
+What that costs: **a centrally revoked device keeps working for up to the
+window.** That is the trade, and it is the reason the value is configurable —
+`0` restores per-request validation for an instance whose AuthKit does not rate
+limit.
+
+A `429` is never treated as a rejection. It answers `503` with `Retry-After`,
+keeps the cookie and keeps the bridge: signing people out because this minute's
+twenty requests belonged to somebody else would empty every browser on the
+instance during a busy minute.
+
+**The better fix is on the other side.** Twenty a minute for a whole product is
+a limit for a login form, not for a service integration. A raised limit, or a
+separate bucket for `/sessions`, would let the window shrink and revocation get
+closer to immediate.
+
 ## Identity boundary
 
 AuthKit owns:
@@ -68,6 +151,7 @@ KUKGIT_AUTHKIT_PRODUCT_ID=kukgit
 KUKGIT_AUTHKIT_ENCRYPTION_KEY=<at-least-32-random-characters>
 KUKGIT_AUTHKIT_TIMEOUT_MS=8000
 KUKGIT_AUTHKIT_REFRESH_TTL_DAYS=60
+KUKGIT_AUTHKIT_SESSION_CHECK_SECONDS=300
 KUKGIT_COOKIE_SECURE=true
 KUKGIT_ADMIN_EMAIL=<verified-founder-email>
 ```
