@@ -134,7 +134,7 @@ function renderLogin() {
       <section class="login-panel">
         <form class="login-card" id="login-form">
           <h2>Welcome to KukGit</h2>
-          <p>Sign in with your KukGit development account. Kuklabs Account integration is planned in the next identity milestone.</p>
+          <p>Sign in with your KukGit account. Kuklabs Account remains an option an instance may offer, not one it needs.</p>
           <div class="field"><label>Email address</label><input class="input" name="email" type="email" autocomplete="username" required /></div>
           <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="current-password" required /></div>
           <div class="login-demo" id="login-demo" hidden></div>
@@ -150,12 +150,77 @@ function renderLogin() {
     button.textContent = 'Signing in…';
     const data = new FormData(event.currentTarget);
     try {
-      await api('/api/auth/login', { method: 'POST', body: { email: data.get('email'), password: data.get('password') } });
+      const result = await api('/api/auth/login', { method: 'POST', body: { email: data.get('email'), password: data.get('password') } });
+      // The password was right and the second factor is still owed. There is no
+      // session yet and no cookie was set, so going straight to `bootstrap()`
+      // lands back on this page with nothing said — which is what happened
+      // before this branch existed, and it meant anybody who turned 2FA on
+      // could never sign in again.
+      if (result?.twoFactorRequired) return renderSecondFactor(result.challenge);
       await bootstrap();
     } catch (error) {
       toast('Sign in failed', error.message, 'error');
       button.disabled = false;
       button.innerHTML = 'Sign in to KukGit <span>→</span>';
+    }
+  });
+}
+
+/**
+ * The second half of a sign-in.
+ *
+ * Rendered here rather than in a module of its own, deliberately: the sign-in
+ * page is the one page that has to keep working, and an account with a second
+ * factor cannot be reached at all if the file holding this step fails to load.
+ *
+ * The challenge is held in a closure and never written to the page or the URL.
+ * It is the credential that finishes the sign-in, and a copy of it in the
+ * address bar is one in browser history on a shared machine.
+ */
+function renderSecondFactor(challenge) {
+  app.innerHTML = `
+    <main class="login-page">
+      <section class="login-panel" style="grid-column:1/-1">
+        <form class="login-card" id="second-factor-form">
+          <h2>One more step</h2>
+          <p>Enter the six-digit code from your authenticator app. If your phone is gone, use one of your recovery codes instead.</p>
+          <div class="field"><label>Code</label><input class="input" name="code" inputmode="text"
+            autocomplete="one-time-code" autofocus required placeholder="123456" /></div>
+          <div class="login-demo" id="second-factor-error" hidden></div>
+          <button class="btn btn-primary btn-block" type="submit">Continue <span>→</span></button>
+          <div style="display:flex;justify-content:center;margin-top:4px"><a href="#/" id="second-factor-cancel">Start again</a></div>
+        </form>
+      </section>
+    </main>`;
+
+  document.querySelector('#second-factor-cancel').addEventListener('click', (event) => {
+    event.preventDefault();
+    renderLogin();
+  });
+
+  document.querySelector('#second-factor-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = event.currentTarget.querySelector('button');
+    const box = document.querySelector('#second-factor-error');
+    box.hidden = true;
+    button.disabled = true;
+    button.textContent = 'Checking…';
+    const code = new FormData(event.currentTarget).get('code');
+    try {
+      const done = await api('/api/auth/two-factor', { method: 'POST', body: { challenge, code } });
+      // Said on the one occasion somebody is certainly paying attention, and
+      // only when it is true.
+      if (done?.usedRecoveryCode) {
+        toast('Recovery code used', `${done.recoveryCodesRemaining} left. Generate a new set from account settings.`, 'error');
+      }
+      await bootstrap();
+    } catch (error) {
+      // A spent challenge cannot be retried, so the way back is the whole
+      // sign-in rather than another code into a form that can no longer work.
+      box.textContent = `${error.message} Start again to get a new sign-in.`;
+      box.hidden = false;
+      button.disabled = false;
+      button.innerHTML = 'Continue <span>→</span>';
     }
   });
 }
