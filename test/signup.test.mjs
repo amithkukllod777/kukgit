@@ -74,10 +74,15 @@ async function workspace(t, { authMode = 'local', email = true } = {}) {
     return { status: response.status, body: await response.json().catch(() => ({})) };
   };
 
+  const ask = async () => {
+    const response = await fetch(`${origin}/api/account/signup`, { method: 'GET' });
+    return { status: response.status, body: await response.json().catch(() => ({})) };
+  };
+
   const outbox = (match) => db.prepare('SELECT to_email AS recipient, subject, text_body AS body FROM email_outbox WHERE subject LIKE ? ORDER BY rowid DESC').all(`%${match}%`);
   const userFor = (address) => db.prepare("SELECT id, email, COALESCE(email_verified, 0) AS verified, COALESCE(auth_source, 'local') AS authSource FROM users WHERE email = ?").get(address);
 
-  return { config, db, origin, call, outbox, userFor };
+  return { config, db, origin, call, ask, outbox, userFor };
 }
 
 const GOOD = { email: 'newcomer@example.com', password: 'a-real-enough-password', displayName: 'Newcomer' };
@@ -246,6 +251,47 @@ test('called twice, it answers the same both times', async (t) => {
   // API here cannot produce, so no test kills it. It is there because losing
   // that race must give the same answer as everybody else rather than a 500
   // that says the address is taken.
+});
+
+/* ------------------------------------------- what the sign-in screen may ask */
+
+test('the sign-in screen can ask whether there is a signup here at all', async (t) => {
+  const space = await workspace(t);
+  const answer = await space.ask();
+  assert.equal(answer.status, 200);
+  assert.equal(answer.body.available, true);
+  // No session, no origin header — this is asked by a page rendered before
+  // anybody has signed in, exactly like the provider buttons.
+  assert.equal(space.db.prepare('SELECT COUNT(*) AS count FROM users').get().count, 1, 'asking creates nothing');
+});
+
+test('asking says nothing about any account', async (t) => {
+  const space = await workspace(t);
+  await space.call(GOOD);
+  // Whatever else it grows, it must never grow a field that varies with who
+  // has an account here. This is the assertion that notices.
+  assert.deepEqual(Object.keys((await space.ask()).body).sort(), ['available', 'requestId']);
+});
+
+test('where signup is not offered, asking gets the same 404 as posting', async (t) => {
+  for (const options of [{ email: false }, { authMode: 'authkit' }]) {
+    const space = await workspace(t, options);
+    // Absent rather than `{available:false}`: a route that answers "no" is a
+    // route, and the screen has the same amount to draw either way.
+    assert.equal((await space.ask()).status, 404, JSON.stringify(options));
+  }
+});
+
+test('the question is a GET and nothing else is', async (t) => {
+  const space = await workspace(t);
+  for (const method of ['PUT', 'DELETE', 'PATCH']) {
+    const response = await fetch(`${space.origin}/api/account/signup`, { method, headers: { Origin: space.origin } });
+    assert.equal(response.status, 405, method);
+  }
+  // And the GET does not reach the writing path — it takes no body and makes
+  // no account.
+  await space.ask();
+  assert.equal(space.db.prepare('SELECT COUNT(*) AS count FROM users').get().count, 1);
 });
 
 test('an instance is offered signup only when it can actually do it', async (t) => {

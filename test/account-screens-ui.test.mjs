@@ -43,7 +43,8 @@ async function screen(t, options) {
 
 /* ---------------------------------------------------------------- routing */
 
-test('only these three fragments are claimed, and the token comes off the query', async () => {
+test('only these four fragments are claimed, and the token comes off the query', async () => {
+  assert.deepEqual(accountRoute('#/signup'), { name: 'signup', token: null });
   assert.deepEqual(accountRoute('#/verify-email?token=abc'), { name: 'verify-email', token: 'abc' });
   assert.deepEqual(accountRoute('#/reset-password?token=xyz'), { name: 'reset-password', token: 'xyz' });
   assert.deepEqual(accountRoute('#/forgot-password'), { name: 'forgot-password', token: null });
@@ -57,6 +58,235 @@ test('the rest of the application is left alone', async (t) => {
   const browser = await screen(t, { hash: '#/', html: '<div class="app-shell">the shell</div>' });
   assert.match(browser.html(), /the shell/);
   assert.equal(browser.present('.kg-account'), false);
+});
+
+/* ----------------------------------------------------------------- signup */
+
+/** An instance that takes signups, which is what the GET on that path says. */
+const SIGNUP_OPEN = { 'GET /api/account/signup': { body: { available: true } } };
+
+test('the signup form asks for an address, a password, and it twice', async (t) => {
+  const browser = await screen(t, { hash: '#/signup', routes: SIGNUP_OPEN });
+  assert.match(browser.html(), /Create your KukGit account/);
+  for (const field of ['email', 'password', 'confirm', 'displayName']) {
+    assert.ok(browser.document.querySelector(`#kg-signup-form [name="${field}"]`), field);
+  }
+});
+
+test('what is typed is what is sent, and the answer is the one sentence', async (t) => {
+  const browser = await screen(t, {
+    hash: '#/signup',
+    routes: {
+      ...SIGNUP_OPEN,
+      'POST /api/account/signup': { status: 202, body: { accepted: true, message: 'Check your inbox — if that address can be used, a link is on its way.' } },
+    },
+  });
+  const form = browser.document.querySelector('#kg-signup-form');
+  form.querySelector('[name="email"]').value = 'newcomer@example.com';
+  form.querySelector('[name="displayName"]').value = 'Newcomer';
+  form.querySelector('[name="password"]').value = 'a-real-enough-password';
+  form.querySelector('[name="confirm"]').value = 'a-real-enough-password';
+  await browser.submit('#kg-signup-form');
+
+  const sent = JSON.parse(browser.calls.find((call) => call.method === 'POST' && call.path === '/api/account/signup').body);
+  assert.deepEqual(sent, { email: 'newcomer@example.com', password: 'a-real-enough-password', displayName: 'Newcomer' });
+  assert.match(browser.html(), /Check your inbox/);
+  // Signing up does not sign anybody in, and the screen says so rather than
+  // leaving somebody waiting to be let in.
+  assert.match(browser.html(), /not create an organization or a repository/);
+});
+
+test('the screen says the same thing whether or not the address is taken', async (t) => {
+  // The server answers 202 either way; this is the assertion that the screen
+  // does not add a distinction the server was careful not to make.
+  for (const message of [undefined, 'Check your inbox — if that address can be used, a link to finish setting up is on its way.']) {
+    const browser = await screen(t, {
+      hash: '#/signup',
+      routes: { ...SIGNUP_OPEN, 'POST /api/account/signup': { status: 202, body: { accepted: true, message } } },
+    });
+    const form = browser.document.querySelector('#kg-signup-form');
+    form.querySelector('[name="email"]').value = 'taken@example.com';
+    form.querySelector('[name="password"]').value = 'a-real-enough-password';
+    form.querySelector('[name="confirm"]').value = 'a-real-enough-password';
+    await browser.submit('#kg-signup-form');
+
+    assert.match(browser.html(), /Check your inbox/);
+    assert.ok(!/already|taken|exists/i.test(browser.html()), 'nothing on screen says whether the address is registered');
+    browser.restore();
+  }
+});
+
+test('two passwords that do not match never reach the server', async (t) => {
+  const browser = await screen(t, { hash: '#/signup', routes: SIGNUP_OPEN });
+  const form = browser.document.querySelector('#kg-signup-form');
+  form.querySelector('[name="email"]').value = 'newcomer@example.com';
+  form.querySelector('[name="password"]').value = 'a-real-enough-password';
+  form.querySelector('[name="confirm"]').value = 'a-real-enough-passwort';
+  await browser.submit('#kg-signup-form');
+
+  assert.match(browser.html(), /do not match/);
+  // An account created with a mistyped password is fixed by a password reset on
+  // an address that is not yet confirmed. Catching it here is worth a check the
+  // server also makes.
+  assert.equal(browser.calls.filter((call) => call.method === 'POST').length, 0);
+  assert.equal(browser.present('#kg-signup-form'), true, 'the form is still there to fix it on');
+});
+
+test('a password the rules refuse is refused before an account exists', async (t) => {
+  const browser = await screen(t, { hash: '#/signup', routes: SIGNUP_OPEN });
+  const form = browser.document.querySelector('#kg-signup-form');
+  form.querySelector('[name="email"]').value = 'newcomer@example.com';
+  form.querySelector('[name="password"]').value = 'short';
+  form.querySelector('[name="confirm"]').value = 'short';
+  await browser.submit('#kg-signup-form');
+
+  assert.match(browser.html(), /at least 10 characters/);
+  assert.equal(browser.calls.filter((call) => call.method === 'POST').length, 0);
+  assert.equal(browser.document.querySelector('#kg-signup-form button').disabled, false, 'the button works again');
+});
+
+test("the server's own refusal is what goes on screen, escaped", async (t) => {
+  const browser = await screen(t, {
+    hash: '#/signup',
+    routes: {
+      ...SIGNUP_OPEN,
+      'POST /api/account/signup': {
+        status: 400,
+        body: { error: { code: 'SIGNUP_EMAIL_INVALID', message: '<img src=x onerror=alert(1)> is not an address.' } },
+      },
+    },
+  });
+  const form = browser.document.querySelector('#kg-signup-form');
+  form.querySelector('[name="email"]').value = 'nonsense';
+  form.querySelector('[name="password"]').value = 'a-real-enough-password';
+  form.querySelector('[name="confirm"]').value = 'a-real-enough-password';
+  await browser.submit('#kg-signup-form');
+
+  assert.ok(!browser.present('img'), 'the message is text, not markup');
+  assert.match(browser.html(), /is not an address/);
+  assert.equal(browser.present('#kg-signup-form'), true);
+});
+
+test('where signup is not offered the screen says so instead of showing a form', async (t) => {
+  // Reached by typing the address: there is no link to it on such an instance.
+  // The default route table answers 404, which is what the server does.
+  const browser = await screen(t, { hash: '#/signup' });
+  await browser.settle();
+
+  assert.match(browser.html(), /by invitation/);
+  assert.equal(browser.present('#kg-signup-form'), false);
+  assert.equal(browser.calls.filter((call) => call.method === 'POST').length, 0, 'nothing was submitted to find out');
+});
+
+test('a 404 on submit reads as policy, not as a broken site', async (t) => {
+  // The gap between asking and submitting: an instance that stops offering
+  // signup — its mail sender removed — while somebody has the form open.
+  const browser = await screen(t, {
+    hash: '#/signup',
+    routes: { ...SIGNUP_OPEN, 'POST /api/account/signup': { status: 404, body: { error: { code: 'NOT_FOUND', message: 'Not found.' } } } },
+  });
+  const form = browser.document.querySelector('#kg-signup-form');
+  form.querySelector('[name="email"]').value = 'newcomer@example.com';
+  form.querySelector('[name="password"]').value = 'a-real-enough-password';
+  form.querySelector('[name="confirm"]').value = 'a-real-enough-password';
+  await browser.submit('#kg-signup-form');
+
+  assert.match(browser.html(), /by invitation/);
+  assert.ok(!browser.html().includes('Not found.'));
+});
+
+/**
+ * The availability check answers slowly, because on a real page it may.
+ *
+ * The form is drawn before the answer arrives — deliberately, because a screen
+ * that waits for a round trip before drawing anything is a screen the sign-in
+ * page renders over. That is the whole ordering the two tests below are about:
+ * everything the late answer does has to be conditional on the screen it was
+ * asked for still being the screen somebody is looking at.
+ */
+const SLOW_CLOSED = {
+  'GET /api/account/signup': async () => {
+    for (let tick = 0; tick < 8; tick += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+    return { status: 404, body: {} };
+  },
+};
+
+test('a late "no signup here" does not land on a page somebody has moved to', async (t) => {
+  const browser = page(t, { hash: '#/signup', routes: SLOW_CLOSED });
+  await importFresh('../public/account-screens-ui.js');
+  // Two animation frames — enough for the mount to ask, not enough for the
+  // eight-tick answer. Without this the module has not run when the navigation
+  // happens and the test exercises nothing.
+  await browser.settle(3);
+  assert.equal(browser.present('#kg-signup-form'), true, 'the form is drawn without waiting');
+
+  browser.navigate('#/');
+  await browser.settle();
+
+  assert.ok(!browser.html().includes('by invitation'), 'the answer did not paint itself over where they went');
+});
+
+test('a late "no signup here" does not overwrite an account that was just made', async (t) => {
+  const browser = page(t, {
+    hash: '#/signup',
+    routes: { ...SLOW_CLOSED, 'POST /api/account/signup': { status: 202, body: { accepted: true } } },
+  });
+  await importFresh('../public/account-screens-ui.js');
+  await browser.settle(3);
+
+  const form = browser.document.querySelector('#kg-signup-form');
+  form.querySelector('[name="email"]').value = 'newcomer@example.com';
+  form.querySelector('[name="password"]').value = 'a-real-enough-password';
+  form.querySelector('[name="confirm"]').value = 'a-real-enough-password';
+  await browser.submit('#kg-signup-form');
+  await browser.settle();
+
+  // The request went through. Telling somebody their account is by invitation
+  // a second after it was made is worse than either message on its own.
+  assert.match(browser.html(), /Check your inbox/);
+  assert.ok(!browser.html().includes('by invitation'));
+});
+
+test('the sign-in form offers a way to make an account, where there is one', async (t) => {
+  const browser = await screen(t, { hash: '#/', routes: SIGNUP_OPEN });
+  await browser.settle();
+  assert.ok(browser.document.querySelector('#login-form a[href="#/signup"]'), 'the sign-in form has a signup link');
+});
+
+test('and offers nothing where accounts are by invitation', async (t) => {
+  const browser = await screen(t, { hash: '#/' });
+  await browser.settle();
+  // A link to a form that collects a password and then says the route does not
+  // exist is worse than no link.
+  assert.equal(browser.present('a[href="#/signup"]'), false);
+  // The rest of the sign-in page is untouched.
+  assert.ok(browser.document.querySelector('#login-form a[href="#/forgot-password"]'));
+});
+
+test('the question is asked once, however many times the page is redrawn', async (t) => {
+  const browser = await screen(t, { hash: '#/', routes: SIGNUP_OPEN });
+  for (let round = 0; round < 3; round += 1) {
+    browser.document.querySelector('#app').innerHTML += '<p>something else rendered</p>';
+    await browser.settle();
+  }
+  assert.equal(browser.countPath('/api/account/signup'), 1);
+  assert.equal(browser.document.querySelectorAll('a[href="#/signup"]').length, 1);
+  assert.equal(browser.looped, false);
+});
+
+test('and once more when the sign-in form itself is rebuilt', async (t) => {
+  const browser = await screen(t, { hash: '#/', routes: SIGNUP_OPEN });
+  // The flag that stops a repeat check lives on the form, so a redraw that
+  // replaces the form loses it — which is right, the new form has no link yet.
+  // What must not happen is a second request every time the application
+  // re-renders its sign-in page. The answer is a deployment fact and cannot
+  // change while somebody is looking at the page.
+  for (let round = 0; round < 3; round += 1) {
+    browser.document.querySelector('#app').innerHTML = LOGIN_FORM;
+    await browser.settle();
+    assert.equal(browser.document.querySelectorAll('a[href="#/signup"]').length, 1, `round ${round}`);
+  }
+  assert.equal(browser.countPath('/api/account/signup'), 1);
 });
 
 /* ----------------------------------------------------------- verify email */
@@ -319,6 +549,24 @@ async function realPage(t, { hash, routes = {} } = {}) {
   await browser.settle();
   return browser;
 }
+
+test('the signup screen survives the sign-in page rendering underneath it', async (t) => {
+  const browser = await realPage(t, { hash: '#/signup', routes: SIGNUP_OPEN });
+
+  // The same ordering that took the forgot-password screen off the live
+  // instance: this module renders first, `renderLogin()` overwrites it, and
+  // whether anything is left depends entirely on the remount.
+  assert.equal(browser.present('#kg-signup-form'), true, 'the signup form is on the page');
+  assert.match(browser.html(), /Create your KukGit account/);
+});
+
+test('the signup link is on the real sign-in page, once', async (t) => {
+  const browser = await realPage(t, { hash: '#/', routes: SIGNUP_OPEN });
+  assert.equal(browser.document.querySelectorAll('#login-form a[href="#/signup"]').length, 1);
+  // `renderLogin` rebuilds the form, so the flag that stops a second check goes
+  // with it. Asking again is right; asking the network again is not.
+  assert.equal(browser.countPath('/api/account/signup'), 1);
+});
 
 test('the reset screen survives the sign-in page rendering underneath it', async (t) => {
   const browser = await realPage(t, { hash: '#/forgot-password' });

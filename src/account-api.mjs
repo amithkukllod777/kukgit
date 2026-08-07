@@ -95,10 +95,29 @@ export function createAccountApiHandler({ config, db, fetchImpl = undefined }) {
     res.setHeader('X-Request-Id', requestId);
     res.setHeader('Referrer-Policy', 'no-referrer');
 
+    const canSignUp = () => signupAvailable(config, {
+      emailConfigured: resendConfigured(db, config) || smtpConfigured(config),
+    });
+
     try {
       // Not merely refused — absent. An endpoint that answers 403 tells somebody
       // it exists and might work on another instance.
       if (config.authMode !== 'local') throw httpError(404, 'Not found.', 'NOT_FOUND');
+
+      // The one GET here, and the only route on this handler a page asks about
+      // before anybody has typed anything. The sign-in screen has to decide
+      // whether to offer a "create an account" link, and the alternative is
+      // showing it always: on an invitation-only instance that is a link to a
+      // form that collects a password and then says the route does not exist.
+      //
+      // Public, like `/api/auth/providers`, and for the same reason — the
+      // screen renders before there is a session. It says whether this instance
+      // offers signup and nothing about any account.
+      if (pathname === '/api/account/signup' && req.method === 'GET') {
+        if (!canSignUp()) throw httpError(404, 'Not found.', 'NOT_FOUND');
+        return sendJson(res, 200, { available: true, requestId });
+      }
+
       if (req.method !== 'POST') throw httpError(405, 'Method not allowed.', 'METHOD_NOT_ALLOWED');
       if (!originAllowed(req, config.baseUrl)) throw httpError(403, 'Request origin is not allowed.', 'CSRF_BLOCKED');
 
@@ -108,9 +127,7 @@ export function createAccountApiHandler({ config, db, fetchImpl = undefined }) {
       // email produces accounts nobody can finish setting up, behind a form
       // that appears to succeed.
       if (pathname === '/api/account/signup') {
-        if (!signupAvailable(config, { emailConfigured: resendConfigured(db, config) || smtpConfigured(config) })) {
-          throw httpError(404, 'Not found.', 'NOT_FOUND');
-        }
+        if (!canSignUp()) throw httpError(404, 'Not found.', 'NOT_FOUND');
         signUp(db, config, { email: body.email, password: body.password, displayName: body.displayName });
         // 202 and one message, whatever happened. A form that says "that
         // address is taken" is a form anybody can use to ask whether a company
