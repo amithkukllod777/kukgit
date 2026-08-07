@@ -659,6 +659,24 @@ async function renderRepo() {
  */
 const EXTENSION_ROUTES = new Set(['instance-admin']);
 
+/**
+ * Routes another module renders as the *whole page*, for somebody who is not
+ * signed in.
+ *
+ * The same trap as above and a worse landing: these fall through to the reset,
+ * which put the address back to `#/` before `account-screens-ui.js` could look
+ * at it. Opening one of them directly worked — a page load never fires
+ * `hashchange`, so this function does not run — but *clicking* the link on the
+ * sign-in form did not. "Forgot your password?" and "Create an account" were
+ * both links that appeared to do nothing, on a live instance, while every test
+ * passed, because every test opened the address instead of clicking it.
+ *
+ * They are not in `EXTENSION_ROUTES` because that renders the application
+ * shell, and the shell is for people who are signed in. These take the page
+ * over instead, so the right thing for this file to do is nothing at all.
+ */
+const WHOLE_PAGE_ROUTES = new Set(['signup', 'verify-email', 'reset-password', 'forgot-password']);
+
 function renderExtensionRoute() {
   app.innerHTML = shell('<div class="empty-state"><div class="empty-icon">⌘</div><h3>Loading…</h3></div>');
   bindShell();
@@ -673,6 +691,10 @@ async function renderCurrentRoute() {
     // had never been shown to anybody, and an expired session left whatever was
     // on screen instead of returning to sign-in.
     const first = state.route.segments[0];
+    // Before anything is drawn, and before the session is consulted: whoever
+    // owns these owns the page, and this file touching `#app` at all would be
+    // rendering over them.
+    if (WHOLE_PAGE_ROUTES.has(first)) return;
     if (!first) return await renderDashboard();
     if (first === 'repositories') return await renderRepositories();
     if (first === 'repo') return await renderRepo();
@@ -686,6 +708,13 @@ async function renderCurrentRoute() {
     navigate('#/');
   } catch (error) {
     if (error.status === 401) { state.user = null; return renderLogin(); }
+    // Nobody signed in, so there is no shell to draw: it reads a name, an
+    // address and initials off `state.user`, and reaches for `displayName` on
+    // null. That threw *inside the catch block*, which turned a page error into
+    // an unhandled rejection and a blank screen — and it is reachable by
+    // pressing "Back to sign in" from a screen somebody opened without an
+    // account. The sign-in form is where a signed-out person belongs anyway.
+    if (!state.user) return renderLogin();
     app.innerHTML = shell(emptyState('⚠', 'Unable to load this page', escapeHtml(error.message), '<button class="btn" data-route="#/">Return to dashboard</button>'));
     bindShell();
     toast('Page error', error.message, 'error');
