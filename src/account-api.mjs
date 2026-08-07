@@ -12,6 +12,9 @@ import {
   removeVerifiedPhone,
   verifyPhoneWithFirebase,
 } from './phone-verification.mjs';
+import { SIGNUP_ACCEPTED, signUp, signupAvailable } from './signup.mjs';
+import { resendConfigured } from './email-resend.mjs';
+import { smtpConfigured } from './email-transport.mjs';
 
 /**
  * The four endpoints behind proving an address and resetting a password.
@@ -48,6 +51,7 @@ const MAX_BODY_BYTES = 16 * 1024;
  * A prefix claim is a claim on names nobody has thought of yet. This is a list.
  */
 const OWNED = new Set([
+  '/api/account/signup',
   '/api/account/verify-email/send',
   '/api/account/verify-email/confirm',
   '/api/account/password-reset/request',
@@ -99,6 +103,20 @@ export function createAccountApiHandler({ config, db, fetchImpl = undefined }) {
       if (!originAllowed(req, config.baseUrl)) throw httpError(403, 'Request origin is not allowed.', 'CSRF_BLOCKED');
 
       const body = await readJson(req);
+
+      // Absent where it cannot work. Signup with no way to send a verification
+      // email produces accounts nobody can finish setting up, behind a form
+      // that appears to succeed.
+      if (pathname === '/api/account/signup') {
+        if (!signupAvailable(config, { emailConfigured: resendConfigured(db, config) || smtpConfigured(config) })) {
+          throw httpError(404, 'Not found.', 'NOT_FOUND');
+        }
+        signUp(db, config, { email: body.email, password: body.password, displayName: body.displayName });
+        // 202 and one message, whatever happened. A form that says "that
+        // address is taken" is a form anybody can use to ask whether a company
+        // keeps its code here.
+        return sendJson(res, 202, { accepted: true, message: SIGNUP_ACCEPTED, requestId });
+      }
 
       if (pathname === '/api/account/verify-email/send') {
         // The one route here that needs a session: it resends to whoever is
