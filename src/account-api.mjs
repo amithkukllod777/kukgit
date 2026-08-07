@@ -36,6 +36,26 @@ import {
 
 const MAX_BODY_BYTES = 16 * 1024;
 
+/**
+ * Exactly the paths this handler owns.
+ *
+ * It used to claim the whole `/api/account/` prefix and answer anything else
+ * under it with a 405, which took `/api/account/phone/config` and
+ * `/api/account/two-factor` away from the handlers that own them — both are
+ * `GET`s, and this one is POST-only. Neither was reachable on a running server;
+ * every test passed because each mounts its own handler alone.
+ *
+ * A prefix claim is a claim on names nobody has thought of yet. This is a list.
+ */
+const OWNED = new Set([
+  '/api/account/verify-email/send',
+  '/api/account/verify-email/confirm',
+  '/api/account/password-reset/request',
+  '/api/account/password-reset/complete',
+  '/api/account/phone/verify',
+  '/api/account/phone/remove',
+]);
+
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
   res.writeHead(status, {
@@ -65,7 +85,7 @@ export function createAccountApiHandler({ config, db, fetchImpl = undefined }) {
   return async function accountApi(req, res) {
     const url = new URL(req.url, config.baseUrl);
     const pathname = url.pathname;
-    if (!pathname.startsWith('/api/account/')) return false;
+    if (!OWNED.has(pathname)) return false;
 
     const requestId = uid('req');
     res.setHeader('X-Request-Id', requestId);
