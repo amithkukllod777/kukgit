@@ -33,8 +33,16 @@ after a forgotten password is not one to put in front of customers.
       random token rather than a six-digit code, stored hashed, single-use,
       expiring, throttled from the table so a deploy cannot reset the throttle,
       and a reset ends every session the account has
-- [ ] wire both to HTTP routes and screens — the module is done and tested, the
-      endpoints and the two pages are not
+- [x] the four endpoints behind them, on the `auth` rate-limit surface and
+      absent rather than refused in AuthKit mode
+- [ ] the two screens — verify-email and reset-password
+- [x] one person, several ways in — `user_identities` links a provider account
+      to a KukGit user rather than making a second one, and refuses to join two
+      accounts on an address neither side has proved
+- [ ] sign in with GitHub
+- [ ] sign in with Google
+- [ ] verify a mobile number — needs an SMS provider, and is an abuse target
+      (SMS pumping) so it comes last and with its own limits
 - [ ] lift the production refusal, once the two above are done
 - [ ] two-factor authentication
 - [ ] account recovery when 2FA is lost, which is the part that decides whether

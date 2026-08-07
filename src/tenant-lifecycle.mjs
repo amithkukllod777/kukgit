@@ -39,6 +39,7 @@ const NEVER_TENANT_SCOPED = new Map([
   // any organization they happen to be in — and it is a credential, so it must
   // never travel in a tenant export either.
   ['account_tokens', 'belongs to a user, and is a credential'],
+  ['user_identities', 'a person\'s GitHub or Google account, which is theirs and not the tenant\'s'],
   ['personal_access_tokens', 'belongs to a user'],
   ['user_ssh_keys', 'belongs to a user'],
   ['notification_preferences', 'belongs to a user'],
