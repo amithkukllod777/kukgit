@@ -23,6 +23,7 @@ import { applySchema } from './src/schema.mjs';
 import { createAccountApiHandler } from './src/account-api.mjs';
 import { createOAuthApiHandler } from './src/oauth-api.mjs';
 import { createPhoneVerifyPageHandler } from './src/phone-verify-page.mjs';
+import { createTwoFactorApiHandler } from './src/two-factor-api.mjs';
 import { smtpConfigured } from './src/email-transport.mjs';
 
 import { createEmailProviderEventsApiHandler } from './src/email-provider-events-safe.mjs';
@@ -163,6 +164,9 @@ const oauthApi = createOAuthApiHandler({ config, db });
 // Content-Security-Policy, which means it must answer before `app` sets the
 // strict one.
 const phoneVerifyPage = createPhoneVerifyPageHandler({ config, db });
+// Before `app`, which owns `/api/auth/login` and would answer `/api/auth/two-factor`
+// with its own 404.
+const twoFactorApi = createTwoFactorApiHandler({ config, db });
 const secureAuthKitLoginApi = createSecureAuthKitLoginApiHandler({ config, db });
 const authKitApi = createAuthKitApiHandler({ config, db });
 const emailProviderEventsApi = createEmailProviderEventsApiHandler({ config, db });
@@ -261,6 +265,7 @@ async function dispatch(req, res) {
   if (await accountApi(req, res)) return;
   if (await oauthApi(req, res)) return;
   if (await phoneVerifyPage(req, res)) return;
+  if (await twoFactorApi(req, res)) return;
   if (await secureAuthKitLoginApi(req, res)) return;
   if (await authKitApi(req, res)) return;
   if (await emailProviderEventsApi(req, res)) return;

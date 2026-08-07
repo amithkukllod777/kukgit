@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { currentRepositoryAccess } from './access-context.mjs';
 import { hashPassword } from './auth.mjs';
 import { runRuntimeRead } from './runtime-read-service.mjs';
+import { migrateTwoFactor } from './two-factor-schema.mjs';
 import { ensureSqliteRuntimeWriteMigrations } from './runtime-write-migrations.mjs';
 import {
   createRuntimeWriteService,
@@ -272,6 +273,11 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_pr_repo_status ON pull_requests(repository_id, status);
     CREATE INDEX IF NOT EXISTS idx_audit_org_created ON audit_logs(organization_id, created_at DESC);
   `);
+  // Here rather than in the optional-feature migrations, because sign-in reads
+  // it on every attempt. A database without these tables is one where the
+  // second factor silently stops being asked for — and a security check that
+  // fails open when a migration is missing is worse than one that is absent.
+  migrateTwoFactor(db);
 }
 
 export function uid(prefix) {

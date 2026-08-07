@@ -109,6 +109,10 @@ export function surfaceForRequest(method, pathname) {
   // over either is both a database filling up and this instance hammering
   // somebody else's API from one address.
   if (/^\/api\/auth\/[a-z]+\/(start|callback)$/.test(pathname)) return 'auth';
+  // Six digits is a small space. Without a limit here, the second factor is
+  // worth about twenty minutes of guessing.
+  if (pathname === '/api/auth/two-factor') return 'auth';
+  if (pathname.startsWith('/api/account/two-factor')) return 'auth';
   // Before the general API surface, and before the method check, so a flood of
   // reports is limited whichever verb it arrives with.
   if (pathname === '/api/abuse/reports') return 'abuse';

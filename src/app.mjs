@@ -22,6 +22,7 @@ import { assertBranch, assertSlug, httpError, originAllowed, validateRemoteUrl }
 import { PUBLISHED_DEV_CREDENTIALS } from './config.mjs';
 import { assertWithinPlan } from './plan-limits.mjs';
 import { normalizeImportToken } from './repository-import.mjs';
+import { startTwoFactorChallenge, twoFactorEnabled } from './two-factor.mjs';
 import { KUKGIT_VERSION } from './version.mjs';
 
 const MIME = {
@@ -194,6 +195,16 @@ export function createApp({ config, db }) {
       if (req.method === 'POST' && pathname === '/api/auth/login') {
         const body = await readJson(req);
         const user = authenticate(db, body.email, body.password);
+        if (twoFactorEnabled(db, user.id)) {
+          // No session yet, and deliberately nothing that resembles one. The
+          // challenge names an account whose password was just proved; it
+          // grants nothing until a code is added to it.
+          audit(db, { userId: user.id, action: 'auth.two_factor_required', targetType: 'user', targetId: user.id });
+          return sendJson(res, 200, {
+            twoFactorRequired: true,
+            challenge: startTwoFactorChallenge(db, { userId: user.id }),
+          });
+        }
         const session = createSession(db, user.id);
         audit(db, { userId: user.id, action: 'auth.login', targetType: 'user', targetId: user.id });
         return sendJson(res, 200, { user: { id: user.id, email: user.email, displayName: user.displayName } }, { 'Set-Cookie': sessionCookie(session.token, config.cookieSecure) });
