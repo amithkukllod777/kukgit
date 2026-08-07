@@ -242,7 +242,11 @@ not the boundary being trusted. Those items stay in scope here.
       cancellation and an ended subscription are emailed to owners and admins;
       the money ones cannot be muted, [CHECKOUT.md](CHECKOUT.md)
 - [ ] downgrade between paid plans with proration — today Business to Team means
-      cancelling and buying again
+      cancelling and buying again. Razorpay has no plan-change API, so this is a
+      Stripe-only capability until that changes. **Buying while already
+      subscribed is now refused** rather than silently creating a second live
+      subscription and charging the customer twice — that bug is fixed, the
+      in-place change is not built, [CHECKOUT.md](CHECKOUT.md)
 - [x] a dunning sequence — two reminders inside the fourteen-day grace period,
       derived from the dates rather than counted, [CHECKOUT.md](CHECKOUT.md)
 - [ ] measure whether the reminders recover anything — the schedule is a
@@ -307,6 +311,11 @@ not the boundary being trusted. Those items stay in scope here.
       drives fifteen flows against a stand-in Kuklabs AuthKit over real HTTP,
       and four tests break the code to prove the drill notices,
       [AUTHKIT_REHEARSAL.md](AUTHKIT_REHEARSAL.md)
+- [x] a second subscription can no longer be bought while one is live — it used
+      to overwrite the stored provider reference, leaving the first subscription
+      charging the customer with nothing in KukGit pointing at it; a replaced
+      reference is now filed for an operator instead of lost,
+      [CHECKOUT.md](CHECKOUT.md)
 - [x] the schema stopped living inside `server.mjs` — `applySchema` is shared
       with anything that needs a real instance, so a harness cannot quietly
       test tables production does not have

@@ -15,6 +15,7 @@ import {
   webhookRejections,
 } from './billing.mjs';
 import { CHECKOUT_PLANS, checkoutOptions, startCheckout } from './billing-checkout.mjs';
+import { openSupersededSubscriptions, resolveSupersededSubscription } from './billing-superseded.mjs';
 import { requestCancellation, resumeSubscription, subscriptionActions } from './billing-subscription.mjs';
 
 const MAX_WEBHOOK_BYTES = 256 * 1024;
@@ -95,8 +96,9 @@ export function createBillingApiHandler({ config, db, isInstanceAdmin }) {
     const operatorSubscriptions = url.pathname === '/api/instance-admin/billing/subscriptions';
     const operatorInvoices = url.pathname === '/api/instance-admin/billing/invoices';
     const operatorEvents = url.pathname === '/api/instance-admin/billing/events';
+    const operatorSuperseded = /^\/api\/instance-admin\/billing\/superseded(?:\/([^/]+)\/resolve)?$/.exec(url.pathname);
     if (!webhook && !organizationRoute && !checkoutRoute && !subscriptionRoute
-      && !operatorSubscriptions && !operatorInvoices && !operatorEvents) return false;
+      && !operatorSubscriptions && !operatorInvoices && !operatorEvents && !operatorSuperseded) return false;
 
     const requestId = uid('req');
     res.setHeader('X-Request-Id', requestId);
@@ -214,7 +216,30 @@ export function createBillingApiHandler({ config, db, isInstanceAdmin }) {
           events: billingEvents(db, {}),
           rejected: webhookRejections(db, {}),
           providers: registeredProviders(),
+          // A provider subscription KukGit stopped pointing at is still
+          // charging somebody. It belongs beside the rejected webhooks, which
+          // is the other list an operator opens this screen to find.
+          superseded: openSupersededSubscriptions(db, {}),
         });
+      }
+
+      if (operatorSuperseded) {
+        if (!operatorSuperseded[1]) {
+          if (method !== 'GET') throw httpError(405, 'Method not allowed.', 'METHOD_NOT_ALLOWED');
+          return sendJson(res, 200, { superseded: openSupersededSubscriptions(db, {}), requestId });
+        }
+        if (method !== 'POST') throw httpError(405, 'Method not allowed.', 'METHOD_NOT_ALLOWED');
+        if (!originAllowed(req, config.baseUrl)) throw httpError(403, 'Request origin is not allowed.', 'CSRF_BLOCKED');
+        const note = await readJson(req);
+        // The resolution is required. Closing one of these with no note would
+        // leave a row that says somebody looked and no record of what they
+        // found, which is the same as not looking.
+        const resolved = resolveSupersededSubscription(db, operatorSuperseded[1], {
+          resolution: note.resolution,
+          userId: user.id,
+        });
+        if (!resolved) throw httpError(422, 'Say what happened to the subscription before closing it.', 'BILLING_SUPERSEDED_RESOLUTION_REQUIRED');
+        return sendJson(res, 200, { superseded: openSupersededSubscriptions(db, {}), requestId });
       }
 
       if (method !== 'POST') throw httpError(405, 'Method not allowed.', 'METHOD_NOT_ALLOWED');
