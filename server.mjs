@@ -1,15 +1,8 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import { createApp } from './src/app.mjs';
-import {
-  createAuthKitBootstrapGuard,
-  ensureAuthKitCoreOrganization,
-} from './src/authkit-bootstrap.mjs';
-import {
-  createAuthKitApiHandler,
-  createAuthKitIdentityMiddleware,
-  migrateAuthKitIdentity,
-} from './src/authkit-identity.mjs';
+import { createAuthKitBootstrapGuard } from './src/authkit-bootstrap.mjs';
+import { createAuthKitApiHandler, createAuthKitIdentityMiddleware } from './src/authkit-identity.mjs';
 import { createSecureAuthKitLoginApiHandler } from './src/authkit-secure-login.mjs';
 import { createAuthKitCentralSessionGuard } from './src/authkit-session-guard.mjs';
 import { createMaintenanceGuard } from './src/backups.mjs';
@@ -18,80 +11,54 @@ import {
   createBranchGovernanceApiHandler,
   createBranchGovernanceGuard,
   installExistingBranchProtectionHooks,
-  migrateBranchGovernance,
 } from './src/branch-governance.mjs';
 import {
   createCollaborationNotificationCapture,
   createInvitationResendApiHandler,
 } from './src/collaboration-notifications-safe.mjs';
-import { createCollaborationApiHandler, migrateCollaboration } from './src/collaboration.mjs';
+import { createCollaborationApiHandler } from './src/collaboration.mjs';
 import { loadConfig } from './src/config.mjs';
-import { openDatabase, seedCore, withSchemaLock } from './src/db.mjs';
+import { openDatabase } from './src/db.mjs';
+import { applySchema } from './src/schema.mjs';
 import { smtpConfigured } from './src/email-transport.mjs';
-import { migrateEmailProviderEvents } from './src/email-provider-events.mjs';
+
 import { createEmailProviderEventsApiHandler } from './src/email-provider-events-safe.mjs';
-import {
-  createExternalAccessExpiryGuard,
-  createExternalAccessHistoryApiHandler,
-  migrateExternalAccessExpiryGuard,
-} from './src/external-access-expiry-guard.mjs';
+import { createExternalAccessExpiryGuard, createExternalAccessHistoryApiHandler } from './src/external-access-expiry-guard.mjs';
 import { createExternalAccessInvitationDurationApiHandler } from './src/external-access-invitation-duration.mjs';
-import {
-  createExternalAccessReviewsApiHandler,
-  migrateExternalAccessReviews,
-  startExternalAccessReviewWorker,
-} from './src/external-access-reviews.mjs';
+import { createExternalAccessReviewsApiHandler, startExternalAccessReviewWorker } from './src/external-access-reviews.mjs';
 import { createExternalCollaboratorAccessPrivacyApiHandler } from './src/external-collaborator-access-privacy.mjs';
 import { createExternalCollaboratorDiscoveryApiHandler } from './src/external-collaborator-discovery.mjs';
 import { createExternalCollaboratorLifecycleGuard } from './src/external-collaborator-lifecycle-guard.mjs';
 import { ensureGitAvailable } from './src/git.mjs';
-import { createGitLfsHandler, migrateGitLfs } from './src/git-lfs-safe.mjs';
-import {
-  createInstanceAdminApiHandlerSafe,
-  instanceAdminEmails,
-  migrateInstanceAdminSafe,
-} from './src/instance-admin-safe.mjs';
+import { createGitLfsHandler } from './src/git-lfs-safe.mjs';
+import { createInstanceAdminApiHandlerSafe, instanceAdminEmails } from './src/instance-admin-safe.mjs';
 import { createNotificationEventCapture } from './src/notification-events-safe.mjs';
-import {
-  createNotificationsApiHandler,
-  migrateNotifications,
-  startNotificationWorker,
-} from './src/notifications.mjs';
+import { createNotificationsApiHandler, startNotificationWorker } from './src/notifications.mjs';
 import {
   createOperationsNotificationCapture,
   startOperationalNotificationWorker,
 } from './src/operations-notifications.mjs';
-import {
-  createOrganizationOnboardingApiHandler,
-  migrateOrganizationOnboarding,
-} from './src/organization-onboarding.mjs';
+import { createOrganizationOnboardingApiHandler } from './src/organization-onboarding.mjs';
 import { createPostgresqlRuntimeObserver } from './src/postgresql-runtime-observer.mjs';
-import {
-  createPullRequestDiffsApiHandler,
-  migratePullRequestDiffs,
-} from './src/pull-request-diffs-safe.mjs';
+import { createPullRequestDiffsApiHandler } from './src/pull-request-diffs-safe.mjs';
 import { createOperationsHealthApiHandler } from './src/operations-health.mjs';
 import { createRateLimitGuard } from './src/rate-limit.mjs';
-import { createSecretsApiHandler, migrateSecrets } from './src/secrets-vault.mjs';
-import { createRunnersApiHandler, migrateRunners } from './src/runners.mjs';
+import { createSecretsApiHandler } from './src/secrets-vault.mjs';
+import { createRunnersApiHandler } from './src/runners.mjs';
 import { createWorkflowDispatchCapture, observeDispatch } from './src/workflow-dispatch.mjs';
-import { migrateJobLeases } from './src/job-leases.mjs';
+
 import { createDrainState, createRequestTracker, drainAndClose } from './src/graceful-shutdown.mjs';
-import { migrateNotificationFanout } from './src/notification-fanout.mjs';
-import {
-  createSecretScanningApiHandler,
-  migrateSecretScanning,
-  scanPushedContent,
-} from './src/secret-scanning.mjs';
-import { createPushProtectionApiHandler, markBypassesUsed, migratePushProtection } from './src/push-protection.mjs';
-import { createTenantLifecycleApiHandler, migrateTenantLifecycle } from './src/tenant-lifecycle.mjs';
-import { createTenantExportApiHandler, migrateTenantExport } from './src/tenant-export.mjs';
-import { migrateTenantImport } from './src/tenant-import.mjs';
-import { createSupportAccessApiHandler, migrateSupportAccess, registerSupportOperators } from './src/support-access.mjs';
-import { createMaintenanceWindowsApiHandler, migrateMaintenanceWindows } from './src/maintenance-windows.mjs';
-import { createStatusPageApiHandler, migrateStatusPage } from './src/status-page.mjs';
-import { createAbuseReportsApiHandler, migrateAbuseReports } from './src/abuse-reports.mjs';
-import { createDangerousFilesApiHandler, migrateDangerousFiles } from './src/dangerous-files.mjs';
+
+import { createSecretScanningApiHandler, scanPushedContent } from './src/secret-scanning.mjs';
+import { createPushProtectionApiHandler, markBypassesUsed } from './src/push-protection.mjs';
+import { createTenantLifecycleApiHandler } from './src/tenant-lifecycle.mjs';
+import { createTenantExportApiHandler } from './src/tenant-export.mjs';
+
+import { createSupportAccessApiHandler, registerSupportOperators } from './src/support-access.mjs';
+import { createMaintenanceWindowsApiHandler } from './src/maintenance-windows.mjs';
+import { createStatusPageApiHandler } from './src/status-page.mjs';
+import { createAbuseReportsApiHandler } from './src/abuse-reports.mjs';
+import { createDangerousFilesApiHandler } from './src/dangerous-files.mjs';
 import { createUsageApiHandler } from './src/usage-api.mjs';
 import { migrateUsageHistory, startUsagePeriodWorker, startUsageSampleWorker } from './src/usage-history.mjs';
 import { migrateBilling, setBillingNotifier, startBillingGraceWorker } from './src/billing.mjs';
@@ -105,58 +72,37 @@ import { migrateBillingCheckout, registerCheckoutProvider } from './src/billing-
 import { createInstanceSettingsApiHandler, migrateInstanceSettings } from './src/instance-settings.mjs';
 import { publishRunCheck } from './src/workflow-checks.mjs';
 import { observeRunChanges } from './src/workflow-runs.mjs';
-import { createWorkflowLogsApiHandler, migrateWorkflowLogs, startStalledJobWorker } from './src/workflow-logs.mjs';
-import { migrateWorkflowRuns } from './src/workflow-runs.mjs';
-import { createWorkflowStorageApiHandler, migrateWorkflowStorage, startStorageRetentionWorker } from './src/workflow-storage.mjs';
+import { createWorkflowLogsApiHandler, startStalledJobWorker } from './src/workflow-logs.mjs';
+
+import { createWorkflowStorageApiHandler, startStorageRetentionWorker } from './src/workflow-storage.mjs';
 import {
   createWorkflowTriggersApiHandler,
   dispatchClosedPullRequests,
-  migrateWorkflowTriggers,
   startScheduleWorker,
   syncSchedules,
 } from './src/workflow-triggers.mjs';
 import { createRealtimeNotificationServer } from './src/realtime-notifications.mjs';
 import { KUKGIT_VERSION } from './src/version.mjs';
-import {
-  createRepositoryAccessApiHandler,
-  createRepositoryAccessGuard,
-  migrateRepositoryAccess,
-} from './src/repository-access.mjs';
-import {
-  createRepositoryInvitationsApiHandler,
-  migrateRepositoryInvitations,
-} from './src/repository-invitations.mjs';
-import {
-  createRepositoryLifecycleApiHandler,
-  createRepositoryLifecycleGuard,
-  migrateRepositoryLifecycle,
-} from './src/repository-lifecycle.mjs';
-import { createBulkImportApiHandler, migrateRepositoryImportJobs } from './src/repository-import-api.mjs';
-import { createIssueCommentsApiHandler, migrateIssueComments } from './src/issue-comments.mjs';
-import { createIssueReactionsApiHandler, migrateIssueReactions } from './src/issue-reactions.mjs';
-import { createIssueTaxonomyApiHandler, migrateIssueTaxonomy } from './src/issue-taxonomy.mjs';
-import {
-  createReviewThreadMergeGuard,
-  createReviewThreadsApiHandler,
-  migrateReviewThreads,
-} from './src/review-threads.mjs';
+import { createRepositoryAccessApiHandler, createRepositoryAccessGuard } from './src/repository-access.mjs';
+import { createRepositoryInvitationsApiHandler } from './src/repository-invitations.mjs';
+import { createRepositoryLifecycleApiHandler, createRepositoryLifecycleGuard } from './src/repository-lifecycle.mjs';
+import { createBulkImportApiHandler } from './src/repository-import-api.mjs';
+import { createIssueCommentsApiHandler } from './src/issue-comments.mjs';
+import { createIssueReactionsApiHandler } from './src/issue-reactions.mjs';
+import { createIssueTaxonomyApiHandler } from './src/issue-taxonomy.mjs';
+import { createReviewThreadMergeGuard, createReviewThreadsApiHandler } from './src/review-threads.mjs';
 import {
   createRuntimeReadService,
   registerRuntimeReadService,
   unregisterRuntimeReadService,
 } from './src/runtime-read-service.mjs';
 import { createSshKeysArchiveGuard } from './src/ssh-keys-archive-guard.mjs';
-import { createSshKeysApiHandler, migrateSshKeys } from './src/ssh-keys.mjs';
-import {
-  createStatusCheckMergeGuard,
-  createStatusChecksApiHandler,
-  migrateStatusChecks,
-} from './src/status-checks.mjs';
+import { createSshKeysApiHandler } from './src/ssh-keys.mjs';
+import { createStatusCheckMergeGuard, createStatusChecksApiHandler } from './src/status-checks.mjs';
 import { createTokenApiHandler } from './src/token-api.mjs';
 import {
   createWebhookEventCapture,
   createWebhooksApiHandler,
-  migrateWebhooks,
   startWebhookWorker,
 } from './src/webhooks.mjs';
 
@@ -167,58 +113,9 @@ fs.mkdirSync(config.backupsDir, { recursive: true });
 fs.mkdirSync(config.lfsDir, { recursive: true, mode: 0o700 });
 const gitVersion = ensureGitAvailable();
 const db = openDatabase(config);
-// Seeding writes rows rather than schema, but it happens under the same lock:
-// two instances both seeding would both try to create the founder account.
-let seeded = { seeded: false };
-// Every schema change runs with the writer lock held, so two instances starting
-// at the same instant cannot both run `ALTER TABLE … ADD COLUMN` and leave one
-// of them dead with `duplicate column name`. The second simply waits and then
-// finds everything already applied.
-withSchemaLock(db, () => {
-  migrateAuthKitIdentity(db);
-  migrateCollaboration(db);
-  migrateOrganizationOnboarding(db);
-  migrateRepositoryAccess(db);
-  migrateSupportAccess(db);
-  migrateMaintenanceWindows(db);
-  migrateStatusPage(db);
-  migrateAbuseReports(db);
-  migrateDangerousFiles(db);
-  migrateRepositoryInvitations(db);
-  migrateExternalAccessReviews(db);
-  migrateExternalAccessExpiryGuard(db);
-  migrateBranchGovernance(db);
-  migrateReviewThreads(db);
-  migratePullRequestDiffs(db);
-  migrateStatusChecks(db);
-  migrateWebhooks(db);
-  migrateSecrets(db);
-  migrateWorkflowRuns(db);
-  migrateWorkflowLogs(db);
-  migrateJobLeases(db);
-  migrateWorkflowStorage(db);
-  migrateWorkflowTriggers(db);
-  migrateRunners(db);
-  migrateRepositoryLifecycle(db);
-  migrateRepositoryImportJobs(db);
-  migrateIssueComments(db);
-  // After comments: a reaction has a foreign key into one.
-  migrateIssueReactions(db);
-  migrateIssueTaxonomy(db);
-  migrateSshKeys(db);
-  migrateGitLfs(db);
-  migrateInstanceAdminSafe(db);
-  seeded = config.authMode === 'local' ? seedCore(db, config) : { seeded: false };
-  if (config.authMode === 'authkit') ensureAuthKitCoreOrganization(db);
-  migrateNotifications(db);
-  migrateNotificationFanout(db);
-  migrateSecretScanning(db);
-  migratePushProtection(db);
-  migrateTenantLifecycle(db);
-  migrateTenantExport(db);
-  migrateTenantImport(db);
-  migrateEmailProviderEvents(db);
-});
+// Every table, in the order it has to exist, shared with anything else that
+// needs a real instance. See src/schema.mjs.
+const seeded = applySchema(db, config);
 
 // Every run-state change publishes a commit status, so a branch rule can require
 // a workflow the same way it requires any other check.

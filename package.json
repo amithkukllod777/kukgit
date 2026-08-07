@@ -16,6 +16,7 @@
     "backup": "node scripts/backup.mjs",
     "deploy": "./scripts/deploy.sh",
     "rehearse": "node scripts/recovery-rehearsal.mjs",
+    "authkit:rehearse": "node scripts/authkit-rehearse.mjs",
     "runner": "node scripts/runner.mjs",
     "runner:install": "./scripts/runner-install.sh",
     "lfs:storage": "node scripts/lfs-storage.mjs",

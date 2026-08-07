@@ -184,11 +184,27 @@ The binding is what makes "revoke this device" work. Without it the check
 degrades to "the account has some live session", and revoking the device that
 created a bridge would not end it while the user is signed in anywhere else.
 
+When a revoked session is refused, the `kukgit_session` cookie is cleared as
+well as the bridge deleted — on 401 only. A 503 means AuthKit is unreachable,
+not that the session ended, and clearing cookies during an outage would sign out
+every user of a healthy instance. Both halves are checked by the rollout drill.
+
 KukGit PAT and SSH credentials remain product credentials governed by repository permission. They are not substitutes for browser login.
 
 ## Rollout procedure
 
 ### Pre-deployment
+
+Run the drill first — it does the whole flow list below against a stand-in
+AuthKit and prints a pass/fail line each:
+
+```bash
+npm run authkit:rehearse -- --operator "<name>" --evidence evidence/authkit-<date>.json
+```
+
+See [AUTHKIT_REHEARSAL.md](AUTHKIT_REHEARSAL.md). It rehearses these rather than
+signing them off, because it does not talk to the real service — so the same
+list still has to be walked once against staging:
 
 - verify `/v1/auth/status` returns `kuklabs-authkit-rest/1`
 - verify OTP, password, Google, refresh, session and product-access flows in staging
