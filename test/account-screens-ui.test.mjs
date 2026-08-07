@@ -98,6 +98,26 @@ test('the signup form asks for a name, an address, a password, and it twice', as
   }
 });
 
+test('every field says what it is for, and which of them can be skipped', async (t) => {
+  const browser = await screen(t, { hash: '#/signup', routes: SIGNUP_OPEN });
+  // A hint under the field it is about, rather than one paragraph at the bottom
+  // covering all four. The name is the one worth explaining: somebody typing it
+  // should know it goes next to their commits.
+  const hints = browser.document.querySelectorAll('#kg-signup-form .field-hint');
+  assert.ok(hints.length >= 3, `${hints.length} field hints`);
+  assert.match(browser.html(), /next to your commits/);
+  assert.match(browser.html(), new RegExp(`At least ${10} characters`));
+  // And none of them can be skipped, which is said before it is enforced.
+  assert.equal(browser.document.querySelectorAll('#kg-signup-form .field-required').length, 4);
+});
+
+test('the way back to sign in is at the top, where somebody in the wrong place looks', async (t) => {
+  const browser = await screen(t, { hash: '#/signup', routes: SIGNUP_OPEN });
+  const link = browser.document.querySelector('.kg-account-top a[href="#/"]');
+  assert.ok(link, 'the sign-in link is above the form');
+  assert.match(browser.html(), /Already have an account/);
+});
+
 test('it looks like the rest of KukGit, not like a box on an empty page', async (t) => {
   const browser = await screen(t, { hash: '#/signup', routes: SIGNUP_OPEN });
   // The same frame the sign-in page uses, from the same module, so the two
@@ -576,6 +596,24 @@ test('the signup screen survives the sign-in page rendering underneath it', asyn
   // whether anything is left depends entirely on the remount.
   assert.equal(browser.present('#kg-signup-form'), true, 'the signup form is on the page');
   assert.match(browser.html(), /Create your KukGit account/);
+});
+
+test('the reset link sits beside the password box, not at the foot of the card', async (t) => {
+  const browser = await realPage(t, { hash: '#/', routes: SIGNUP_OPEN });
+  const link = browser.document.querySelector('#kg-forgot-slot a[href="#/forgot-password"]');
+  // The moment somebody realises they cannot remember it is the moment they are
+  // looking at that field. A link at the bottom is one they go looking for.
+  assert.ok(link, 'the link is in the password label row');
+  assert.equal(browser.document.querySelectorAll('a[href="#/forgot-password"]').length, 1, 'and only there');
+});
+
+test('the sign-in card still gets its links if the slot is missing', async (t) => {
+  // This module does not own the sign-in card. A card without the slot — an
+  // older deploy, or a future rewrite — should cost the link its position, not
+  // its existence.
+  const browser = await screen(t, { hash: '#/', html: '<form class="login-card" id="login-form"><input name="email" /></form>' });
+  await browser.settle();
+  assert.ok(browser.document.querySelector('#login-form a[href="#/forgot-password"]'));
 });
 
 test('the signup link is on the real sign-in page, once', async (t) => {

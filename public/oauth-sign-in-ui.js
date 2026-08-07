@@ -116,8 +116,8 @@ function oauthStyles() {
   const style = document.createElement('style');
   style.id = 'kg-oauth-styles';
   style.textContent = `
-    .kg-oauth { display:grid; gap:10px; margin-top:6px; }
-    .kg-oauth-divider { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:12px; letter-spacing:.08em; text-transform:uppercase; margin:4px 0; }
+    .kg-oauth { display:grid; gap:10px; margin:2px 0 4px; }
+    .kg-oauth-divider { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:12px; letter-spacing:.08em; text-transform:uppercase; margin:10px 0 4px; }
     .kg-oauth-divider::before, .kg-oauth-divider::after { content:''; flex:1; height:1px; background:var(--border); }
     .kg-oauth-btn { display:flex; align-items:center; justify-content:center; gap:10px; width:100%; padding:11px 14px; border:1px solid var(--border); border-radius:10px; background:transparent; color:inherit; font:inherit; font-weight:600; cursor:pointer; text-decoration:none; }
     .kg-oauth-btn:hover { border-color:var(--accent, #6c8cff); }
@@ -135,10 +135,32 @@ async function providers() {
   return Array.isArray(payload.providers) ? payload.providers : [];
 }
 
-async function mountOAuthButtons() {
+/**
+ * Where the buttons go on this screen, and where the failure box goes.
+ *
+ * Two screens want them. The sign-in form has them above its own fields, which
+ * is where they have always been. The signup screen leaves an empty slot for
+ * them, because somebody creating an account wants the same one-click option
+ * that somebody signing in gets — and a signup page offering only a password,
+ * on an instance whose sign-in page offers Google, reads as the provider being
+ * unavailable rather than as a page that forgot to ask.
+ *
+ * The slot is looked for first: on the signup screen there is no `#login-form`
+ * at all, and on the sign-in screen there is no slot.
+ */
+function oauthTarget() {
+  const slot = document.querySelector('#kg-oauth-slot');
+  if (slot) return { host: slot, flag: 'kgOauth', position: 'beforeend' };
   const form = document.querySelector('#login-form');
-  if (!form || form.dataset.kgOauth === 'done') return;
-  form.dataset.kgOauth = 'done';
+  return form ? { host: form, flag: 'kgOauth', position: 'afterbegin' } : null;
+}
+
+async function mountOAuthButtons() {
+  const target = oauthTarget();
+  if (!target) return;
+  const form = target.host;
+  if (form.dataset[target.flag] === 'done') return;
+  form.dataset[target.flag] = 'done';
   oauthStyles();
 
   const box = failureBoxHtml(oauthFailureFromHash());
@@ -146,18 +168,18 @@ async function mountOAuthButtons() {
 
   const available = await providers();
   // The app re-renders on navigation, and it may have done so while the
-  // provider list was in flight. Adding buttons to a form that is no longer the
+  // provider list was in flight. Adding buttons to a host that is no longer the
   // one on screen puts them nowhere. No test kills this line — with or without
   // it the page ends up with no buttons — so it is here for what it says rather
   // than for what it prevents today.
-  if (document.querySelector('#login-form') !== form) return;
+  if (oauthTarget()?.host !== form) return;
 
   // Covers an empty list and a list of nothing this build recognises in one
   // check. The form is still on screen and still works either way.
   const buttons = available.map((provider) => providerButtonHtml(provider.id)).join('');
   if (!buttons) return;
 
-  form.insertAdjacentHTML('afterbegin', `<div class="kg-oauth">${buttons}<div class="kg-oauth-divider">or</div></div>`);
+  form.insertAdjacentHTML(target.position, `<div class="kg-oauth">${buttons}<div class="kg-oauth-divider">or</div></div>`);
 }
 
 let scheduled = false;

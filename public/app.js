@@ -120,8 +120,17 @@ function renderLogin() {
   app.innerHTML = signedOutPage(`<form class="login-card" id="login-form">
           <h2>Welcome to KukGit</h2>
           <p>Sign in with your KukGit account. Kuklabs Account remains an option an instance may offer, not one it needs.</p>
+          <!-- Where oauth-sign-in-ui.js puts the provider buttons. A slot,
+               rather than letting it insert at the top of the form, so they
+               land under the heading instead of above it: a card that opens
+               with two buttons and only then says what page it is reads as
+               two pages stacked. -->
+          <div id="kg-oauth-slot"></div>
           <div class="field"><label>Email address</label><input class="input" name="email" type="email" autocomplete="username" required /></div>
-          <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="current-password" required /></div>
+          <div class="field">
+            <div class="field-head"><label>Password</label><span id="kg-forgot-slot"></span></div>
+            <input class="input" name="password" type="password" autocomplete="current-password" required />
+          </div>
           <div class="login-demo" id="login-demo" hidden></div>
           <button class="btn btn-primary btn-block" type="submit">Sign in to KukGit <span>→</span></button>
         </form>`);
