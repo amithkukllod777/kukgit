@@ -103,7 +103,7 @@ export function surfaceForRequest(method, pathname) {
   // Verification and reset belong here, not on the general API surface. Two of
   // them send real email to an address the caller names, and the general limit
   // is set for reading pages.
-  if (/^\/api\/account\/(verify-email|password-reset)\//.test(pathname)) return 'auth';
+  if (/^\/api\/account\/(verify-email|password-reset|phone)\//.test(pathname)) return 'auth';
   // Starting and finishing a provider sign-in. `start` writes a row and
   // `callback` makes two calls out to GitHub or Google, so an unlimited loop
   // over either is both a database filling up and this instance hammering

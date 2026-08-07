@@ -69,6 +69,12 @@ export function loadConfig(overrides = {}) {
   const baseUrl = overrides.baseUrl ?? process.env.KUKGIT_BASE_URL ?? `http://localhost:${overrides.port ?? process.env.PORT ?? 8787}`;
   const cookieSecure = booleanValue(overrides.cookieSecure ?? process.env.KUKGIT_COOKIE_SECURE, isProduction);
   const authMode = String(overrides.authMode ?? process.env.KUKGIT_AUTH_MODE ?? (isProduction ? 'authkit' : 'local')).toLowerCase();
+  // The Firebase project whose ID tokens this instance will accept. Public —
+  // it is in every browser bundle that talks to Firebase — but it is the value
+  // that decides *whose* tokens are believed, so it is configuration rather
+  // than a constant, and an instance that has not set it does not offer phone
+  // verification at all.
+  const firebaseProjectId = String(overrides.firebaseProjectId ?? process.env.KUKGIT_FIREBASE_PROJECT_ID ?? '').trim();
   const authkitBaseUrlRaw = String(overrides.authkitBaseUrl ?? process.env.KUKGIT_AUTHKIT_BASE_URL ?? '').trim();
   const authkitProductId = String(overrides.authkitProductId ?? process.env.KUKGIT_AUTHKIT_PRODUCT_ID ?? 'kukgit').trim().toLowerCase();
   const authkitEncryptionKey = overrides.authkitEncryptionKey ?? process.env.KUKGIT_AUTHKIT_ENCRYPTION_KEY ?? (isProduction ? '' : 'kukgit-development-authkit-encryption-key-change-me');
@@ -279,6 +285,7 @@ export function loadConfig(overrides = {}) {
     authkitTimeoutMs,
     authkitRefreshTtlDays,
     authkitSessionCheckSeconds,
+    firebaseProjectId,
     organizationOwnerLimit,
     runtimeWriteServiceEnabled,
     realtimeHeartbeatMs,

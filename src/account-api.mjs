@@ -7,6 +7,11 @@ import {
   sendEmailVerification,
   verifyEmailToken,
 } from './account-verification.mjs';
+import {
+  phoneVerificationConfigured,
+  removeVerifiedPhone,
+  verifyPhoneWithFirebase,
+} from './phone-verification.mjs';
 
 /**
  * The four endpoints behind proving an address and resetting a password.
@@ -56,7 +61,7 @@ async function readJson(req) {
   catch { throw httpError(400, 'Invalid JSON request body.', 'INVALID_JSON'); }
 }
 
-export function createAccountApiHandler({ config, db }) {
+export function createAccountApiHandler({ config, db, fetchImpl = undefined }) {
   return async function accountApi(req, res) {
     const url = new URL(req.url, config.baseUrl);
     const pathname = url.pathname;
@@ -99,6 +104,25 @@ export function createAccountApiHandler({ config, db }) {
           message: 'If that address has a KukGit account, a reset link is on its way.',
           requestId,
         });
+      }
+
+      // Adding a number is a change to how an account can be recovered, so it
+      // needs a session — the Firebase token proves a *number*, never who is
+      // asking. Absent rather than refused where no Firebase project is set.
+      if (pathname === '/api/account/phone/verify' || pathname === '/api/account/phone/remove') {
+        if (!phoneVerificationConfigured(config)) throw httpError(404, 'Not found.', 'NOT_FOUND');
+        const user = currentUser(db, req);
+        if (!user) throw httpError(401, 'Sign in required.', 'AUTH_REQUIRED');
+        if (pathname === '/api/account/phone/remove') {
+          const removed = removeVerifiedPhone(db, { userId: user.id });
+          return sendJson(res, 200, { ...removed, requestId });
+        }
+        const result = await verifyPhoneWithFirebase(db, config, {
+          userId: user.id,
+          idToken: body.idToken,
+          ...(fetchImpl ? { fetchImpl } : {}),
+        });
+        return sendJson(res, 200, { verified: true, ...result, requestId });
       }
 
       if (pathname === '/api/account/password-reset/complete') {

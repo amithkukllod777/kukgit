@@ -1,5 +1,6 @@
 import { withSchemaLock } from './db.mjs';
 import { migrateAccountVerification } from './account-verification.mjs';
+import { migratePhoneVerification } from './phone-verification.mjs';
 import { migrateUserIdentities } from './user-identities.mjs';
 import { migrateOAuthSignIn } from './oauth-signin.mjs';
 import { migrateAbuseReports } from './abuse-reports.mjs';
@@ -74,6 +75,7 @@ export function applySchema(db, config) {
   migrateAccountVerification(db);
   // After it, because a linked identity hangs off a user row.
   migrateUserIdentities(db);
+  migratePhoneVerification(db);
   migrateOAuthSignIn(db);
   migrateCollaboration(db);
   migrateOrganizationOnboarding(db);
