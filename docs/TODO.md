@@ -18,6 +18,39 @@ This is the prioritized execution list for KukGit. The phase-level direction is 
 
 ## P0 — Current private-alpha critical path
 
+### 0a. KukGit's own accounts
+
+Decided 2026-08-07: KukGit owns its login, and Kuklabs Account becomes optional.
+Reasons and the reversal are in `CLAUDE.md`. Production still refuses
+`KUKGIT_AUTH_MODE=local`, and that refusal is correct until the list below is
+done — an account system with no way to prove an address and no way back in
+after a forgotten password is not one to put in front of customers.
+
+- [x] password records carry their own cost parameters, so the cost can be
+      raised later; raised from Node's default 16384 to 32768 and rewritten
+      transparently on the next sign-in
+- [x] verified email and password reset — `src/account-verification.mjs`: a long
+      random token rather than a six-digit code, stored hashed, single-use,
+      expiring, throttled from the table so a deploy cannot reset the throttle,
+      and a reset ends every session the account has
+- [x] the four endpoints behind them, on the `auth` rate-limit surface and
+      absent rather than refused in AuthKit mode
+- [ ] the two screens — verify-email and reset-password
+- [x] one person, several ways in — `user_identities` links a provider account
+      to a KukGit user rather than making a second one, and refuses to join two
+      accounts on an address neither side has proved
+- [x] the OAuth sign-in flow for GitHub and Google — state stored hashed and
+      spent once, the landing route checked against an open redirect, the
+      provider's `verified` flag read rather than assumed, and the access token
+      used and thrown away
+- [ ] wire the two callback routes and the buttons
+- [ ] verify a mobile number — needs an SMS provider, and is an abuse target
+      (SMS pumping) so it comes last and with its own limits
+- [ ] lift the production refusal, once the two above are done
+- [ ] two-factor authentication
+- [ ] account recovery when 2FA is lost, which is the part that decides whether
+      2FA is safe to turn on at all
+
 ### 0. Restore trustworthy CI execution
 
 Current blocker: **GitHub Actions billing on the account.** Confirmed by the
@@ -127,7 +160,9 @@ credential a backup deliberately does not contain. Each is tracked as
       ([AUTHKIT_REHEARSAL.md](AUTHKIT_REHEARSAL.md)). Pass its evidence file to
       `npm run rehearse -- --authkit-evidence <file>` and the three checks read
       `rehearsed`. They stay unticked: a stand-in cannot sign off a production
-      check, and only a staging run against the real service can
+      check, and only a staging run against the real service can — **and there
+      is no staging environment**. AuthKit runs in one place, live, shared with
+      every Kuklabs product
 - [ ] test Git HTTP, SSH and Git LFS authorization after restore
 - [ ] test SMTP retry, provider suppression and WebSocket notification recovery
 - [ ] run the drill against a production-sized archive and file the evidence
@@ -311,6 +346,10 @@ not the boundary being trusted. Those items stay in scope here.
       drives fifteen flows against a stand-in Kuklabs AuthKit over real HTTP,
       and four tests break the code to prove the drill notices,
       [AUTHKIT_REHEARSAL.md](AUTHKIT_REHEARSAL.md)
+- [x] KukGit stopped asking AuthKit three questions per browser request — the
+      live service allows twenty a minute for the whole instance, so the old
+      design gave about six page loads a minute before `429`; ten page loads now
+      cost zero upstream requests, [ONE_KUKLABS_ACCOUNT.md](ONE_KUKLABS_ACCOUNT.md)
 - [x] a second subscription can no longer be bought while one is live — it used
       to overwrite the stored provider reference, leaving the first subscription
       charging the customer with nothing in KukGit pointing at it; a replaced

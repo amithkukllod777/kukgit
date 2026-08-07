@@ -55,6 +55,8 @@ export const DRILL_CHECKS = Object.freeze([
   { id: 'authkit.outage_keeps_cookie', description: 'An outage refuses requests without signing everybody out.' },
   { id: 'authkit.logout', description: 'Logout removes the local bridge even when central logout is unavailable.' },
   { id: 'authkit.bad_password', description: 'A wrong password is refused and creates no session.' },
+  { id: 'authkit.request_budget', description: 'Ordinary browsing does not spend AuthKit requests once a session is validated.' },
+  { id: 'authkit.rate_limited', description: 'A 429 from AuthKit refuses the request without signing anybody out.' },
 ]);
 
 const FOUNDER_EMAIL = 'founder@kuklabs.com';
@@ -126,7 +128,7 @@ async function freePort() {
   return port;
 }
 
-function buildInstance({ dataDir, authkitBaseUrl, port }) {
+function buildInstance({ dataDir, authkitBaseUrl, port, sessionCheckSeconds = 0 }) {
   const config = loadConfig({
     baseUrl: `http://127.0.0.1:${port}`,
     dataDir,
@@ -138,6 +140,10 @@ function buildInstance({ dataDir, authkitBaseUrl, port }) {
     authkitBaseUrl,
     authkitProductId: 'kukgit',
     authkitEncryptionKey: 'rehearsal-authkit-encryption-key-at-least-32-chars',
+    // Zero by default here, because every check below is about what KukGit does
+    // *when it asks* AuthKit. The window — which exists so that most requests
+    // do not ask — gets its own instance at the end.
+    authkitSessionCheckSeconds: sessionCheckSeconds,
     adminEmail: FOUNDER_EMAIL,
     adminPassword: 'unused-in-authkit-mode',
     adminName: 'Founder',
@@ -208,8 +214,11 @@ export async function runAuthKitRehearsal(options = {}) {
 
   const simulator = createAuthKitSimulator({
     accounts: [{ email: FOUNDER_EMAIL, password: FOUNDER_PASSWORD, name: 'Founder' }],
-    // Short enough that the drill can watch one expire without waiting.
-    accessTtlSeconds: 900,
+    // Off for the checks below, which each need to see KukGit ask AuthKit a
+    // question. The live limit of twenty a minute is real and is what the last
+    // two checks are about — on their own instance, so it cannot make the
+    // others flap.
+    rateLimitPerMinute: 0,
   });
   const authkitOrigin = await simulator.listen();
 
@@ -372,6 +381,55 @@ export async function runAuthKitRehearsal(options = {}) {
       bridgesAfter < bridgesBefore && !logoutPage.jar.has('kukgit_session'),
       `status ${logout.status}, bridges ${bridgesBefore} → ${bridgesAfter}, cookie cleared ${!logoutPage.jar.has('kukgit_session')}`);
 
+      /* 15, 16 — the rate limit, on their own instance */
+      //
+      // The live AuthKit allows twenty requests a minute per source IP, and
+      // KukGit calls it server-to-server, so every user of an instance shares
+      // one bucket. Before the revalidation window, a protected browser request
+      // asked three questions — about six page loads a minute for the whole
+      // product before the twenty-first request came back 429.
+      const limited = createAuthKitSimulator({
+        accounts: [{ email: FOUNDER_EMAIL, password: FOUNDER_PASSWORD, name: 'Founder' }],
+        rateLimitPerMinute: 20,
+      });
+      const limitedOrigin = await limited.listen();
+      const limitedPort = await freePort();
+      const limitedDir = fs.mkdtempSync(path.join(options.tempRoot ?? os.tmpdir(), 'kukgit-authkit-drill-limit-'));
+      const limitedInstance = buildInstance({ dataDir: limitedDir, authkitBaseUrl: limitedOrigin, port: limitedPort, sessionCheckSeconds: 300 });
+      await new Promise((resolve) => limitedInstance.server.listen(limitedPort, '127.0.0.1', resolve));
+      try {
+        const reader = browser(limitedInstance.config.baseUrl);
+        await reader.request('/api/auth/login', { method: 'POST', body: { identifier: FOUNDER_EMAIL, password: FOUNDER_PASSWORD } });
+        const afterLogin = limited.calls.length;
+
+        const pages = [];
+        for (let visit = 0; visit < 10; visit += 1) pages.push((await reader.request('/api/repos')).status);
+        const spent = limited.calls.length - afterLogin;
+        // Ten page loads. Three would already be one page load's worth under
+        // the old behaviour, so the budget is the check.
+        record('authkit.request_budget', spent <= 3 && pages.every((status) => status === 200),
+          `${pages.length} page loads spent ${spent} AuthKit requests, statuses ${[...new Set(pages)].join(',')}`);
+
+        limited.exhaustRateLimit();
+        // Force the window open so the next request has to ask, and be refused.
+        limitedInstance.db.prepare('UPDATE sessions SET last_validated_at = ?').run('2020-01-01 00:00:00');
+        const throttled = await reader.request('/api/repos');
+        const survived = reader.jar.has('kukgit_session')
+          && limitedInstance.db.prepare('SELECT COUNT(*) AS n FROM sessions').get().n > 0;
+        limited.clearRateLimit();
+        // A rate limit is not a rejection. Signing somebody out because this
+        // minute's twenty requests were somebody else's would empty every
+        // browser on the instance during a busy minute.
+        // 503, not 401: the request could not be answered, and that is a
+        // different thing from the session being over.
+        record('authkit.rate_limited', throttled.status === 503 && survived,
+          `status ${throttled.status}, session kept ${survived}, refusals seen ${limited.state.rateLimited}`);
+      } finally {
+        await new Promise((resolve) => limitedInstance.server.close(resolve));
+        limitedInstance.db.close();
+        await limited.close();
+        fs.rmSync(limitedDir, { recursive: true, force: true });
+      }
     } catch (error) {
       // A drill that stops at the first surprise reports one problem and hides
       // the rest, and the surprise is usually a check failing in a way the

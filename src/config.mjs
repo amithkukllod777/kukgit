@@ -74,6 +74,18 @@ export function loadConfig(overrides = {}) {
   const authkitEncryptionKey = overrides.authkitEncryptionKey ?? process.env.KUKGIT_AUTHKIT_ENCRYPTION_KEY ?? (isProduction ? '' : 'kukgit-development-authkit-encryption-key-change-me');
   const authkitTimeoutMs = boundedInteger(overrides.authkitTimeoutMs ?? process.env.KUKGIT_AUTHKIT_TIMEOUT_MS ?? 8000, 'KUKGIT_AUTHKIT_TIMEOUT_MS', 500, 30000);
   const authkitRefreshTtlDays = boundedInteger(overrides.authkitRefreshTtlDays ?? process.env.KUKGIT_AUTHKIT_REFRESH_TTL_DAYS ?? 60, 'KUKGIT_AUTHKIT_REFRESH_TTL_DAYS', 1, 365);
+  // How long a validated bridge session is trusted before AuthKit is asked
+  // again.
+  //
+  // This used to be zero — every protected browser request asked AuthKit three
+  // separate questions. The live service rate-limits `/v1/auth/*` to twenty
+  // requests a minute *per source IP*, and KukGit calls it server-to-server, so
+  // every user of the instance shares one bucket: twenty requests a minute for
+  // the whole product, or about six page loads. See ONE_KUKLABS_ACCOUNT.md.
+  //
+  // Five minutes is the trade. A device revoked centrally keeps working for at
+  // most that long, which is the cost of the instance working at all.
+  const authkitSessionCheckSeconds = boundedInteger(overrides.authkitSessionCheckSeconds ?? process.env.KUKGIT_AUTHKIT_SESSION_CHECK_SECONDS ?? 300, 'KUKGIT_AUTHKIT_SESSION_CHECK_SECONDS', 0, 3600);
   // Rate limiting. Defaults are deliberately generous enough for normal
   // interactive use and tight enough that credential stuffing and invitation
   // spam are not free. `burst` is the bucket capacity: the size of a momentary
@@ -266,6 +278,7 @@ export function loadConfig(overrides = {}) {
     authkitEncryptionKey,
     authkitTimeoutMs,
     authkitRefreshTtlDays,
+    authkitSessionCheckSeconds,
     organizationOwnerLimit,
     runtimeWriteServiceEnabled,
     realtimeHeartbeatMs,

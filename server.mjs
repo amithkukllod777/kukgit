@@ -20,6 +20,8 @@ import { createCollaborationApiHandler } from './src/collaboration.mjs';
 import { loadConfig } from './src/config.mjs';
 import { openDatabase } from './src/db.mjs';
 import { applySchema } from './src/schema.mjs';
+import { createAccountApiHandler } from './src/account-api.mjs';
+import { createOAuthApiHandler } from './src/oauth-api.mjs';
 import { smtpConfigured } from './src/email-transport.mjs';
 
 import { createEmailProviderEventsApiHandler } from './src/email-provider-events-safe.mjs';
@@ -150,6 +152,11 @@ const app = createApp({ config, db });
 const statusGuardedApp = createStatusCheckMergeGuard({ config, db, app });
 const reviewThreadGuardedApp = createReviewThreadMergeGuard({ config, db, app: statusGuardedApp });
 const governedApp = createBranchGovernanceGuard({ config, db, app: reviewThreadGuardedApp });
+const accountApi = createAccountApiHandler({ config, db });
+// Registered before the AuthKit login routes, and declines anything that is not
+// one of its four paths — `/api/auth/login` and `/api/auth/signup` belong to
+// that handler and must reach it whichever order these are mounted in.
+const oauthApi = createOAuthApiHandler({ config, db });
 const secureAuthKitLoginApi = createSecureAuthKitLoginApiHandler({ config, db });
 const authKitApi = createAuthKitApiHandler({ config, db });
 const emailProviderEventsApi = createEmailProviderEventsApiHandler({ config, db });
@@ -245,6 +252,8 @@ const webhooksApi = createWebhooksApiHandler({ config, db });
 const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app: governedApp });
 
 async function dispatch(req, res) {
+  if (await accountApi(req, res)) return;
+  if (await oauthApi(req, res)) return;
   if (await secureAuthKitLoginApi(req, res)) return;
   if (await authKitApi(req, res)) return;
   if (await emailProviderEventsApi(req, res)) return;

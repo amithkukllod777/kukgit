@@ -35,6 +35,12 @@ const POLYMORPHIC_TENANT_TABLES = new Map([
 const NEVER_TENANT_SCOPED = new Map([
   ['users', 'a person is not owned by an organization and may belong to others'],
   ['sessions', 'belongs to a user'],
+  // A live verification or password-reset link. Belongs to the person, not to
+  // any organization they happen to be in — and it is a credential, so it must
+  // never travel in a tenant export either.
+  ['account_tokens', 'belongs to a user, and is a credential'],
+  ['user_identities', 'a person\'s GitHub or Google account, which is theirs and not the tenant\'s'],
+  ['oauth_states', 'a sign-in attempt in flight, with a ten-minute lifetime'],
   ['personal_access_tokens', 'belongs to a user'],
   ['user_ssh_keys', 'belongs to a user'],
   ['notification_preferences', 'belongs to a user'],

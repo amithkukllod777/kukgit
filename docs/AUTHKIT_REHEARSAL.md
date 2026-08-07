@@ -60,6 +60,8 @@ half-done: it would create accounts and revoke somebody's real device sessions.
 | `authkit.fails_closed` | protected APIs refuse during an outage; health stays up |
 | `authkit.outage_keeps_cookie` | an outage refuses without signing everybody out |
 | `authkit.logout` | logout removes the bridge even with central logout down |
+| `authkit.request_budget` | ten page loads spend at most three AuthKit requests |
+| `authkit.rate_limited` | a `429` refuses the request without signing anybody out |
 
 `refresh_rotation` compares the secrets **after decrypting them**. AES-GCM uses
 a fresh IV every time, so comparing the stored ciphertext would report a
@@ -71,6 +73,20 @@ means refusing during an outage; keeping the cookie means refusing *without*
 emptying every browser on a healthy instance because one dependency was briefly
 unreachable. It is easy to fix either one and break the other, so both are
 checked and both have a test that breaks the code and watches the drill notice.
+
+## The twenty-requests-a-minute problem
+
+The live service allows twenty requests a minute on `/v1/auth/*`, **per source
+IP**, and KukGit calls it server-to-server — so every user of an instance shares
+one bucket. KukGit asked three questions per protected browser request, which is
+about six page loads a minute for the whole product.
+
+The last two checks are about that, and they run on their own instance with the
+real limit switched on, so they cannot make the others flap. The first thirteen
+run against a simulator with the limit off, because each of them needs to see
+KukGit *ask* AuthKit a question.
+
+The drill now reports `10 page loads spent 0 AuthKit requests`.
 
 ## What it found
 
@@ -98,13 +114,22 @@ is deliberately not a permissive test double:
 - a request without `X-Kuklabs-Product` is refused, and the omission is recorded
 - `offline` makes every route fail, so failing closed can be observed
 
-Signup deliberately answers **without** a `sid` in the response envelope, so the
-path where KukGit reads the device-session id out of the access-token claims —
-the one production depends on — is the one under test.
+No route puts a `sid` in the response envelope, because the live service does
+not — it is in the access token's claims and nowhere else, so the claims path is
+the only one KukGit can use and the only one worth testing.
 
-It is a simulator, not a mock: nothing in it knows what the drill wants. Where
-the real service's behaviour is unknown it refuses rather than guesses, because
-a stand-in more forgiving than production is a stand-in that certifies a bug.
+It is a simulator, not a mock: nothing in it knows what the drill wants.
+
+Since the real contract was read line by line, it matches it — twenty requests a
+minute with the differently-shaped `429` body, `200` with `access: false` rather
+than `403`, no `sid` in any envelope, three distinct messages behind one `401`,
+and a 24-hour access token.
+
+**One deliberate divergence:** the simulator revokes a device session when a
+spent refresh token is replayed. The live service does not. Being stricter is
+safe — a stand-in more forgiving than production is a stand-in that certifies a
+bug — but it means `authkit.refresh_replay` proves KukGit never replays, not
+that replaying would be punished.
 
 It is not an identity provider. Passwords are compared in plain text and the OTP
 code is fixed. It exists to be talked to, never to hold an account.
@@ -113,18 +138,25 @@ code is fixed. It exists to be talked to, never to hold an account.
 
 These need the real service and cannot be rehearsed here:
 
-- that AuthKit's response envelopes match the shapes above — every field name
-  KukGit reads is a guess until one real response has been seen
 - that a real Google ID token links to the same central identity
 - that a real OTP arrives, and within the window the product expects
-- that `/v1/auth/sessions` reports `current` on the session that presented the
-  token, which is what the whole device binding rests on
-- that AuthKit's rate limits do not refuse KukGit's per-request validation under
-  real load
+- that a real signed-in session survives a real refresh rotation, and that the
+  rotated token still carries the same `sid`
+- that the revalidation window is short enough in practice — a revoked device
+  keeps working for up to five minutes, and only real use says whether that is
+  acceptable
+
+The response shapes are no longer on this list. They were read from the service's
+own source, endpoint by endpoint, and the simulator was corrected to match; what
+remains is behaviour under real accounts and real load.
+
+There is no staging environment to do any of it in. One environment, live,
+shared with every Kuklabs product — which is why `--url` is refused rather than
+offered with a warning.
 
 ## Running it in CI
 
 `npm run ci` does not run the drill; the test suite does, through
 `test/authkit-rehearsal.test.mjs`, which runs it once and then breaks the code
-four separate ways to confirm the drill notices. A drill that cannot fail is a
+six separate ways to confirm the drill notices. A drill that cannot fail is a
 green light wired to nothing.

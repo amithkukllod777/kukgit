@@ -21,6 +21,11 @@ import { createAuthKitSimulator } from '../src/authkit-simulator.mjs';
  * time.
  */
 
+/** The device-session id, read where the live service actually puts it. */
+function sidOf(accessToken) {
+  return JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64url').toString('utf8')).sid;
+}
+
 /* ------------------------------------------------------------- simulator */
 
 async function simulator(t, options = {}) {
@@ -66,14 +71,15 @@ test('the access token carries the device-session id in its claims', async (t) =
   const { signIn } = await simulator(t);
   const { body } = await signIn();
   const claims = JSON.parse(Buffer.from(body.access_token.split('.')[1], 'base64url').toString('utf8'));
-  // Production reads the id from the envelope when it is there and from the
-  // claims when it is not. A stand-in that only ever filled the envelope would
-  // leave the second path — the one signup uses — untested.
-  assert.equal(claims.sid, body.sid);
+  // The live service carries `sid` only in the claims — there is no top-level
+  // one on any route. So the claims path is the one KukGit depends on, and a
+  // stand-in that also filled the envelope would leave it unexercised.
+  assert.equal(body.sid, undefined, 'the envelope carried a sid the real service does not send');
+  assert.match(claims.sid, /^sess_/);
   assert.match(body.access_token, /\.unsigned-simulator$/);
 });
 
-test('signup completes without an envelope sid, so the claims path is exercised', async (t) => {
+test('signup answers 403 with otp_required, and verifying opens a session', async (t) => {
   const { call } = await simulator(t);
   const signup = await call('/v1/auth/signup', { method: 'POST', body: { identifier: 'new@kuklabs.com', password: 'x' } });
   assert.equal(signup.status, 403);
@@ -117,7 +123,7 @@ test('revoking one device session leaves the others alone', async (t) => {
   const { signIn, call, instance } = await simulator(t);
   const { body: laptop } = await signIn();
   const { body: phone } = await signIn();
-  instance.revokeSession(laptop.sid);
+  instance.revokeSession(sidOf(laptop.access_token));
 
   assert.equal((await call('/v1/auth/me', { accessToken: laptop.access_token })).status, 401);
   assert.equal((await call('/v1/auth/me', { accessToken: phone.access_token })).status, 200);
@@ -134,14 +140,58 @@ test('going offline fails every route, including the ones that do not need a tok
   assert.equal((await call('/v1/auth/status')).status, 200);
 });
 
-test('blocked product membership is a 403 with the status named', async (t) => {
+test('blocked product membership is a 200 saying access is false', async (t) => {
   const { signIn, call, instance } = await simulator(t);
   const { body } = await signIn();
   instance.setProductAccess('blocked');
   const denied = await call('/v1/auth/products/kukgit/access', { accessToken: body.access_token });
-  assert.equal(denied.status, 403);
+  // 200, not 403 — that is what the live service does, and KukGit reads the
+  // field rather than the status. A stand-in that returned 403 would let a bug
+  // in that reading pass unnoticed.
+  assert.equal(denied.status, 200);
   assert.equal(denied.body.status, 'blocked');
   assert.equal(denied.body.access, false);
+});
+
+test('the three refusals behind one 401 are three different messages', async (t) => {
+  const { call, signIn, instance } = await simulator(t);
+  // Anything distinguishing "no token" from "expired token" has to match on the
+  // message, because the live service returns 401 for both.
+  assert.match((await call('/v1/auth/me')).body.message, /Sign in required/);
+  const { body } = await signIn();
+  instance.expireAccessTokens();
+  assert.match((await call('/v1/auth/me', { accessToken: body.access_token })).body.message, /Session expired/);
+});
+
+test('the rate limit is a 429 with a different body shape from every other error', async (t) => {
+  const { call, instance } = await simulator(t, { rateLimitPerMinute: 3 });
+  for (let request = 0; request < 3; request += 1) await call('/v1/auth/status');
+  const refused = await call('/v1/auth/status');
+
+  assert.equal(refused.status, 429);
+  // `error` is a string here; everywhere else it is `true` beside a `message`.
+  // Anything parsing the envelope has to survive that.
+  assert.equal(typeof refused.body.error, 'string');
+  assert.equal(refused.body.message, undefined);
+  assert.equal(instance.state.rateLimited, 1);
+
+  instance.clearRateLimit();
+  assert.equal((await call('/v1/auth/status')).status, 200);
+});
+
+test('an expired access token says so in its own claims', async (t) => {
+  const { signIn, call, instance } = await simulator(t);
+  const { body } = await signIn();
+  assert.ok(JSON.parse(Buffer.from(body.access_token.split('.')[1], 'base64url').toString('utf8')).exp * 1000 > Date.now());
+
+  instance.expireAccessTokens();
+  // KukGit reads `exp` locally, so that steady-state browsing spends none of
+  // the twenty requests a minute. A stand-in whose expired token still claimed
+  // to be valid would leave that path testing nothing.
+  const refreshed = await call('/v1/auth/token/refresh', { method: 'POST', body: { refresh_token: body.refresh_token } });
+  const reissued = JSON.parse(Buffer.from(refreshed.body.access_token.split('.')[1], 'base64url').toString('utf8'));
+  assert.ok(reissued.exp * 1000 > Date.now(), 'the replacement token was born expired');
+  assert.equal(reissued.sid, sidOf(body.access_token), 'refreshing moved the session to a new device id');
 });
 
 /* ----------------------------------------------------------------- drill */
@@ -350,4 +400,34 @@ test('a failed or unrecognised evidence file changes nothing', async (t) => {
     const applied = await recoveryChecksWith(file);
     assert.equal(applied.find((check) => check.id === 'authkit.login').status, 'outstanding', `${file} was trusted`);
   }
+});
+
+test('the drill fails when a page load starts asking AuthKit again', async () => {
+  // The regression that matters most. Before the revalidation window, one
+  // protected browser request asked AuthKit three questions — and the live
+  // service allows twenty a minute for the whole instance.
+  const record = await runDrillWithBrokenSource([{
+    file: 'src/authkit-identity.mjs',
+    replace: (source) => source.replace(
+      '  if (withinSessionCheckWindow(config, session) && !accessTokenExpired(accessToken)) {',
+      '  if (false) {',
+    ),
+  }]);
+  assert.equal(record.result, 'failed');
+  assert.ok(record.failures.some((failure) => failure.startsWith('authkit.request_budget')), record.failures.join('; '));
+});
+
+test('the drill fails when a rate limit signs somebody out', async () => {
+  // Treating 429 like 401 is the tempting mistake: both are "AuthKit said no".
+  // One means the session is over; the other means this minute's twenty
+  // requests belonged to somebody else.
+  const record = await runDrillWithBrokenSource([{
+    file: 'src/authkit-identity.mjs',
+    replace: (source) => source.replace(
+      "  if (me.response.status === 429) {\n    throw httpError(503, 'Kuklabs Account is rate limiting this instance.', 'AUTHKIT_RATE_LIMITED');\n  }",
+      '  if (me.response.status === 429) {\n    revokeLocalSession(db, session.tokenHash);\n    return null;\n  }',
+    ),
+  }]);
+  assert.equal(record.result, 'failed');
+  assert.ok(record.failures.some((failure) => failure.startsWith('authkit.rate_limited')), record.failures.join('; '));
 });

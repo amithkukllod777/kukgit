@@ -42,6 +42,11 @@ function setup(t, authkitBaseUrl) {
     authMode: 'authkit',
     authkitBaseUrl,
     authkitEncryptionKey: 'authkit-session-binding-test-key-long-enough',
+    // Every check in this file is about what happens when KukGit *asks*
+    // AuthKit — revocation, rotation, product denial. The revalidation window
+    // exists so that most requests do not ask, so it is off here; the window
+    // itself is covered in authkit-session-window.test.mjs.
+    authkitSessionCheckSeconds: 0,
     adminEmail: 'owner@example.com',
     adminPassword: 'secure-owner-password',
     adminName: 'Owner',
