@@ -1,6 +1,6 @@
 # KukGit Engineering TODO
 
-Updated: 2026-07-29
+Updated: 2026-08-07
 
 This is the prioritized execution list for KukGit. The phase-level direction is in [ROADMAP.md](ROADMAP.md). GitHub issues and pull requests are authoritative for implementation status.
 
@@ -13,7 +13,7 @@ This is the prioritized execution list for KukGit. The phase-level direction is 
 - Do not enable dual-write, automatic cutover or PostgreSQL restore using Stage 1–6 evidence alone.
 - Stage 7 write-service code does not authorize production PostgreSQL writes or cutover.
 - Do not move bare Git repository or Git LFS bytes as part of metadata-database migration.
-- Production identity remains One Kuklabs Account/AuthKit; never restore a product-specific production password backend.
+- KukGit owns first-party accounts; keep optional AuthKit mode isolated and preserve both identity sources without silent account merging.
 - No secrets, tokens, password material, raw provider payloads or sampled database rows in logs, evidence or UI.
 
 ## P0 — Current private-alpha critical path
@@ -21,10 +21,8 @@ This is the prioritized execution list for KukGit. The phase-level direction is 
 ### 0a. KukGit's own accounts
 
 Decided 2026-08-07: KukGit owns its login, and Kuklabs Account becomes optional.
-Reasons and the reversal are in `CLAUDE.md`. Production still refuses
-`KUKGIT_AUTH_MODE=local`, and that refusal is correct until the list below is
-done — an account system with no way to prove an address and no way back in
-after a forgotten password is not one to put in front of customers.
+Reasons and the reversal are in `CLAUDE.md`. Production `local` mode is now
+allowed when HTTPS, Secure cookies and working email delivery are configured.
 
 - [x] password records carry their own cost parameters, so the cost can be
       raised later; raised from Node's default 16384 to 32768 and rewritten
@@ -35,7 +33,8 @@ after a forgotten password is not one to put in front of customers.
       and a reset ends every session the account has
 - [x] the four endpoints behind them, on the `auth` rate-limit surface and
       absent rather than refused in AuthKit mode
-- [ ] the two screens — verify-email and reset-password
+- [x] verify-email, forgot-password and reset-password screens, including full-application route-race tests
+- [x] privacy-preserving self-service signup: new and existing addresses receive the same response, and new accounts must verify before creating an organization
 - [x] one person, several ways in — `user_identities` links a provider account
       to a KukGit user rather than making a second one, and refuses to join two
       accounts on an address neither side has proved
@@ -43,13 +42,11 @@ after a forgotten password is not one to put in front of customers.
       spent once, the landing route checked against an open redirect, the
       provider's `verified` flag read rather than assumed, and the access token
       used and thrown away
-- [ ] wire the two callback routes and the buttons
-- [ ] verify a mobile number — needs an SMS provider, and is an abuse target
-      (SMS pumping) so it comes last and with its own limits
-- [ ] lift the production refusal, once the two above are done
-- [ ] two-factor authentication
-- [ ] account recovery when 2FA is lost, which is the part that decides whether
-      2FA is safe to turn on at all
+- [x] wire the GitHub/Google callback routes and sign-in buttons
+- [x] optional Firebase-backed phone verification with its own rate-limit surface
+- [x] lift the production local-auth refusal and replace it with HTTPS, Secure-cookie and email-delivery gates
+- [x] TOTP two-factor authentication
+- [x] one-time recovery codes, regeneration and recovery-code disable flow
 
 ### 0. Restore trustworthy CI execution
 
@@ -106,7 +103,7 @@ executed remains a file nobody should trust.
 
 Parent: [#43 — PostgreSQL-compatible data layer and migration tooling](https://github.com/amithkukllod777/kukgit/issues/43)
 
-Active stage: [#68 — driver-neutral write service and integration CI foundation](https://github.com/amithkukllod777/kukgit/issues/68), implemented on draft [PR #70](https://github.com/amithkukllod777/kukgit/pull/70) but not delivered.
+Stage 7: [#68 — driver-neutral write service and integration CI foundation](https://github.com/amithkukllod777/kukgit/issues/68), completed and merged through [PR #70](https://github.com/amithkukllod777/kukgit/pull/70).
 
 Completed prerequisites on `main`:
 
@@ -138,7 +135,7 @@ Later work after Stage 7 delivery:
 - [ ] make verified backup/restore metadata-backend aware before production cutover
 - [ ] require explicit operator approval and clean rehearsal evidence before changing `KUKGIT_DATABASE_DRIVER`
 
-Exit gate: PostgreSQL must preserve AuthKit identity links, PATs, SSH keys, invitations, audit history, repository permissions and lifecycle state exactly.
+Exit gate: PostgreSQL must preserve local and AuthKit identity links, PATs, SSH keys, invitations, audit history, repository permissions and lifecycle state exactly.
 
 ### 2. Production recovery rehearsal
 
@@ -150,11 +147,13 @@ Automated by `npm run rehearse` — see [RECOVERY_REHEARSAL.md](RECOVERY_REHEARS
 - [x] confirm no credential is restored in the clear
 - [x] record recovery time, data-loss window and operator evidence
 
-Manual sign-off, which needs a live instance, a reachable AuthKit and an operator
-credential a backup deliberately does not contain. Each is tracked as
-`outstanding` in the evidence record until confirmed:
+Manual sign-off needs a live instance and operator credentials a backup
+deliberately does not contain. AuthKit checks are tracked as `outstanding` in
+the generated evidence. Local identity checks currently require a separate
+operator record; extending the evidence schema remains open:
 
-- [ ] test AuthKit login, refresh rotation and centrally revoked device sessions
+- [ ] test local signup, email verification, password reset, TOTP and recovery-code sign-in
+- [ ] when AuthKit is enabled, test login, refresh rotation and centrally revoked device sessions
       — **rehearsed** by `npm run authkit:rehearse`, which drives all three
       against a stand-in AuthKit over real HTTP and found a bug doing it
       ([AUTHKIT_REHEARSAL.md](AUTHKIT_REHEARSAL.md)). Pass its evidence file to
@@ -256,9 +255,9 @@ not the boundary being trusted. Those items stay in scope here.
       [DEPENDENCIES.md](DEPENDENCIES.md)
 - [ ] advisories beyond npm — the Git side, the operating system, container
       base images and vendored code are all outside `npm audit`
-- [ ] extend front-end behaviour coverage to `app.js` routing and the remaining
-      `public/*.js` modules — [FRONT_END_TESTING.md](FRONT_END_TESTING.md) lists
-      what the shim does not cover
+- [x] extend front-end behaviour coverage to `app.js` routing and every
+      `public/*.js` module — [FRONT_END_TESTING.md](FRONT_END_TESTING.md) records
+      the remaining visual and real-browser limits
 
 ## P2 — Public beta
 
@@ -291,8 +290,8 @@ not the boundary being trusted. Those items stay in scope here.
 - [ ] container registry
 - [ ] release assets
 - [ ] code search
-- [ ] public status and incident operations
-- [ ] moderation and appeals
+- [x] public status and incident operations — [STATUS_PAGE.md](STATUS_PAGE.md)
+- [x] abuse reporting, reversible moderation and appeals — [ABUSE_REPORTS.md](ABUSE_REPORTS.md)
 
 ## P3 — AI developer operating system
 
@@ -321,14 +320,14 @@ not the boundary being trusted. Those items stay in scope here.
 
 ## Recently completed
 
-- [x] One Kuklabs Account/AuthKit production integration and hardening
+- [x] KukGit-owned signup, verification, reset, OAuth, phone verification, TOTP and recovery codes; AuthKit retained as an optional mode
 - [x] organization self-service onboarding
 - [x] external repository collaborators, expiry and access reviews
 - [x] instance-administrator tenant support console
 - [x] real-time WebSocket notifications
 - [x] signed email provider events, bounce/complaint suppression and Admin recovery
-- [x] PostgreSQL migration Stages 1–6
-- [x] roadmap and prioritized TODO synchronized through 2026-07-29
+- [x] PostgreSQL migration Stages 1–7; SQLite remains authoritative
+- [x] roadmap and prioritized TODO synchronized through 2026-08-07
 - [x] front-end behaviour tests — a dependency-free DOM shim so `public/*.js`
       can be driven under `node --test`, covering the request-storm, cached-401
       and duplicate-attachment classes that only a browser had caught,

@@ -63,7 +63,10 @@ The signup module does not replace a signed-in application shell.
 
 Email verification and password-reset screens are owned by `public/account-screens-ui.js`. The verification token remains in the URL fragment until spent so it is not sent in request URLs or Referer headers, and is removed after use.
 
-An unverified self-service signup may sign in, but creation of organizations and repositories remains gated until the email address is verified.
+An unverified self-service signup may sign in, but it cannot create an
+organization until the email address is verified. Repository creation is not a
+separate verification gate: it follows the user's effective permission in an
+organization they can already access.
 
 ## Tests
 

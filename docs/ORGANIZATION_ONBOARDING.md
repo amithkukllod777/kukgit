@@ -4,14 +4,19 @@ KukGit allows an authenticated user to create an organization workspace without 
 
 ## Identity requirement
 
-In AuthKit mode, workspace creation requires:
+Workspace creation is available in both supported authentication modes.
+
+In `local` mode:
+
+- an operator-created account may create a workspace immediately
+- a self-service signup must verify its email address first
+
+In `authkit` mode, workspace creation requires:
 
 - an active One Kuklabs Account session
 - active KukGit product access
 - an active central device session
 - a verified central email address
-
-KukGit local-development users may create workspaces in local mode. Production must continue to use central AuthKit.
 
 ## User flow
 
@@ -67,7 +72,7 @@ The status endpoint returns:
 }
 ```
 
-The first workspace is created on the free plan. Billing and upgraded limits will be added through the subscription and usage-metering milestone.
+The first workspace is created on the free plan. Subscription checkout, usage metering and paid-plan lifecycle now exist; provider validation and several quota-enforcement paths remain rollout gates.
 
 ## Atomic creation
 
@@ -190,7 +195,11 @@ Confirm the configured instance limit and the user's Owner memberships. Do not d
 
 ### Identity verification required
 
-The user must verify the email in One Kuklabs Account. KukGit must not mark a central identity as verified locally.
+For a self-service local signup, the user must spend the KukGit verification
+link before creating an organization. Operator-created and verified-provider
+accounts are not retroactively blocked by that signup-only gate. In AuthKit
+mode, KukGit trusts the verified central email and must not mark it verified
+locally.
 
 ### Failed creation
 
@@ -209,11 +218,12 @@ After a failed transaction, verify that no organization with the requested name 
 1. create and verify a KukGit backup
 2. deploy the schema migration and onboarding API
 3. set `KUKGIT_ORGANIZATION_OWNER_LIMIT`
-4. test a new verified AuthKit user with zero organizations
-5. verify Owner membership and the Developers team
-6. verify organization invitation acceptance still works
-7. verify a repository-only collaborator is not redirected
-8. monitor `organization.self_service_created` audit events and error codes
+4. test a new verified local signup with zero organizations
+5. when AuthKit mode is enabled, repeat with a new verified AuthKit user
+6. verify Owner membership and the Developers team
+7. verify organization invitation acceptance still works
+8. verify a repository-only collaborator is not redirected
+9. monitor `organization.self_service_created` audit events and error codes
 
 ## Important error codes
 
@@ -242,7 +252,7 @@ Tests verify:
 - duplicate slug race handling
 - rollback without partial records
 - ownership-limit enforcement
-- verified AuthKit email requirement
+- verified self-service-signup email requirement and AuthKit verified-email requirement
 - same-origin protection
 - HTTPS website validation
 - slug availability responses

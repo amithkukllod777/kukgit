@@ -1,6 +1,6 @@
 # KukGit Roadmap
 
-Updated: 2026-07-29
+Updated: 2026-08-07
 
 This document records product phases and safety boundaries. The actionable engineering queue lives in [TODO.md](TODO.md). GitHub issues remain the execution-level source of truth.
 
@@ -31,11 +31,13 @@ Target: reliable internal use by Kuklabs and controlled external collaboration.
 
 Status: **Delivered**.
 
-- One Kuklabs Account through central AuthKit `/v1/auth/*`
+- KukGit-owned email/password accounts for development and production
+- self-service signup, verified email, password reset and session revocation
+- TOTP two-factor authentication with one-time recovery codes
+- GitHub and Google OAuth sign-in with verified-email conflict protection
+- optional One Kuklabs Account through central AuthKit `/v1/auth/*`
 - stable `kuklabs_user_id` mapping while preserving KukGit product foreign keys
-- verified-email account linking and duplicate-identity conflict protection
-- production local-password authentication disabled
-- encrypted server-side AuthKit token custody, refresh rotation and device-session revocation
+- encrypted server-side AuthKit token custody, refresh rotation and device-session revocation when AuthKit mode is selected
 - self-service organization onboarding with atomic Owner/default-team provisioning
 - organization members, teams, invitations and repository-only external collaborators
 - time-bounded external access, expiry enforcement, renewal and access-review campaigns
@@ -82,7 +84,7 @@ Status: **Delivered**.
 
 ### PostgreSQL migration program
 
-Status: **Stages 1–6 delivered; Stage 7 active but validation-blocked; production cutover not enabled**. Parent tracking issue: [#43](https://github.com/amithkukllod777/kukgit/issues/43). Active stage: [#68](https://github.com/amithkukllod777/kukgit/issues/68), draft PR [#70](https://github.com/amithkukllod777/kukgit/pull/70).
+Status: **Stages 1–7 delivered; production cutover not enabled**. Parent tracking issue: [#43](https://github.com/amithkukllod777/kukgit/issues/43). Stage 7 was completed in [#68](https://github.com/amithkukllod777/kukgit/issues/68) and merged through [PR #70](https://github.com/amithkukllod777/kukgit/pull/70).
 
 Delivered stages:
 
@@ -93,14 +95,14 @@ Delivered stages:
 5. **Read-only shadow verification** — runtime-surface inventory, curated SELECT catalog, least-privilege PostgreSQL adapter and privacy-safe parity reports.
 6. **Driver-neutral live reads and asynchronous observation** — selected live reads behind the catalog, optional bounded PostgreSQL observer, deterministic sampling, circuit breaker and no-result-substitution guarantee.
 
-Active Stage 7 scope:
+Delivered Stage 7 scope:
 
 7. **Driver-neutral write foundation and PostgreSQL integration CI** — privacy-safe write-surface inventory, named parameterized write catalog, explicit transaction/error/cancellation contract, checksummed migration history, production-default-off rollout flag, first append-only audit slice and disposable PostgreSQL compatibility tests.
 
-Stage 7 status:
-
-- Stage 7 remains **not delivered** because GitHub-hosted Actions jobs are failing before their first step and provide no executable CI evidence.
-- PR #70 must remain draft and unmerged until normal tests and the disposable PostgreSQL integration job execute successfully from the exact reviewed head.
+Stage 7 was validated locally against PostgreSQL 16 and merged on 2026-08-01.
+Repository-hosted Actions still need to execute successfully; a zero-step hosted
+job is not additional evidence, but it no longer changes the merged Stage 7
+status recorded on `main`.
 
 Safety boundary:
 
@@ -117,30 +119,31 @@ Safety boundary:
 
 Status: **Active / planned**.
 
-1. Restore GitHub Actions hosted-runner execution and complete exact-head CI for PR #70.
-2. Complete Stage 7 validation, then migrate additional bounded low-risk metadata writes behind the reviewed catalog, keeping disposable PostgreSQL integration CI mandatory for every slice.
-3. Build explicit maintenance-window cutover, rollback evidence and backend-aware backup/restore.
-4. Rehearse production recovery for AuthKit, metadata, Git repositories, LFS, SMTP/provider events and WebSockets.
-5. Define distributed-job and scalable object-storage boundaries without disrupting live Git traffic.
-6. Establish release, incident, capacity and abuse-response runbooks for wider private-alpha use.
+1. Restore GitHub Actions runner execution and produce exact-head repository CI evidence.
+2. Exercise KukGit-owned signup, email verification, password reset, TOTP recovery and optional AuthKit mode on staging.
+3. Validate Resend, Razorpay and Stripe against real provider test environments.
+4. Migrate additional bounded low-risk metadata writes behind the reviewed catalog, keeping disposable PostgreSQL integration CI mandatory for every slice.
+5. Build explicit maintenance-window cutover, rollback evidence and backend-aware backup/restore.
+6. Rehearse production recovery for identity, metadata, Git repositories, LFS, SMTP/provider events and WebSockets.
+7. Establish release, capacity and abuse-response runbooks for wider private-alpha use.
 
 ## Phase 2 — Public beta
 
 Status: **Planned after private-alpha exit gates**.
 
-- subscriptions, quotas and usage metering
+- subscriptions, usage metering, checkout, cancellation and dunning — delivered; quota enforcement remains
 - hosted CI runners
 - workflow YAML — format and validation delivered ([WORKFLOWS.md](WORKFLOWS.md)); execution outstanding
-- secrets vault
-- build logs, cache and artifacts
+- secrets vault — delivered
+- build logs, cache and artifacts — delivered for self-hosted workflows
 - package registry
 - container registry
 - release assets
 - code search
-- secret scanning and push protection
+- secret scanning and push protection — delivered
 - dependency, license and SBOM scanning
-- status page and incident operations
-- abuse prevention and moderation
+- status page and incident operations — delivered
+- abuse reporting, reversible moderation and appeals — delivered; wider operational moderation remains
 
 ## Phase 3 — AI developer operating system
 
@@ -184,4 +187,4 @@ Status: **Planned**.
 
 ## Release rule
 
-A roadmap item is marked Delivered only after its implementation, security boundary, automated tests, operational documentation and clean CI are merged to `main`. Mergeability alone is not evidence of safety, and a branch with zero executed CI steps must never be promoted.
+A roadmap item is marked Delivered only after its implementation, security boundary, automated tests and operational documentation are merged to `main` with recorded validation. Mergeability and zero-step hosted jobs are not evidence. Until repository-hosted CI executes reliably, the exact-head `npm run ci` result—including every skip—must be retained with the change.

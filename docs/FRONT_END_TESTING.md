@@ -37,11 +37,11 @@ that records every call, `FormData` over a form element, and `hashchange`.
 
 ### What it is not
 
-It is not a browser. No layout, no CSS, no real event ordering, no history, no
-form submission, no `requestAnimationFrame`. A test that passes here is evidence
-about our logic and **not** about how anything renders. Browser verification
-before a release is still the check that matters; this is the one that runs on
-every commit.
+It is not a browser. There is no layout, CSS engine or fully realistic event
+ordering. The shim now includes only the small history, focus, form and
+`requestAnimationFrame` surfaces the application actually uses. A test that
+passes here is evidence about logic and **not** about how anything renders.
+Browser verification before a release remains mandatory.
 
 Unsupported CSS combinators (`>`, `+`, `~`) throw rather than matching the wrong
 element, because a shim that silently returns the wrong node turns every test
@@ -218,9 +218,9 @@ shortens what browser verification has to catch, and does not replace it.
 ## What is still not covered
 
 - Anything visual. Spacing, contrast, whether a panel is readable on a phone.
-- **Most of what each module does.** Twenty-five modules are swept for storms;
-  eight are driven through their actual behaviour. The other seventeen could
-  render nonsense and pass.
+- **Every behaviour inside every module.** Every current `public/*.js` module has at
+  least one behaviour test and the sweep imports every module, but that does not
+  mean every state or interaction in each module is covered.
 - Real event ordering, focus, scrolling, and anything the browser does that we
   do not.
 
@@ -249,7 +249,7 @@ Use `browser.present(selector)` for existence, `.length` for counts, and
 
 ## Every module has one
 
-All 27 `public/*.js` modules now have a behaviour test. A new module is not
+Every current `public/*.js` module now has a behaviour test. A new module is not
 finished without one, and the reason is not tidiness: six request storms, an
 unchecked box that never turned email off, and a confirmation with no name in it
 were all found by writing these, not by using the product.

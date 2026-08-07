@@ -37,7 +37,10 @@ The highest permission wins. For example, a Viewer with a direct Triage grant an
 
 A repository admin can grant a repository-specific permission to an existing organization member. The grant is stored separately from organization membership and can be changed or removed without removing the user from the organization.
 
-Private-alpha direct collaborators must already belong to the repository organization. External collaborators will be considered after One Kuklabs Account and invitation onboarding are complete.
+Direct grants in this section apply to organization members. Repository admins
+may also invite a repository-only external collaborator by exact email, with an
+expiry and no visibility into the rest of the organization. That separate flow
+is documented in [External Collaborators](EXTERNAL_COLLABORATORS.md).
 
 ## Team access
 

@@ -43,7 +43,11 @@ The recipient opens the generated URL and signs in to KukGit. Acceptance succeed
 
 The membership write and invitation acceptance update run in a database transaction. Replaying an accepted token is rejected.
 
-The private-alpha flow currently requires an existing KukGit account. One Kuklabs Account signup and email delivery will replace this boundary in the identity milestone.
+The recipient may use an existing account or create a KukGit-local account when
+self-service signup and email delivery are configured. Acceptance still requires
+the one-time invitation token and an exact account-email match; the separate
+self-service verification gate applies when that account creates its own
+organization. AuthKit-mode instances use the verified central account instead.
 
 ## Teams
 
@@ -58,7 +62,10 @@ A team has:
 
 The creator is automatically added as a team maintainer. Deleting a team removes team memberships but does not remove organization members.
 
-Repository team access and direct collaborators are the next collaboration milestone. The current team model is designed to support that access layer without changing organization membership.
+Repository team grants, direct organization-member grants and time-bounded
+repository-only external collaborators are implemented on top of this team
+model. See [Repository Access](REPOSITORY_ACCESS.md) and
+[External Collaborators](EXTERNAL_COLLABORATORS.md).
 
 ## Browser API
 

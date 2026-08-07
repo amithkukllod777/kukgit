@@ -62,12 +62,13 @@ not a failed restore and the drill does not report it as one.
 
 ## What cannot be automated
 
-Some checks need a running instance, a reachable AuthKit and a credential only an
-operator holds. A backup stores password and token *hashes*, so the drill
-deliberately cannot authenticate on your behalf.
+Some checks need a running instance and credentials only an operator holds. A
+backup stores password and token *hashes*, so the drill deliberately cannot
+authenticate on your behalf. Run the checks for the identity mode the restored
+instance actually uses.
 
-These are recorded in every evidence file as `outstanding`, and the record's
-`complete` field stays `false` until they are signed off:
+The current evidence schema records these AuthKit-specific checks as
+`outstanding`:
 
 - `authkit.login` — sign in with One Kuklabs Account, confirm the local user id is retained
 - `authkit.refresh_rotation` — let the access token expire, confirm one refresh rotates both stored secrets
@@ -77,6 +78,13 @@ These are recorded in every evidence file as `outstanding`, and the record's
 - `git.lfs_authorization` — fetch a restored LFS object, confirm cross-repository access is refused
 - `email.retry_and_suppression` — force an SMTP failure, confirm the outbox retries and a suppressed address stays cancelled
 - `notifications.websocket_recovery` — reconnect the notification socket, confirm delivery resumes without duplicating messages
+
+For a `local`-mode restore, also create and verify a new account, reset a
+password and sign in with a single-use TOTP recovery code. The current evidence
+format does **not** yet model those three checks or mark the AuthKit checks
+not-applicable. Until the recovery schema is updated, retain the local-mode
+operator record beside the generated evidence and do not claim the generated
+`complete` flag covers local identity recovery.
 
 An automated pass is necessary but not sufficient. A rehearsal is complete only
 when the manual checks are signed off against the restored instance too.
