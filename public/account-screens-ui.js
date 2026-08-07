@@ -39,6 +39,8 @@
  * address gets, and the person who really owns the address is told by email.
  */
 
+import { signedOutPage } from './brand-hero.js';
+
 const ROUTES = new Set(['signup', 'verify-email', 'reset-password', 'forgot-password']);
 
 /**
@@ -109,15 +111,23 @@ function accountStyles() {
   if (document.querySelector('#kg-account-styles')) return;
   const style = document.createElement('style');
   style.id = 'kg-account-styles';
+  // Only what the sign-in card does not already provide. The frame, the panel
+  // and the card itself are `.login-page` / `.login-panel` / `.login-card` from
+  // the main style sheet, so these screens inherit the sign-in page's
+  // proportions, its responsive breakpoints and any future change to them
+  // rather than carrying a second, slowly diverging copy.
   style.textContent = `
-    .kg-account { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:32px 20px; }
-    .kg-account-card { width:100%; max-width:440px; display:grid; gap:14px; padding:28px; border:1px solid var(--border); border-radius:16px; }
-    .kg-account-card h2 { margin:0; }
-    .kg-account-card p { margin:0; line-height:1.55; }
-    .kg-account-note { font-size:13px; color:var(--muted); line-height:1.55; }
+    /* The gap owns the spacing, so every child sits the same distance apart
+       whether it is a field, an error box or the button. \`.field\` brings its
+       own bottom margin from the main sheet, which would add to it. */
+    .kg-account-form { display:grid; gap:16px; margin-top:4px; }
+    .kg-account-form .field { margin-bottom:0; }
+    .kg-account-top { display:flex; align-items:baseline; justify-content:flex-end; gap:8px; margin:-6px 0 18px; font-size:13px; color:var(--muted); }
+    .kg-account-top a { font-size:13px; }
+    .kg-account-note { font-size:13px; color:var(--muted); line-height:1.55; margin:0; }
     .kg-account-bad { border:1px solid #d9534f66; background:#d9534f14; border-radius:10px; padding:11px 13px; font-size:13px; line-height:1.5; }
     .kg-account-good { border:1px solid #3aa06655; background:#3aa06614; border-radius:10px; padding:11px 13px; font-size:13px; line-height:1.5; }
-    .kg-account-links { display:flex; justify-content:center; gap:10px; margin-top:2px; flex-wrap:wrap; }
+    .kg-account-links { display:flex; justify-content:center; gap:10px; margin-top:18px; flex-wrap:wrap; }
     .kg-account-links a { font-size:13px; }
     .kg-account-links span { font-size:13px; color:var(--muted); }
   `;
@@ -125,7 +135,7 @@ function accountStyles() {
 }
 
 function card(inner) {
-  return `<main class="kg-account"><section class="card kg-account-card" id="kg-account-card">${inner}</section></main>`;
+  return signedOutPage(`<section class="login-card kg-account-card" id="kg-account-card">${inner}</section>`);
 }
 
 function backLink(text = 'Back to sign in') {
@@ -142,6 +152,28 @@ function backLink(text = 'Back to sign in') {
  * disagree the server wins and the message it sends is what goes on screen.
  */
 const MIN_PASSWORD = 10;
+
+/**
+ * The longest name the server stores, repeated here for the same reason.
+ *
+ * A name is asked for rather than offered as optional. It is what everybody
+ * else in an organization sees next to a commit, a review and a pull request,
+ * and defaulting it to the part of an address before the `@` means a repository
+ * page full of `a.kukllod`, `devops2`, `info`. Somebody who does not want to
+ * give a real one can type anything; what they cannot do is skip the question
+ * and have the address answer it for them.
+ */
+const MAX_NAME = 191;
+
+/**
+ * The mark beside a label that has to be filled in.
+ *
+ * Every field on this form is required, which is an argument for marking none
+ * of them — but the form is the first thing an outside developer sees of
+ * KukGit, and "which of these can I skip" is a question worth answering before
+ * it is asked rather than with a red box afterwards.
+ */
+const REQUIRED = '<span class="field-required" aria-hidden="true">*</span>';
 
 /**
  * Whether this instance offers signup at all, asked once per page load.
@@ -172,18 +204,34 @@ function signupAcceptedCard(message) {
 }
 
 function renderSignup(root) {
-  root.innerHTML = card(`<h2>Create your KukGit account</h2>
-    <p class="kg-account-note">An email address and a password. You will get a link to confirm the address.</p>
-    <form id="kg-signup-form" class="kg-account-card" style="padding:0;border:0;gap:12px">
-      <div class="field"><label>Your name</label><input class="input" name="displayName" autocomplete="name" placeholder="Optional" /></div>
-      <div class="field"><label>Email address</label><input class="input" name="email" type="email" autocomplete="username" required /></div>
-      <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="new-password" required /></div>
-      <div class="field"><label>Type it again</label><input class="input" name="confirm" type="password" autocomplete="new-password" required /></div>
+  root.innerHTML = card(`<div class="kg-account-top"><span>Already have an account?</span><a href="#/">Sign in →</a></div>
+    <h2>Create your KukGit account</h2>
+    <p>Free while KukGit is in private alpha. Hosting for your own repositories, and for the organizations you are invited to.</p>
+    <div id="kg-oauth-slot"></div>
+    <form id="kg-signup-form" class="kg-account-form">
+      <div class="field">
+        <label>Your name${REQUIRED}</label>
+        <input class="input" name="displayName" autocomplete="name" maxlength="${MAX_NAME}" required />
+        <span class="field-hint">Shown next to your commits, reviews and pull requests. It does not have to be your legal name.</span>
+      </div>
+      <div class="field">
+        <label>Email address${REQUIRED}</label>
+        <input class="input" name="email" type="email" autocomplete="username" required />
+        <span class="field-hint">We send a link here to confirm the address. Nothing else until you ask for it.</span>
+      </div>
+      <div class="field">
+        <label>Password${REQUIRED}</label>
+        <input class="input" name="password" type="password" autocomplete="new-password" minlength="${MIN_PASSWORD}" required />
+        <span class="field-hint">At least ${MIN_PASSWORD} characters. Longer beats complicated — a phrase you can remember is stronger than a short word with symbols in it.</span>
+      </div>
+      <div class="field">
+        <label>Type it again${REQUIRED}</label>
+        <input class="input" name="confirm" type="password" autocomplete="new-password" minlength="${MIN_PASSWORD}" required />
+      </div>
       <div id="kg-signup-error" class="kg-account-bad" hidden></div>
-      <p class="kg-account-note">At least ${MIN_PASSWORD} characters. Signing up does not sign you in — the link in the email does.</p>
-      <button class="btn btn-primary btn-block" type="submit">Create my account</button>
-    </form>
-    ${backLink('Already have an account? Sign in')}`);
+      <button class="btn btn-primary btn-block" type="submit">Create my account <span>→</span></button>
+      <p class="kg-account-note">Creating an account does not sign you in — the link in the email does that.</p>
+    </form>`);
 
   // Asked after the form is on screen rather than before it. The render stays
   // synchronous on purpose: this module runs before the application has
@@ -213,9 +261,16 @@ function renderSignup(root) {
       box.textContent = message;
       box.hidden = false;
       button.disabled = false;
-      button.textContent = 'Create my account';
+      button.innerHTML = 'Create my account <span>→</span>';
     };
     box.hidden = true;
+
+    // Checked here as well as by the `required` attribute, because that
+    // attribute is enforced by the browser and this handler is what a test can
+    // drive. A check only the browser makes is a check no test holds.
+    const displayName = String(data.get('displayName') ?? '').trim();
+    if (!displayName) return fail('Tell us what to call you.');
+    if (displayName.length > MAX_NAME) return fail(`That name is longer than ${MAX_NAME} characters.`);
 
     const password = String(data.get('password') ?? '');
     // Both checked here as well as on the server. A mistyped password is worth
@@ -230,7 +285,7 @@ function renderSignup(root) {
       const result = await post('/api/account/signup', {
         email: data.get('email'),
         password,
-        displayName: data.get('displayName'),
+        displayName,
       });
       root.innerHTML = signupAcceptedCard(result.message);
     } catch (error) {
@@ -330,7 +385,7 @@ async function renderVerifyEmail(root, token) {
 function renderForgotPassword(root) {
   root.innerHTML = card(`<h2>Reset your password</h2>
     <p class="kg-account-note">Tell us the address on your account and we will send a link.</p>
-    <form id="kg-forgot-form" class="kg-account-card" style="padding:0;border:0;gap:12px">
+    <form id="kg-forgot-form" class="kg-account-form">
       <div class="field"><label>Email address</label><input class="input" name="email" type="email" autocomplete="username" required /></div>
       <button class="btn btn-primary btn-block" type="submit">Send the link</button>
     </form>
@@ -366,7 +421,7 @@ function renderResetPassword(root, token) {
     return;
   }
   root.innerHTML = card(`<h2>Choose a new password</h2>
-    <form id="kg-reset-form" class="kg-account-card" style="padding:0;border:0;gap:12px">
+    <form id="kg-reset-form" class="kg-account-form">
       <div class="field"><label>New password</label><input class="input" name="password" type="password" autocomplete="new-password" required /></div>
       <div class="field"><label>Type it again</label><input class="input" name="confirm" type="password" autocomplete="new-password" required /></div>
       <div id="kg-reset-error" class="kg-account-bad" hidden></div>
@@ -419,11 +474,24 @@ function renderResetPassword(root, token) {
 
 /* ------------------------------------------------- the link on the sign-in */
 
+/**
+ * "Forgot password?", beside the password box rather than under the card.
+ *
+ * The moment somebody realises they cannot remember it is the moment they are
+ * looking at that field, and a link at the foot of the card is a link they have
+ * to go looking for. `app.js` leaves a slot in the label row for it.
+ *
+ * The fallback still appends to the end of the form. This module has to keep
+ * working against a sign-in card it does not own, and a missing slot should
+ * cost the link its position, not its existence.
+ */
 function addForgotLink() {
   const form = document.querySelector('#login-form');
   if (!form || form.dataset.kgForgot === 'done') return;
   form.dataset.kgForgot = 'done';
-  form.insertAdjacentHTML('beforeend', '<div class="kg-account-links" id="kg-account-links"><a href="#/forgot-password">Forgot your password?</a></div>');
+  const slot = form.querySelector('#kg-forgot-slot');
+  if (slot) slot.innerHTML = '<a href="#/forgot-password">Forgot password?</a>';
+  else form.insertAdjacentHTML('beforeend', '<div class="kg-account-links"><a href="#/forgot-password">Forgot password?</a></div>');
 }
 
 /**
@@ -453,10 +521,11 @@ async function addSignupLink() {
   // into the element you looked up before the await" is the shape of a bug this
   // file has already had twice.
   if (document.querySelector('#login-form') !== form) return;
-  const links = form.querySelector('#kg-account-links') ?? form.querySelector('.kg-account-links');
-  const html = '<span>·</span><a href="#/signup">Create an account</a>';
-  if (links) links.insertAdjacentHTML('beforeend', html);
-  else form.insertAdjacentHTML('beforeend', `<div class="kg-account-links">${html.replace('<span>·</span>', '')}</div>`);
+  // Its own line at the foot of the card, and a sentence rather than a bare
+  // link. "Create an account" sitting next to "Forgot password?" read as two
+  // items on a menu; this reads as the answer to a question somebody arriving
+  // without an account is actually asking.
+  form.insertAdjacentHTML('beforeend', '<div class="kg-account-links"><span>New to KukGit?</span><a href="#/signup">Create an account</a></div>');
 }
 
 /* ------------------------------------------------------------------ mount */

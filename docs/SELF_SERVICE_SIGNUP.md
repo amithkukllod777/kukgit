@@ -11,8 +11,10 @@ The whole browser side lives in `public/account-screens-ui.js`, alongside email 
 ## Browser flow
 
 1. The sign-in form shows **Create an account**.
-2. `#/signup` asks for display name, email, password and password confirmation.
+2. `#/signup` asks for display name, email, password and password confirmation. It is drawn in the same two-column frame as the sign-in page — `public/brand-hero.js`, shared with `app.js` so the two cannot drift.
 3. The browser sends `POST /api/account/signup` with `displayName`, `email` and `password`.
+
+**All four fields are required, the name included.** It used to fall back to the part of the address before the `@`, which fills a repository page with `info`, `devops2` and `a.kukllod` — a display name is what everybody else in an organization sees next to a commit, a review and a pull request, and an address is not one. Required on the form *and* on the server, so the API cannot accept what the UI forbids. It is refused before the address is looked up, like every other check here, so an empty name fails identically whether or not the account exists.
 4. A successful request always becomes the same browser-owned **Check your inbox** screen.
 5. Signup does **not** create a browser session. The email verification link is the activation step for a new self-service account.
 6. After verification, the user signs in normally.

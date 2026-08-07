@@ -68,6 +68,13 @@ body::after {
 .textarea { min-height: 110px; resize: vertical; line-height: 1.5; }
 .input:focus, .select:focus, .textarea:focus { border-color: rgba(21,152,255,.74); box-shadow: 0 0 0 3px rgba(21,152,255,.12); }
 .field-hint { color: var(--muted-2); font-size: 11px; line-height: 1.45; }
+/* A label with something on the right of it — "Password  … Forgot password?".
+   The link belongs beside the field it is about rather than at the foot of the
+   card: the moment somebody realises they cannot remember it is the moment they
+   are looking at that box. */
+.field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.field-head a { font-size: 12px; }
+.field-required { color: #ff8f8f; margin-left: 2px; }
 .login-demo { border: 1px dashed rgba(107, 184, 255, .3); background: rgba(10,117,214,.08); border-radius: 12px; padding: 12px; margin: 18px 0; font-size: 12px; color: #a9c8e8; line-height: 1.6; }
 
 .btn { border: 1px solid var(--border); background: var(--panel-strong); border-radius: 10px; padding: 10px 14px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; font-weight: 700; font-size: 13px; transition: .18s ease; white-space: nowrap; }

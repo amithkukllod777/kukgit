@@ -65,12 +65,76 @@ test('the rest of the application is left alone', async (t) => {
 /** An instance that takes signups, which is what the GET on that path says. */
 const SIGNUP_OPEN = { 'GET /api/account/signup': { body: { available: true } } };
 
-test('the signup form asks for an address, a password, and it twice', async (t) => {
+/**
+ * Fills the form the way somebody in front of it would, and presses the button.
+ *
+ * Every field, every time, unless a test overrides one — a test that fills only
+ * what it is interested in stops testing what it meant to the moment another
+ * field becomes required, which is exactly what happened when the name stopped
+ * being optional.
+ */
+function fillSignup(browser, values = {}) {
+  const form = browser.document.querySelector('#kg-signup-form');
+  const fields = {
+    displayName: 'Newcomer',
+    email: 'newcomer@example.com',
+    password: 'a-real-enough-password',
+    confirm: 'a-real-enough-password',
+    ...values,
+  };
+  for (const [name, value] of Object.entries(fields)) form.querySelector(`[name="${name}"]`).value = value;
+  return browser.submit('#kg-signup-form');
+}
+
+test('the signup form asks for a name, an address, a password, and it twice', async (t) => {
   const browser = await screen(t, { hash: '#/signup', routes: SIGNUP_OPEN });
   assert.match(browser.html(), /Create your KukGit account/);
   for (const field of ['email', 'password', 'confirm', 'displayName']) {
-    assert.ok(browser.document.querySelector(`#kg-signup-form [name="${field}"]`), field);
+    const input = browser.document.querySelector(`#kg-signup-form [name="${field}"]`);
+    assert.ok(input, field);
+    // Including the name. It is what everybody else in an organization sees
+    // next to a commit, and an address is not one.
+    assert.ok(input.hasAttribute('required'), `${field} is required`);
   }
+});
+
+test('every field says what it is for, and which of them can be skipped', async (t) => {
+  const browser = await screen(t, { hash: '#/signup', routes: SIGNUP_OPEN });
+  // A hint under the field it is about, rather than one paragraph at the bottom
+  // covering all four. The name is the one worth explaining: somebody typing it
+  // should know it goes next to their commits.
+  const hints = browser.document.querySelectorAll('#kg-signup-form .field-hint');
+  assert.ok(hints.length >= 3, `${hints.length} field hints`);
+  assert.match(browser.html(), /next to your commits/);
+  assert.match(browser.html(), new RegExp(`At least ${10} characters`));
+  // And none of them can be skipped, which is said before it is enforced.
+  assert.equal(browser.document.querySelectorAll('#kg-signup-form .field-required').length, 4);
+});
+
+test('the way back to sign in is at the top, where somebody in the wrong place looks', async (t) => {
+  const browser = await screen(t, { hash: '#/signup', routes: SIGNUP_OPEN });
+  const link = browser.document.querySelector('.kg-account-top a[href="#/"]');
+  assert.ok(link, 'the sign-in link is above the form');
+  assert.match(browser.html(), /Already have an account/);
+});
+
+test('it looks like the rest of KukGit, not like a box on an empty page', async (t) => {
+  const browser = await screen(t, { hash: '#/signup', routes: SIGNUP_OPEN });
+  // The same frame the sign-in page uses, from the same module, so the two
+  // cannot drift: hero on the left, card in the panel on the right.
+  assert.equal(browser.present('.login-page'), true);
+  assert.equal(browser.present('.login-hero'), true);
+  assert.equal(browser.present('.login-panel .login-card'), true);
+  assert.match(browser.html(), /AI Developer Operating System/);
+});
+
+test('a signup with no name is refused before the server hears about it', async (t) => {
+  const browser = await screen(t, { hash: '#/signup', routes: SIGNUP_OPEN });
+  await fillSignup(browser, { displayName: '   ' });
+
+  assert.match(browser.html(), /what to call you/);
+  assert.equal(browser.calls.filter((call) => call.method === 'POST').length, 0);
+  assert.equal(browser.present('#kg-signup-form'), true, 'the form is still there to fill it in on');
 });
 
 test('what is typed is what is sent, and the answer is the one sentence', async (t) => {
@@ -81,12 +145,7 @@ test('what is typed is what is sent, and the answer is the one sentence', async 
       'POST /api/account/signup': { status: 202, body: { accepted: true, message: 'Check your inbox — if that address can be used, a link is on its way.' } },
     },
   });
-  const form = browser.document.querySelector('#kg-signup-form');
-  form.querySelector('[name="email"]').value = 'newcomer@example.com';
-  form.querySelector('[name="displayName"]').value = 'Newcomer';
-  form.querySelector('[name="password"]').value = 'a-real-enough-password';
-  form.querySelector('[name="confirm"]').value = 'a-real-enough-password';
-  await browser.submit('#kg-signup-form');
+  await fillSignup(browser);
 
   const sent = JSON.parse(browser.calls.find((call) => call.method === 'POST' && call.path === '/api/account/signup').body);
   assert.deepEqual(sent, { email: 'newcomer@example.com', password: 'a-real-enough-password', displayName: 'Newcomer' });
@@ -104,11 +163,7 @@ test('the screen says the same thing whether or not the address is taken', async
       hash: '#/signup',
       routes: { ...SIGNUP_OPEN, 'POST /api/account/signup': { status: 202, body: { accepted: true, message } } },
     });
-    const form = browser.document.querySelector('#kg-signup-form');
-    form.querySelector('[name="email"]').value = 'taken@example.com';
-    form.querySelector('[name="password"]').value = 'a-real-enough-password';
-    form.querySelector('[name="confirm"]').value = 'a-real-enough-password';
-    await browser.submit('#kg-signup-form');
+    await fillSignup(browser, { email: 'taken@example.com' });
 
     assert.match(browser.html(), /Check your inbox/);
     assert.ok(!/already|taken|exists/i.test(browser.html()), 'nothing on screen says whether the address is registered');
@@ -118,11 +173,7 @@ test('the screen says the same thing whether or not the address is taken', async
 
 test('two passwords that do not match never reach the server', async (t) => {
   const browser = await screen(t, { hash: '#/signup', routes: SIGNUP_OPEN });
-  const form = browser.document.querySelector('#kg-signup-form');
-  form.querySelector('[name="email"]').value = 'newcomer@example.com';
-  form.querySelector('[name="password"]').value = 'a-real-enough-password';
-  form.querySelector('[name="confirm"]').value = 'a-real-enough-passwort';
-  await browser.submit('#kg-signup-form');
+  await fillSignup(browser, { confirm: 'a-real-enough-passwort' });
 
   assert.match(browser.html(), /do not match/);
   // An account created with a mistyped password is fixed by a password reset on
@@ -134,11 +185,7 @@ test('two passwords that do not match never reach the server', async (t) => {
 
 test('a password the rules refuse is refused before an account exists', async (t) => {
   const browser = await screen(t, { hash: '#/signup', routes: SIGNUP_OPEN });
-  const form = browser.document.querySelector('#kg-signup-form');
-  form.querySelector('[name="email"]').value = 'newcomer@example.com';
-  form.querySelector('[name="password"]').value = 'short';
-  form.querySelector('[name="confirm"]').value = 'short';
-  await browser.submit('#kg-signup-form');
+  await fillSignup(browser, { password: 'short', confirm: 'short' });
 
   assert.match(browser.html(), /at least 10 characters/);
   assert.equal(browser.calls.filter((call) => call.method === 'POST').length, 0);
@@ -156,13 +203,12 @@ test("the server's own refusal is what goes on screen, escaped", async (t) => {
       },
     },
   });
-  const form = browser.document.querySelector('#kg-signup-form');
-  form.querySelector('[name="email"]').value = 'nonsense';
-  form.querySelector('[name="password"]').value = 'a-real-enough-password';
-  form.querySelector('[name="confirm"]').value = 'a-real-enough-password';
-  await browser.submit('#kg-signup-form');
+  await fillSignup(browser, { email: 'nonsense' });
 
-  assert.ok(!browser.present('img'), 'the message is text, not markup');
+  // Scoped to the card. The page has a real `<img>` in it now — the brand mark
+  // in the hero — so asking whether the document contains one stopped being a
+  // question about escaping and started being a question about the layout.
+  assert.equal(browser.document.querySelectorAll('#kg-account-card img').length, 0, 'the message is text, not markup');
   assert.match(browser.html(), /is not an address/);
   assert.equal(browser.present('#kg-signup-form'), true);
 });
@@ -185,11 +231,7 @@ test('a 404 on submit reads as policy, not as a broken site', async (t) => {
     hash: '#/signup',
     routes: { ...SIGNUP_OPEN, 'POST /api/account/signup': { status: 404, body: { error: { code: 'NOT_FOUND', message: 'Not found.' } } } },
   });
-  const form = browser.document.querySelector('#kg-signup-form');
-  form.querySelector('[name="email"]').value = 'newcomer@example.com';
-  form.querySelector('[name="password"]').value = 'a-real-enough-password';
-  form.querySelector('[name="confirm"]').value = 'a-real-enough-password';
-  await browser.submit('#kg-signup-form');
+  await fillSignup(browser);
 
   assert.match(browser.html(), /by invitation/);
   assert.ok(!browser.html().includes('Not found.'));
@@ -234,11 +276,7 @@ test('a late "no signup here" does not overwrite an account that was just made',
   await importFresh('../public/account-screens-ui.js');
   await browser.settle(3);
 
-  const form = browser.document.querySelector('#kg-signup-form');
-  form.querySelector('[name="email"]').value = 'newcomer@example.com';
-  form.querySelector('[name="password"]').value = 'a-real-enough-password';
-  form.querySelector('[name="confirm"]').value = 'a-real-enough-password';
-  await browser.submit('#kg-signup-form');
+  await fillSignup(browser);
   await browser.settle();
 
   // The request went through. Telling somebody their account is by invitation
@@ -558,6 +596,24 @@ test('the signup screen survives the sign-in page rendering underneath it', asyn
   // whether anything is left depends entirely on the remount.
   assert.equal(browser.present('#kg-signup-form'), true, 'the signup form is on the page');
   assert.match(browser.html(), /Create your KukGit account/);
+});
+
+test('the reset link sits beside the password box, not at the foot of the card', async (t) => {
+  const browser = await realPage(t, { hash: '#/', routes: SIGNUP_OPEN });
+  const link = browser.document.querySelector('#kg-forgot-slot a[href="#/forgot-password"]');
+  // The moment somebody realises they cannot remember it is the moment they are
+  // looking at that field. A link at the bottom is one they go looking for.
+  assert.ok(link, 'the link is in the password label row');
+  assert.equal(browser.document.querySelectorAll('a[href="#/forgot-password"]').length, 1, 'and only there');
+});
+
+test('the sign-in card still gets its links if the slot is missing', async (t) => {
+  // This module does not own the sign-in card. A card without the slot — an
+  // older deploy, or a future rewrite — should cost the link its position, not
+  // its existence.
+  const browser = await screen(t, { hash: '#/', html: '<form class="login-card" id="login-form"><input name="email" /></form>' });
+  await browser.settle();
+  assert.ok(browser.document.querySelector('#login-form a[href="#/forgot-password"]'));
 });
 
 test('the signup link is on the real sign-in page, once', async (t) => {

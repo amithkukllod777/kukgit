@@ -48,7 +48,7 @@ function world(hash) {
       'GET /api/account/signup': { body: { available: true } },
       '/api/auth/me': { body: { user: null } },
       '/api/auth/status': { body: { mode: 'local' } },
-      '/api/auth/providers': { body: { providers: [] } },
+      '/api/auth/providers': { body: { providers: [{ id: 'github' }, { id: 'google' }] } },
       '/api/auth/sign-in-hints': { body: { demoAccount: null } },
       '*': { status: 404, body: {} },
     },
@@ -99,6 +99,28 @@ test('one card owns the signup screen, not two', async (t) => {
   assert.equal(screens.length, 1, `${screens.length} screens rendered on #/signup`);
   assert.equal(browser.document.querySelectorAll('form[id$="signup-form"]').length, 1);
 });
+
+for (const [hash, where] of [['#/', 'the sign-in form'], ['#/signup', 'the signup form']]) {
+  test(`the provider buttons reach ${where}`, async (t) => {
+    const browser = world(hash);
+    t.after(() => browser.restore());
+    for (const name of MODULES) await importFresh(`../public/${name}`);
+    await browser.settle(40);
+
+    // A signup page offering only a password, on an instance whose sign-in page
+    // offers Google, reads as the provider being unavailable rather than as a
+    // page that forgot to ask. Two modules have to cooperate for this — one
+    // renders the screen, the other owns the buttons — which is why it is
+    // tested here rather than against either of them alone.
+    for (const provider of ['github', 'google']) {
+      assert.equal(
+        browser.document.querySelectorAll(`a[href="/api/auth/${provider}/start"]`).length,
+        1,
+        `${provider} on ${hash}`,
+      );
+    }
+  });
+}
 
 test('and one link to it on the sign-in form', async (t) => {
   const browser = world('#/');
