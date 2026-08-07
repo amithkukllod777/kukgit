@@ -38,19 +38,34 @@ This is the decision that most often blocks a first production boot.
 | | `local` | `authkit` |
 |---|---|---|
 | Password store | KukGit `users.password_hash` | One Kuklabs Account (central) |
-| Allowed in production | No, unless explicitly overridden | Yes — this is the default |
-| Required configuration | `KUKGIT_ADMIN_*` | `KUKGIT_AUTHKIT_*` |
+| Allowed in production | Yes | Yes — this is still the default |
+| Required configuration | `KUKGIT_ADMIN_*`, https, `Secure` cookie, a mail sender | `KUKGIT_AUTHKIT_*` |
 
-When `NODE_ENV=production`, KukGit defaults to `authkit` and **refuses to start** in
-`local` mode. The error comes from `loadConfig()` before the HTTP server binds:
+`local` was refused in production until 2026-08-07. That reversed with the
+identity mandate — see `CLAUDE.md`. Two reasons, both from reading the AuthKit
+service rather than its documentation: it is a router mounted on the KukBook
+ERP rather than a service of its own, so an ERP deploy is a KukGit sign-in
+outage; and requiring a customer outside Kuklabs to open an account on Kuklabs'
+accounting system is not a thing that sells.
 
-```text
-Local KukGit password authentication is disabled in production.
-Use KUKGIT_AUTH_MODE=authkit.
-```
+`authkit` remains the default in production. An instance that sets nothing gets
+the delegated identity it always got.
 
-`KUKGIT_ALLOW_LOCAL_AUTH_IN_PRODUCTION=true` overrides this. Do not use it for a
-customer-facing instance.
+What replaced the refusal is the set of conditions that made it reasonable. In
+`local` mode with `NODE_ENV=production`, KukGit **refuses to start** unless:
+
+- `KUKGIT_BASE_URL` is `https://…` — every verification and reset link is built
+  from it, and over http those are one-time credentials sent in the clear
+- `KUKGIT_COOKIE_SECURE=true` — the same requirement `authkit` mode has always
+  had
+
+And `npm run deploy-check` **fails** if nothing is configured to send email
+(`KUKGIT_RESEND_API_KEY` or `KUKGIT_SMTP_HOST`). Without it, "verified address"
+is a claim nobody can act on and a forgotten password is an account nobody gets
+back into.
+
+`KUKGIT_ALLOW_LOCAL_AUTH_IN_PRODUCTION` is gone. It was the override for a
+refusal that no longer exists, and it is ignored if set.
 
 ## Required production environment
 
@@ -59,11 +74,25 @@ NODE_ENV=production
 KUKGIT_BASE_URL=https://git.example.com
 KUKGIT_COOKIE_SECURE=true
 
-# Identity — One Kuklabs Account
-KUKGIT_AUTH_MODE=authkit
-KUKGIT_AUTHKIT_BASE_URL=https://auth.kuklabs.com
-KUKGIT_AUTHKIT_PRODUCT_ID=kukgit
-KUKGIT_AUTHKIT_ENCRYPTION_KEY=<at least 32 random characters>
+# Identity — KukGit's own accounts
+KUKGIT_AUTH_MODE=local
+KUKGIT_ADMIN_EMAIL=founder@example.com
+KUKGIT_ADMIN_PASSWORD=<something long and private>
+# Verification and reset are email. Without one of these, deploy-check fails.
+KUKGIT_RESEND_API_KEY=<the Resend API key>
+
+# Identity — One Kuklabs Account, instead of the four lines above
+# KUKGIT_AUTH_MODE=authkit
+# KUKGIT_AUTHKIT_BASE_URL=https://auth.kuklabs.com
+# KUKGIT_AUTHKIT_PRODUCT_ID=kukgit
+# KUKGIT_AUTHKIT_ENCRYPTION_KEY=<at least 32 random characters>
+
+# Sign in with GitHub and Google — optional. Client IDs and secrets go in
+# instance settings, where the secrets are stored encrypted, not here.
+
+# Phone verification — optional, and all three values are public.
+# KUKGIT_FIREBASE_PROJECT_ID=<the Firebase project>
+# KUKGIT_FIREBASE_API_KEY=<the Firebase web API key>
 
 # Operator allowlist for the Instance Admin console
 KUKGIT_INSTANCE_ADMIN_EMAILS=support@example.com
@@ -138,9 +167,11 @@ docker compose -f infra/docker-compose.yml up --build
 ```
 
 The compose file reads configuration from the environment (or a sibling `.env`) and
-mounts `kukgit_data` at `/app/data`. It sets `NODE_ENV=production`, so the AuthKit
-variables above are required. For a local production-shaped trial without AuthKit,
-set `KUKGIT_AUTH_MODE=local` and `KUKGIT_ALLOW_LOCAL_AUTH_IN_PRODUCTION=true`.
+mounts `kukgit_data` at `/app/data`. It sets `NODE_ENV=production`, so whichever
+identity mode you choose, its variables above are required. A production-shaped
+trial on `KUKGIT_AUTH_MODE=local` still needs `KUKGIT_BASE_URL` on https and
+`KUKGIT_COOKIE_SECURE=true`; a self-signed certificate on the proxy is enough
+for that.
 
 The image installs Git and runs as the unprivileged `node` user. It does not include
 an SSH server; run Git over SSH as a separate service against the same volume.

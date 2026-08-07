@@ -11,13 +11,19 @@ services:
       KUKGIT_BASE_URL: ${KUKGIT_BASE_URL:-http://localhost:8787}
       KUKGIT_COOKIE_SECURE: ${KUKGIT_COOKIE_SECURE:-true}
 
-      # Identity. NODE_ENV=production defaults to authkit and refuses to start in
-      # local mode, so these are required unless the local override below is set.
+      # Identity. NODE_ENV=production still defaults to authkit, and the three
+      # AUTHKIT values are required in that mode. Set KUKGIT_AUTH_MODE=local to
+      # run on KukGit's own accounts instead — that needs an https base URL, a
+      # Secure cookie, and one of the mail senders below.
       KUKGIT_AUTH_MODE: ${KUKGIT_AUTH_MODE:-authkit}
       KUKGIT_AUTHKIT_BASE_URL: ${KUKGIT_AUTHKIT_BASE_URL:-}
       KUKGIT_AUTHKIT_PRODUCT_ID: ${KUKGIT_AUTHKIT_PRODUCT_ID:-kukgit}
       KUKGIT_AUTHKIT_ENCRYPTION_KEY: ${KUKGIT_AUTHKIT_ENCRYPTION_KEY:-}
-      KUKGIT_ALLOW_LOCAL_AUTH_IN_PRODUCTION: ${KUKGIT_ALLOW_LOCAL_AUTH_IN_PRODUCTION:-false}
+
+      # Phone verification. All three are public values, not secrets.
+      KUKGIT_FIREBASE_PROJECT_ID: ${KUKGIT_FIREBASE_PROJECT_ID:-}
+      KUKGIT_FIREBASE_API_KEY: ${KUKGIT_FIREBASE_API_KEY:-}
+      KUKGIT_FIREBASE_AUTH_DOMAIN: ${KUKGIT_FIREBASE_AUTH_DOMAIN:-}
 
       # Instance operator allowlist. Falls back to KUKGIT_ADMIN_EMAIL when unset.
       KUKGIT_INSTANCE_ADMIN_EMAILS: ${KUKGIT_INSTANCE_ADMIN_EMAILS:-}

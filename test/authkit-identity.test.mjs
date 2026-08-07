@@ -373,12 +373,16 @@ test('identity linking rejects duplicate central IDs and token encryption is aut
   assert.throws(() => decryptAuthKitSecret(config, envelope, 'different-aad'), (error) => error.code === 'AUTHKIT_SESSION_INVALID');
 });
 
-test('production defaults to AuthKit and refuses independent local password auth', () => {
-  assert.throws(() => loadConfig({
+test('production still defaults to AuthKit, and AuthKit still needs its URL', () => {
+  // Local accounts in production are no longer refused — see
+  // test/production-auth-policy.test.mjs and CLAUDE.md — but an instance that
+  // says nothing still gets the delegated identity it always got.
+  assert.equal(loadConfig({
     nodeEnv: 'production',
-    authMode: 'local',
-    allowLocalAuthInProduction: false,
-  }), /Local KukGit password authentication is disabled/);
+    baseUrl: 'https://git.kuklabs.com',
+    authkitBaseUrl: 'https://auth.kuklabs.com',
+    authkitEncryptionKey: 'authkit-test-encryption-key-with-more-than-32-characters',
+  }).authMode, 'authkit');
 
   assert.throws(() => loadConfig({
     nodeEnv: 'production',

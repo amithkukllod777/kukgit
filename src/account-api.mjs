@@ -7,6 +7,11 @@ import {
   sendEmailVerification,
   verifyEmailToken,
 } from './account-verification.mjs';
+import {
+  phoneVerificationConfigured,
+  removeVerifiedPhone,
+  verifyPhoneWithFirebase,
+} from './phone-verification.mjs';
 
 /**
  * The four endpoints behind proving an address and resetting a password.
@@ -30,6 +35,26 @@ import {
  */
 
 const MAX_BODY_BYTES = 16 * 1024;
+
+/**
+ * Exactly the paths this handler owns.
+ *
+ * It used to claim the whole `/api/account/` prefix and answer anything else
+ * under it with a 405, which took `/api/account/phone/config` and
+ * `/api/account/two-factor` away from the handlers that own them — both are
+ * `GET`s, and this one is POST-only. Neither was reachable on a running server;
+ * every test passed because each mounts its own handler alone.
+ *
+ * A prefix claim is a claim on names nobody has thought of yet. This is a list.
+ */
+const OWNED = new Set([
+  '/api/account/verify-email/send',
+  '/api/account/verify-email/confirm',
+  '/api/account/password-reset/request',
+  '/api/account/password-reset/complete',
+  '/api/account/phone/verify',
+  '/api/account/phone/remove',
+]);
 
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
@@ -56,11 +81,11 @@ async function readJson(req) {
   catch { throw httpError(400, 'Invalid JSON request body.', 'INVALID_JSON'); }
 }
 
-export function createAccountApiHandler({ config, db }) {
+export function createAccountApiHandler({ config, db, fetchImpl = undefined }) {
   return async function accountApi(req, res) {
     const url = new URL(req.url, config.baseUrl);
     const pathname = url.pathname;
-    if (!pathname.startsWith('/api/account/')) return false;
+    if (!OWNED.has(pathname)) return false;
 
     const requestId = uid('req');
     res.setHeader('X-Request-Id', requestId);
@@ -99,6 +124,25 @@ export function createAccountApiHandler({ config, db }) {
           message: 'If that address has a KukGit account, a reset link is on its way.',
           requestId,
         });
+      }
+
+      // Adding a number is a change to how an account can be recovered, so it
+      // needs a session — the Firebase token proves a *number*, never who is
+      // asking. Absent rather than refused where no Firebase project is set.
+      if (pathname === '/api/account/phone/verify' || pathname === '/api/account/phone/remove') {
+        if (!phoneVerificationConfigured(config)) throw httpError(404, 'Not found.', 'NOT_FOUND');
+        const user = currentUser(db, req);
+        if (!user) throw httpError(401, 'Sign in required.', 'AUTH_REQUIRED');
+        if (pathname === '/api/account/phone/remove') {
+          const removed = removeVerifiedPhone(db, { userId: user.id });
+          return sendJson(res, 200, { ...removed, requestId });
+        }
+        const result = await verifyPhoneWithFirebase(db, config, {
+          userId: user.id,
+          idToken: body.idToken,
+          ...(fetchImpl ? { fetchImpl } : {}),
+        });
+        return sendJson(res, 200, { verified: true, ...result, requestId });
       }
 
       if (pathname === '/api/account/password-reset/complete') {

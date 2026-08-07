@@ -41,6 +41,12 @@ const NEVER_TENANT_SCOPED = new Map([
   ['account_tokens', 'belongs to a user, and is a credential'],
   ['user_identities', 'a person\'s GitHub or Google account, which is theirs and not the tenant\'s'],
   ['oauth_states', 'a sign-in attempt in flight, with a ten-minute lifetime'],
+  // A person's second factor. It follows them between organizations, and the
+  // secret and the recovery codes are credentials — an export carrying them
+  // would be a file that defeats the second factor of everybody in it.
+  ['user_two_factor', 'belongs to a user, and holds a credential'],
+  ['user_recovery_codes', 'belongs to a user, and each row is a credential'],
+  ['two_factor_challenges', 'a sign-in in flight, with a five-minute lifetime'],
   ['personal_access_tokens', 'belongs to a user'],
   ['user_ssh_keys', 'belongs to a user'],
   ['notification_preferences', 'belongs to a user'],

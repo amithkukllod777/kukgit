@@ -867,6 +867,25 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
     return handle;
   });
   set('cancelAnimationFrame', (handle) => { frames.delete(handle); clearTimeout(handle); });
+  /**
+   * Enough `history` to test a page that takes a one-time token out of the URL.
+   *
+   * `replaceState` changes the address without firing `hashchange` and without
+   * adding an entry — which is the entire reason a page uses it rather than
+   * assigning to `location.hash`. A shim that fired the event would hide the
+   * difference the code was written for.
+   */
+  const historyEntries = [];
+  set('history', {
+    get length() { return historyEntries.length + 1; },
+    replaceState(_state, _title, url) {
+      if (typeof url === 'string' && url.startsWith('#')) location.hash = url;
+    },
+    pushState(state, title, url) {
+      historyEntries.push(String(url ?? ''));
+      this.replaceState(state, title, url);
+    },
+  });
   set('sessionStorage', memoryStorage());
   set('localStorage', memoryStorage());
   // Removing a collaborator asks first. A test that could not answer would
@@ -1101,6 +1120,20 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
 
     /** Everything currently rendered, for "is this string on the page" checks. */
     html() { return document.documentElement.innerHTML; },
+
+    /**
+     * Submits a form the way a person pressing the button would.
+     *
+     * The `submit` listener is the only thing most of these forms bind, so a
+     * test that set the fields and asserted would be asserting about a page
+     * nobody had used yet.
+     */
+    submit(selector) {
+      const form = document.querySelector(selector);
+      if (!form) throw new Error(`browser shim: no form matches "${selector}"`);
+      form.dispatchEvent({ type: 'submit', target: form });
+      return harness.settle();
+    },
 
     /** Changes the hash and fires `hashchange`, the way a link would. */
     navigate(nextHash) {

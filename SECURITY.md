@@ -53,9 +53,20 @@ Kuklabs security owner and include:
 
 ### Identity and session
 
-- Production authenticates against One Kuklabs Account through central AuthKit, and
-  local password authentication is rejected in production unless explicitly
-  overridden by `KUKGIT_ALLOW_LOCAL_AUTH_IN_PRODUCTION`.
+- KukGit owns its own accounts: email and password, verified email and password
+  reset, with scrypt hashes that record their own cost parameters so the cost can
+  be raised later. One Kuklabs Account through central AuthKit remains an optional
+  sign-in path and is still the default in production.
+- An instance holding its own passwords in production must be on https with
+  `KUKGIT_COOKIE_SECURE=true`; `loadConfig()` refuses to start otherwise, and
+  `npm run deploy-check` fails if nothing is configured to send the verification
+  and reset email.
+- Sign in with GitHub and with Google, with the `state` stored hashed and spent by
+  its own delete. A provider identity joins an existing account only when both
+  sides have proved the address.
+- Verified phone numbers via Firebase, with the ID token checked against Google's
+  published certificates server-side. The browser half runs on a separate document
+  so the application keeps `script-src 'self'`.
 - The browser receives only a random HttpOnly SameSite=Lax bridge cookie.
 - AuthKit access and refresh tokens are encrypted at rest with AES-256-GCM.
 - Protected requests validate the central account, product membership and the active

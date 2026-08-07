@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Verify your phone number · KukGit</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .pv-page { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:32px 20px; }
+    .pv-card { width:100%; max-width:440px; display:grid; gap:14px; padding:28px; border:1px solid var(--border); border-radius:16px; }
+    .pv-card h1 { margin:0; font-size:22px; }
+    .pv-card p { margin:0; line-height:1.55; }
+    .pv-note { font-size:13px; color:var(--muted); line-height:1.55; }
+    .pv-bad { border:1px solid #d9534f66; background:#d9534f14; border-radius:10px; padding:11px 13px; font-size:13px; line-height:1.5; }
+    .pv-good { border:1px solid #3aa06655; background:#3aa06614; border-radius:10px; padding:11px 13px; font-size:13px; line-height:1.5; }
+    .pv-links { display:flex; justify-content:center; }
+    .pv-links a { font-size:13px; }
+    #pv-recaptcha { display:flex; justify-content:center; min-height:0; }
+  </style>
+</head>
+<body>
+  <!--
+    A page of its own, and deliberately so.
+
+    Firebase phone auth loads code from gstatic.com and runs a reCAPTCHA
+    challenge in an iframe from google.com. KukGit's Content-Security-Policy is
+    `script-src 'self'` with no frames and no outbound connections; allowing
+    those hosts inside the application would allow them on every page, for every
+    customer, whether or not anybody ever verifies a number.
+
+    A policy is per document, so this is a different document. Its policy names
+    exactly the hosts Firebase needs. The application's is untouched.
+
+    Nothing here decides who anybody is. The page produces a Firebase ID token
+    and the server checks Google's signature on it before recording anything.
+  -->
+  <main class="pv-page">
+    <section class="card pv-card">
+      <h1>Verify your phone number</h1>
+      <p class="pv-note">
+        We will text you a code. The message comes from Google on KukGit's
+        behalf — standard rates apply, and the number is used for account
+        recovery, not for marketing.
+      </p>
+
+      <div id="pv-error" class="pv-bad" hidden></div>
+      <div id="pv-done" class="pv-good" hidden></div>
+
+      <form id="pv-number-form">
+        <div class="field">
+          <label for="pv-number">Phone number, with country code</label>
+          <input class="input" id="pv-number" name="number" type="tel" inputmode="tel"
+                 autocomplete="tel" placeholder="+91 98765 43210" required />
+        </div>
+        <div id="pv-recaptcha"></div>
+        <button class="btn btn-primary btn-block" type="submit" id="pv-send">Send me a code</button>
+      </form>
+
+      <form id="pv-code-form" hidden>
+        <div class="field">
+          <label for="pv-code">The six-digit code</label>
+          <input class="input" id="pv-code" name="code" type="text" inputmode="numeric"
+                 autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" required />
+        </div>
+        <button class="btn btn-primary btn-block" type="submit" id="pv-confirm">Confirm</button>
+      </form>
+
+      <div class="pv-links"><a href="/#/settings">Back to KukGit</a></div>
+    </section>
+  </main>
+  <script type="module" src="/account/phone/app.js"></script>
+</body>
+</html>

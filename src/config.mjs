@@ -69,6 +69,24 @@ export function loadConfig(overrides = {}) {
   const baseUrl = overrides.baseUrl ?? process.env.KUKGIT_BASE_URL ?? `http://localhost:${overrides.port ?? process.env.PORT ?? 8787}`;
   const cookieSecure = booleanValue(overrides.cookieSecure ?? process.env.KUKGIT_COOKIE_SECURE, isProduction);
   const authMode = String(overrides.authMode ?? process.env.KUKGIT_AUTH_MODE ?? (isProduction ? 'authkit' : 'local')).toLowerCase();
+  // The Firebase project whose ID tokens this instance will accept. Public —
+  // it is in every browser bundle that talks to Firebase — but it is the value
+  // that decides *whose* tokens are believed, so it is configuration rather
+  // than a constant, and an instance that has not set it does not offer phone
+  // verification at all.
+  const firebaseProjectId = String(overrides.firebaseProjectId ?? process.env.KUKGIT_FIREBASE_PROJECT_ID ?? '').trim();
+  // Also public, and also configuration rather than a constant: a Firebase web
+  // API key is a project identifier, not a secret — it is in every browser
+  // bundle Google ships. What protects the project is the authorised-domain
+  // list and App Check, neither of which lives here.
+  const firebaseApiKey = String(overrides.firebaseApiKey ?? process.env.KUKGIT_FIREBASE_API_KEY ?? '').trim();
+  // Where the sign-in handler lives. Defaults to Google's, and is worth setting
+  // to a domain of your own once one exists — the default puts a Google-branded
+  // host in front of a customer mid-flow.
+  const firebaseAuthDomain = String(
+    overrides.firebaseAuthDomain ?? process.env.KUKGIT_FIREBASE_AUTH_DOMAIN
+    ?? (firebaseProjectId ? `${firebaseProjectId}.firebaseapp.com` : ''),
+  ).trim();
   const authkitBaseUrlRaw = String(overrides.authkitBaseUrl ?? process.env.KUKGIT_AUTHKIT_BASE_URL ?? '').trim();
   const authkitProductId = String(overrides.authkitProductId ?? process.env.KUKGIT_AUTHKIT_PRODUCT_ID ?? 'kukgit').trim().toLowerCase();
   const authkitEncryptionKey = overrides.authkitEncryptionKey ?? process.env.KUKGIT_AUTHKIT_ENCRYPTION_KEY ?? (isProduction ? '' : 'kukgit-development-authkit-encryption-key-change-me');
@@ -149,8 +167,29 @@ export function loadConfig(overrides = {}) {
   if (!['local', 'authkit'].includes(authMode)) {
     throw new Error('KUKGIT_AUTH_MODE must be local or authkit.');
   }
+  // Local accounts used to be refused outright in production, when the mandate
+  // was that Kuklabs Account owned identity. That reversed on 2026-08-07 — see
+  // CLAUDE.md — because AuthKit is a router on the KukBook ERP rather than a
+  // service, so an ERP deploy is a KukGit sign-in outage, and because asking an
+  // outside customer to open an account on Kuklabs' accounting system is not a
+  // thing that sells.
+  //
+  // What replaces the refusal is the set of conditions that made it reasonable.
+  // Local accounts in production mean this instance holds passwords and sends
+  // the emails that prove an address and reset one, so:
   if (isProduction && authMode === 'local') {
-    throw new Error('Local KukGit password authentication is disabled in production. Use KUKGIT_AUTH_MODE=authkit.');
+    if (!cookieSecure) {
+      // The same requirement AuthKit mode has. A session cookie without
+      // `Secure` is one that leaves on the first plain-HTTP request anything
+      // makes — a link in an email, a bookmark, a redirect.
+      throw new Error('KUKGIT_COOKIE_SECURE must be true when KukGit holds passwords in production.');
+    }
+    if (!/^https:\/\//i.test(String(baseUrl))) {
+      // Every verification and reset link is built from this. Over http they
+      // are one-time credentials sent in the clear, and the browser will not
+      // send the Secure cookie back anyway.
+      throw new Error('KUKGIT_BASE_URL must be https when KukGit holds passwords in production.');
+    }
   }
   if (!/^[a-z0-9_-]{2,32}$/.test(authkitProductId)) {
     throw new Error('KUKGIT_AUTHKIT_PRODUCT_ID must contain 2-32 lowercase letters, numbers, underscores or hyphens.');
@@ -279,6 +318,9 @@ export function loadConfig(overrides = {}) {
     authkitTimeoutMs,
     authkitRefreshTtlDays,
     authkitSessionCheckSeconds,
+    firebaseProjectId,
+    firebaseApiKey,
+    firebaseAuthDomain,
     organizationOwnerLimit,
     runtimeWriteServiceEnabled,
     realtimeHeartbeatMs,

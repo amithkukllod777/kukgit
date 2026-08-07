@@ -3,12 +3,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { REQUIRED_KEYS, deployReadiness } from '../src/deploy-readiness.mjs';
 
+// Every variable any check reads. A name missing here is a value one test sets
+// and the next test inherits — which is how a test that should have failed
+// passed on the email keys until this list grew.
 const KUKGIT_KEYS = [
   'KUKGIT_DATA_DIR', 'KUKGIT_BACKUPS_DIR', 'KUKGIT_BASE_URL', 'KUKGIT_AUTH_MODE',
   'KUKGIT_ADMIN_PASSWORD', 'KUKGIT_DEV_GIT_TOKEN', 'KUKGIT_RATE_LIMIT_ENABLED',
-  'KUKGIT_TRUST_PROXY', 'NODE_ENV', ...REQUIRED_KEYS.map(([name]) => name),
+  'KUKGIT_TRUST_PROXY', 'KUKGIT_COOKIE_SECURE', 'KUKGIT_AUTHKIT_BASE_URL',
+  'KUKGIT_RESEND_API_KEY', 'KUKGIT_SMTP_HOST',
+  'NODE_ENV', ...REQUIRED_KEYS.map(([name]) => name),
 ];
 
 /**
@@ -34,6 +40,10 @@ function productionEnvironment(t, dataDir, overrides = {}) {
     NODE_ENV: 'production',
     KUKGIT_BASE_URL: 'https://git.example.com',
     KUKGIT_AUTH_MODE: 'authkit',
+    // Set here because the server refuses to start in authkit mode without it,
+    // so a fixture that called itself correctly configured while omitting it
+    // was describing a box that cannot boot.
+    KUKGIT_AUTHKIT_BASE_URL: 'https://auth.kuklabs.com',
     KUKGIT_DATA_DIR: dataDir,
     KUKGIT_BACKUPS_DIR: path.join(path.dirname(dataDir), 'backups'),
     KUKGIT_TRUST_PROXY: 'true',
@@ -155,4 +165,163 @@ test('every failure carries the line that fixes it', async (t) => {
   for (const entry of report.checks.filter((check) => check.status === 'fail')) {
     assert.ok(entry.fix && entry.fix.length > 10, `${entry.id} has no fix`);
   }
+});
+
+/*
+ * Local accounts in production.
+ *
+ * They used to be refused outright. That reversed on 2026-08-07 — see
+ * CLAUDE.md — so what this file checks now is that a box holding its own
+ * passwords has what that needs, rather than that it is not allowed to.
+ */
+
+test('a production box holding its own passwords passes when it can send email', async (t) => {
+  const { root, dataDir } = workspace(t);
+  productionEnvironment(t, dataDir, {
+    KUKGIT_AUTH_MODE: 'local',
+    KUKGIT_ADMIN_PASSWORD: 'a-long-and-private-founder-password',
+    KUKGIT_RESEND_API_KEY: 're_something_private_enough',
+  });
+
+  const report = await deployReadiness({ repositoryRoot: path.join(root, 'checkout'), port: 0 });
+  const mode = find(report, 'auth_mode');
+  assert.equal(mode.status, 'pass', JSON.stringify(mode));
+  assert.equal(report.ready, true, JSON.stringify(report.checks.filter((entry) => entry.status === 'fail'), null, 2));
+});
+
+test('holding passwords with no way to send email is a failure, not a warning', async (t) => {
+  const { root, dataDir } = workspace(t);
+  productionEnvironment(t, dataDir, {
+    KUKGIT_AUTH_MODE: 'local',
+    KUKGIT_ADMIN_PASSWORD: 'a-long-and-private-founder-password',
+  });
+
+  const report = await deployReadiness({ repositoryRoot: path.join(root, 'checkout'), port: 0 });
+  const mode = find(report, 'auth_mode');
+  // Without email, "verified address" is a claim nobody can act on and a
+  // forgotten password is an account nobody gets back into. That is not a
+  // degraded instance; it is one that will lose somebody their repositories.
+  assert.equal(mode.status, 'fail');
+  assert.match(mode.message, /nothing is configured to send email/);
+  assert.equal(report.ready, false);
+});
+
+test('SMTP counts as a way to send email', async (t) => {
+  const { root, dataDir } = workspace(t);
+  productionEnvironment(t, dataDir, {
+    KUKGIT_AUTH_MODE: 'local',
+    KUKGIT_ADMIN_PASSWORD: 'a-long-and-private-founder-password',
+    KUKGIT_SMTP_HOST: 'smtp.kuklabs.com',
+  });
+
+  const report = await deployReadiness({ repositoryRoot: path.join(root, 'checkout'), port: 0 });
+  assert.equal(find(report, 'auth_mode').status, 'pass');
+});
+
+test('AuthKit mode without its URL is caught before the box tries to start', async (t) => {
+  const { root, dataDir } = workspace(t);
+  productionEnvironment(t, dataDir, { KUKGIT_AUTHKIT_BASE_URL: '' });
+
+  const report = await deployReadiness({ repositoryRoot: path.join(root, 'checkout'), port: 0 });
+  const mode = find(report, 'auth_mode');
+  // The server refuses this at startup. Reporting it here turns a crash on
+  // deploy into a line in a pre-flight check.
+  assert.equal(mode.status, 'fail');
+  assert.match(mode.fix, /KUKGIT_AUTHKIT_BASE_URL/);
+});
+
+test('local mode on a development box is not a complaint', async (t) => {
+  const { root, dataDir } = workspace(t);
+  environment(t, { KUKGIT_DATA_DIR: dataDir, KUKGIT_AUTH_MODE: 'local' });
+
+  const report = await deployReadiness({ repositoryRoot: path.join(root, 'checkout'), port: 0 });
+  // KukGit owning its accounts is the mandate, not a compromise. Warning about
+  // it on every developer's machine teaches people to ignore this output.
+  assert.equal(find(report, 'auth_mode').status, 'pass');
+});
+
+test('a mode that is not a mode is reported here too', async (t) => {
+  const { root, dataDir } = workspace(t);
+  environment(t, { KUKGIT_DATA_DIR: dataDir, KUKGIT_AUTH_MODE: 'firebase' });
+
+  const report = await deployReadiness({ repositoryRoot: path.join(root, 'checkout'), port: 0 });
+  const mode = find(report, 'auth_mode');
+  // The server refuses to start on this. Saying so in the pre-flight turns a
+  // crash on deploy into a line somebody reads first.
+  assert.equal(mode.status, 'fail');
+  assert.match(mode.message, /not a mode/);
+});
+
+test('Resend configured in the admin console counts as email', async (t) => {
+  const { root, dataDir } = workspace(t);
+  productionEnvironment(t, dataDir, {
+    KUKGIT_AUTH_MODE: 'local',
+    KUKGIT_ADMIN_PASSWORD: 'a-long-and-private-founder-password',
+  });
+
+  // Where a running instance actually keeps it. An earlier version of this
+  // check read only the environment and would have blocked the upgrade of a
+  // server whose email worked.
+  const db = new DatabaseSync(path.join(dataDir, 'kukgit.db'));
+  db.exec(`
+    CREATE TABLE instance_settings (integration TEXT NOT NULL, field TEXT NOT NULL, PRIMARY KEY (integration, field));
+    INSERT INTO instance_settings (integration, field) VALUES ('email.resend', 'apiKey'), ('email.resend', 'fromAddress');
+  `);
+  db.close();
+
+  const report = await deployReadiness({ repositoryRoot: path.join(root, 'checkout'), port: 0 });
+  assert.equal(find(report, 'auth_mode').status, 'pass', JSON.stringify(find(report, 'auth_mode')));
+});
+
+test('half-configured Resend does not count', async (t) => {
+  const { root, dataDir } = workspace(t);
+  productionEnvironment(t, dataDir, {
+    KUKGIT_AUTH_MODE: 'local',
+    KUKGIT_ADMIN_PASSWORD: 'a-long-and-private-founder-password',
+  });
+
+  const db = new DatabaseSync(path.join(dataDir, 'kukgit.db'));
+  db.exec(`
+    CREATE TABLE instance_settings (integration TEXT NOT NULL, field TEXT NOT NULL, PRIMARY KEY (integration, field));
+    INSERT INTO instance_settings (integration, field) VALUES ('email.resend', 'apiKey');
+  `);
+  db.close();
+
+  // A key with nothing to send from fails on the first message and looks like
+  // an outage rather than a setting somebody never finished.
+  const report = await deployReadiness({ repositoryRoot: path.join(root, 'checkout'), port: 0 });
+  assert.equal(find(report, 'auth_mode').status, 'fail');
+});
+
+test('a database that cannot be read is not evidence that email works', async (t) => {
+  const { root, dataDir } = workspace(t);
+  productionEnvironment(t, dataDir, {
+    KUKGIT_AUTH_MODE: 'local',
+    KUKGIT_ADMIN_PASSWORD: 'a-long-and-private-founder-password',
+  });
+  fs.writeFileSync(path.join(dataDir, 'kukgit.db'), 'this is not a database');
+
+  const report = await deployReadiness({ repositoryRoot: path.join(root, 'checkout'), port: 0 });
+  assert.equal(find(report, 'auth_mode').status, 'fail');
+});
+
+test('another integration with the same field names is not email', async (t) => {
+  const { root, dataDir } = workspace(t);
+  productionEnvironment(t, dataDir, {
+    KUKGIT_AUTH_MODE: 'local',
+    KUKGIT_ADMIN_PASSWORD: 'a-long-and-private-founder-password',
+  });
+
+  const db = new DatabaseSync(path.join(dataDir, 'kukgit.db'));
+  db.exec(`
+    CREATE TABLE instance_settings (integration TEXT NOT NULL, field TEXT NOT NULL, PRIMARY KEY (integration, field));
+    INSERT INTO instance_settings (integration, field) VALUES ('billing.stripe', 'apiKey'), ('billing.stripe', 'fromAddress');
+  `);
+  db.close();
+
+  // `field` is not unique across integrations. Counting fields without naming
+  // the integration would report a configured payment provider as a configured
+  // mail sender.
+  const report = await deployReadiness({ repositoryRoot: path.join(root, 'checkout'), port: 0 });
+  assert.equal(find(report, 'auth_mode').status, 'fail');
 });

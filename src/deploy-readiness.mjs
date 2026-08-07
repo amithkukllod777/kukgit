@@ -4,6 +4,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 
 export const DEPLOY_READINESS = {
   minimumNode: [22, 5, 0],
@@ -106,17 +107,80 @@ function baseUrlCheck(isProduction) {
   return check('base_url', 'pass', `Base URL ${url.origin}`);
 }
 
+/**
+ * Which identity backend this instance runs on.
+ *
+ * Both are supported and neither is a warning by itself. KukGit owns its own
+ * accounts; Kuklabs Account is an optional sign-in path. What is checked is
+ * that whichever one is chosen has what it needs.
+ */
 function authModeCheck(isProduction) {
-  const mode = environmentValue('KUKGIT_AUTH_MODE') || 'local';
-  if (isProduction && mode !== 'authkit') {
-    return check('auth_mode', 'fail', `Auth mode is '${mode}' in production.`,
-      'KUKGIT_AUTH_MODE=authkit — production identity is One Kuklabs Account, and a product-specific password backend is not an option here.');
+  const mode = environmentValue('KUKGIT_AUTH_MODE') || (isProduction ? 'authkit' : 'local');
+  if (mode === 'authkit') {
+    if (!environmentValue('KUKGIT_AUTHKIT_BASE_URL')) {
+      return check('auth_mode', 'fail', 'Auth mode is authkit with no AuthKit URL set.',
+        'KUKGIT_AUTHKIT_BASE_URL=<the Kuklabs Account base URL>');
+    }
+    return check('auth_mode', 'pass', 'Auth mode is authkit.');
   }
-  if (mode !== 'authkit') {
-    return check('auth_mode', 'warn', `Auth mode is '${mode}'. Fine for an internal trial, not for real users.`,
-      'Switch to authkit before anybody outside Kuklabs signs in.');
+  if (mode !== 'local') {
+    return check('auth_mode', 'fail', `Auth mode '${mode}' is not a mode.`, 'KUKGIT_AUTH_MODE=local or authkit');
   }
-  return check('auth_mode', 'pass', 'Auth mode is authkit.');
+  if (!isProduction) return check('auth_mode', 'pass', 'Auth mode is local.');
+  // Holding passwords means sending the mail that proves an address and resets
+  // one. Without a way to send it, "verified email" is a claim nobody can act
+  // on and a forgotten password is an account nobody can get back into.
+  if (!emailIsDeliverable()) {
+    return check('auth_mode', 'fail', 'KukGit holds the passwords here, and nothing is configured to send email.',
+      'Set up Resend or SMTP — without it nobody can verify an address or reset a password.');
+  }
+  return check('auth_mode', 'pass', 'Auth mode is local, with email delivery configured.');
+}
+
+/**
+ * Whether anything is set up to actually send a message.
+ *
+ * Both places are checked, and the second one is the one that matters. SMTP
+ * lives in the environment, but **Resend is configured in the admin console** —
+ * `email.resend` in `instance_settings` — which is where a running instance
+ * normally has it. A version of this that read only the environment reported
+ * "nothing is configured to send email" on an instance whose email worked
+ * perfectly, and because this check blocks a deploy, that would have stopped a
+ * healthy server from being upgraded. A pre-flight that fails on a working box
+ * is one people learn to skip.
+ *
+ * The database is opened read-only and every failure means "cannot tell from
+ * here", which falls through to the environment answer. A missing file is a
+ * fresh install, where the environment really is the only signal.
+ */
+function emailIsDeliverable() {
+  if (environmentValue('KUKGIT_RESEND_API_KEY') || environmentValue('KUKGIT_SMTP_HOST')) return true;
+  return emailConfiguredInDatabase();
+}
+
+function emailConfiguredInDatabase() {
+  const dataDir = path.resolve(environmentValue('KUKGIT_DATA_DIR') || path.join(process.cwd(), 'data'));
+  const databasePath = environmentValue('KUKGIT_DATABASE_PATH') || path.join(dataDir, 'kukgit.db');
+  let db;
+  try {
+    // Read-only, which also means a missing file throws rather than creating
+    // one — a pre-flight check must not leave a database behind.
+    db = new DatabaseSync(databasePath, { readOnly: true });
+    // Both, matching `resendConfigured`: a key with nothing to send from fails
+    // on the first message and looks like an outage rather than a setting
+    // somebody never finished.
+    const row = db.prepare(`
+      SELECT COUNT(DISTINCT field) AS count FROM instance_settings
+      WHERE integration = 'email.resend' AND field IN ('apiKey', 'fromAddress')
+    `).get();
+    return Number(row?.count ?? 0) >= 2;
+  } catch {
+    // No such table on a database from before the settings existed, a lock, a
+    // permission problem. None of those is evidence that email is configured.
+    return false;
+  } finally {
+    try { db?.close(); } catch { /* already gone */ }
+  }
 }
 
 /**
