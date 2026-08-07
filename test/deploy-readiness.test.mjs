@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { REQUIRED_KEYS, deployReadiness } from '../src/deploy-readiness.mjs';
 
 // Every variable any check reads. A name missing here is a value one test sets
@@ -249,4 +250,78 @@ test('a mode that is not a mode is reported here too', async (t) => {
   // crash on deploy into a line somebody reads first.
   assert.equal(mode.status, 'fail');
   assert.match(mode.message, /not a mode/);
+});
+
+test('Resend configured in the admin console counts as email', async (t) => {
+  const { root, dataDir } = workspace(t);
+  productionEnvironment(t, dataDir, {
+    KUKGIT_AUTH_MODE: 'local',
+    KUKGIT_ADMIN_PASSWORD: 'a-long-and-private-founder-password',
+  });
+
+  // Where a running instance actually keeps it. An earlier version of this
+  // check read only the environment and would have blocked the upgrade of a
+  // server whose email worked.
+  const db = new DatabaseSync(path.join(dataDir, 'kukgit.db'));
+  db.exec(`
+    CREATE TABLE instance_settings (integration TEXT NOT NULL, field TEXT NOT NULL, PRIMARY KEY (integration, field));
+    INSERT INTO instance_settings (integration, field) VALUES ('email.resend', 'apiKey'), ('email.resend', 'fromAddress');
+  `);
+  db.close();
+
+  const report = await deployReadiness({ repositoryRoot: path.join(root, 'checkout'), port: 0 });
+  assert.equal(find(report, 'auth_mode').status, 'pass', JSON.stringify(find(report, 'auth_mode')));
+});
+
+test('half-configured Resend does not count', async (t) => {
+  const { root, dataDir } = workspace(t);
+  productionEnvironment(t, dataDir, {
+    KUKGIT_AUTH_MODE: 'local',
+    KUKGIT_ADMIN_PASSWORD: 'a-long-and-private-founder-password',
+  });
+
+  const db = new DatabaseSync(path.join(dataDir, 'kukgit.db'));
+  db.exec(`
+    CREATE TABLE instance_settings (integration TEXT NOT NULL, field TEXT NOT NULL, PRIMARY KEY (integration, field));
+    INSERT INTO instance_settings (integration, field) VALUES ('email.resend', 'apiKey');
+  `);
+  db.close();
+
+  // A key with nothing to send from fails on the first message and looks like
+  // an outage rather than a setting somebody never finished.
+  const report = await deployReadiness({ repositoryRoot: path.join(root, 'checkout'), port: 0 });
+  assert.equal(find(report, 'auth_mode').status, 'fail');
+});
+
+test('a database that cannot be read is not evidence that email works', async (t) => {
+  const { root, dataDir } = workspace(t);
+  productionEnvironment(t, dataDir, {
+    KUKGIT_AUTH_MODE: 'local',
+    KUKGIT_ADMIN_PASSWORD: 'a-long-and-private-founder-password',
+  });
+  fs.writeFileSync(path.join(dataDir, 'kukgit.db'), 'this is not a database');
+
+  const report = await deployReadiness({ repositoryRoot: path.join(root, 'checkout'), port: 0 });
+  assert.equal(find(report, 'auth_mode').status, 'fail');
+});
+
+test('another integration with the same field names is not email', async (t) => {
+  const { root, dataDir } = workspace(t);
+  productionEnvironment(t, dataDir, {
+    KUKGIT_AUTH_MODE: 'local',
+    KUKGIT_ADMIN_PASSWORD: 'a-long-and-private-founder-password',
+  });
+
+  const db = new DatabaseSync(path.join(dataDir, 'kukgit.db'));
+  db.exec(`
+    CREATE TABLE instance_settings (integration TEXT NOT NULL, field TEXT NOT NULL, PRIMARY KEY (integration, field));
+    INSERT INTO instance_settings (integration, field) VALUES ('billing.stripe', 'apiKey'), ('billing.stripe', 'fromAddress');
+  `);
+  db.close();
+
+  // `field` is not unique across integrations. Counting fields without naming
+  // the integration would report a configured payment provider as a configured
+  // mail sender.
+  const report = await deployReadiness({ repositoryRoot: path.join(root, 'checkout'), port: 0 });
+  assert.equal(find(report, 'auth_mode').status, 'fail');
 });

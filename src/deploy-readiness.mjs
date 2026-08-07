@@ -4,6 +4,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 
 export const DEPLOY_READINESS = {
   minimumNode: [22, 5, 0],
@@ -139,14 +140,47 @@ function authModeCheck(isProduction) {
 /**
  * Whether anything is set up to actually send a message.
  *
- * Read from the environment rather than from `instance_settings`, because this
- * runs before the process starts and there is no database open. An instance
- * that configures Resend through the admin UI instead will show a warning here
- * and be fine; that is the right way round for a check that cannot see the
- * whole picture.
+ * Both places are checked, and the second one is the one that matters. SMTP
+ * lives in the environment, but **Resend is configured in the admin console** —
+ * `email.resend` in `instance_settings` — which is where a running instance
+ * normally has it. A version of this that read only the environment reported
+ * "nothing is configured to send email" on an instance whose email worked
+ * perfectly, and because this check blocks a deploy, that would have stopped a
+ * healthy server from being upgraded. A pre-flight that fails on a working box
+ * is one people learn to skip.
+ *
+ * The database is opened read-only and every failure means "cannot tell from
+ * here", which falls through to the environment answer. A missing file is a
+ * fresh install, where the environment really is the only signal.
  */
 function emailIsDeliverable() {
-  return Boolean(environmentValue('KUKGIT_RESEND_API_KEY') || environmentValue('KUKGIT_SMTP_HOST'));
+  if (environmentValue('KUKGIT_RESEND_API_KEY') || environmentValue('KUKGIT_SMTP_HOST')) return true;
+  return emailConfiguredInDatabase();
+}
+
+function emailConfiguredInDatabase() {
+  const dataDir = path.resolve(environmentValue('KUKGIT_DATA_DIR') || path.join(process.cwd(), 'data'));
+  const databasePath = environmentValue('KUKGIT_DATABASE_PATH') || path.join(dataDir, 'kukgit.db');
+  let db;
+  try {
+    // Read-only, which also means a missing file throws rather than creating
+    // one — a pre-flight check must not leave a database behind.
+    db = new DatabaseSync(databasePath, { readOnly: true });
+    // Both, matching `resendConfigured`: a key with nothing to send from fails
+    // on the first message and looks like an outage rather than a setting
+    // somebody never finished.
+    const row = db.prepare(`
+      SELECT COUNT(DISTINCT field) AS count FROM instance_settings
+      WHERE integration = 'email.resend' AND field IN ('apiKey', 'fromAddress')
+    `).get();
+    return Number(row?.count ?? 0) >= 2;
+  } catch {
+    // No such table on a database from before the settings existed, a lock, a
+    // permission problem. None of those is evidence that email is configured.
+    return false;
+  } finally {
+    try { db?.close(); } catch { /* already gone */ }
+  }
 }
 
 /**
