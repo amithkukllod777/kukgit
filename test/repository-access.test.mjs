@@ -17,6 +17,7 @@ import {
   getEffectiveRepositoryAccess,
   migrateRepositoryAccess,
   permissionAtLeast,
+  requireRepositoryAccess,
   requiredPermissionForRepositoryRequest,
 } from '../src/repository-access.mjs';
 import { createPersonalAccessToken } from '../src/tokens.mjs';
@@ -246,4 +247,63 @@ test('repository access management requires admin permission and same-origin wri
     ORDER BY rowid
   `).all().map((row) => row.action);
   assert.deepEqual(auditActions, []);
+});
+
+/** A private repository, its owner, and nobody else. */
+function privateWorkspace(t) {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kukgit-access-visibility-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const config = configFor(dataDir);
+  const db = openDatabase(config);
+  t.after(() => db.close());
+  migrateCollaboration(db);
+  migrateRepositoryAccess(db);
+  const { userId: ownerId, orgId } = seedCore(db, config);
+  const repositoryId = createRepository(db, config, { organizationId: orgId, createdBy: ownerId, slug: 'secret-plans' });
+  return { config, db, orgId, ownerId, repositoryId };
+}
+
+test('a private repository does not confirm its own existence to a stranger', async (t) => {
+  const { db } = privateWorkspace(t);
+  const stranger = createUser(db, { email: 'stranger@example.com', password: 'secure-stranger-password', displayName: 'Stranger' });
+
+  // 403 would say "you may not read kuklabs/secret-plans", and the name is in
+  // the URL that produced it — enough to enumerate what a private organization
+  // owns, one guess at a time.
+  assert.throws(
+    () => requireRepositoryAccess(db, stranger, { orgSlug: 'kuklabs', repoSlug: 'secret-plans' }, 'read'),
+    (error) => error.status === 404 && error.code === 'REPO_NOT_FOUND',
+  );
+});
+
+test('a public repository still says why, because its existence is public', async (t) => {
+  const { db, repositoryId } = privateWorkspace(t);
+  const stranger = createUser(db, { email: 'stranger@example.com', password: 'secure-stranger-password', displayName: 'Stranger' });
+  db.prepare("UPDATE repositories SET visibility = 'public' WHERE id = ?").run(repositoryId);
+
+  // Hiding a repository somebody can already see in a browser teaches nothing
+  // and confuses everybody.
+  assert.throws(
+    () => requireRepositoryAccess(db, stranger, { orgSlug: 'kuklabs', repoSlug: 'secret-plans' }, 'write'),
+    (error) => error.status === 403 && error.code === 'REPOSITORY_ACCESS_DENIED',
+  );
+});
+
+test('somebody who can read but not write is told which permission is missing', async (t) => {
+  const { db, orgId } = privateWorkspace(t);
+  createUser(db, {
+    email: 'reader@example.com',
+    password: 'secure-reader-password',
+    displayName: 'Reader',
+    organizationId: orgId,
+    role: 'viewer',
+  });
+  const reader = db.prepare("SELECT id FROM users WHERE email = 'reader@example.com'").get().id;
+
+  // They already know it exists — they can read it. "Not found" here would be
+  // a lie they could disprove by refreshing the page.
+  assert.throws(
+    () => requireRepositoryAccess(db, reader, { orgSlug: 'kuklabs', repoSlug: 'secret-plans' }, 'write'),
+    (error) => error.status === 403 && /write permission is required/.test(error.message),
+  );
 });

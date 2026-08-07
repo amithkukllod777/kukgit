@@ -246,3 +246,47 @@ exists so it cannot cost another.
 
 Use `browser.present(selector)` for existence, `.length` for counts, and
 `browser.html()` with a regular expression for content.
+
+## Every module has one
+
+All 27 `public/*.js` modules now have a behaviour test. A new module is not
+finished without one, and the reason is not tidiness: six request storms, an
+unchecked box that never turned email off, and a confirmation with no name in it
+were all found by writing these, not by using the product.
+
+### Read the module before writing the fixture
+
+Nine fixtures in this effort were wrong, and every one of them was wrong the
+same way — invented from the markup rather than read from the payload. A status
+summary that lives on `pull.statusChecks`, a collaborator filtered out for
+lacking `isExternal`, an overview missing `audit.last24Hours`: each renders an
+error where the page should be, or worse, renders nothing and passes a loose
+assertion.
+
+A fixture that does not match what the server sends is a test of a shape that
+does not exist.
+
+### What the harness can do
+
+Beyond the DOM: a recording `fetch`, `MutationObserver` on a microtask,
+`FormData` that omits unchecked boxes, virtual `setInterval` driven by
+`advanceTimers`, a `WebSocket` whose sockets a test opens and drops by hand,
+`confirm` and `prompt` with queued answers, a clipboard, `localStorage` and
+`sessionStorage`, `form.elements`, `replaceWith`, `focus`, and event bubbling
+all the way to the document.
+
+Each of those was added because a module could not otherwise be tested at all —
+not speculatively.
+
+### A `+` inside an attribute value is not a combinator
+
+The shim refuses combinators (`>`, `~`, `+`) on purpose: silently matching the
+wrong elements is how a harness lies. But it used to look for them in the whole
+selector, including inside brackets — so `[data-rxn="+1"]` was rejected as an
+adjacent-sibling selector when it is a perfectly ordinary attribute match.
+
+Bracketed sections are now stripped before the check. Reaction names are `+1`
+and `-1`, which is how this surfaced.
+
+Descendant selectors (`.card [data-x]`) do work. It was only the false positive
+that made them look as though they did not.

@@ -1,3 +1,5 @@
+import { renderMarkdown } from './markdown.js';
+
 const app = document.querySelector('#app');
 const toastRoot = document.querySelector('#toast-root');
 
@@ -381,18 +383,14 @@ async function renderRepoCode(context) {
   document.querySelectorAll('[data-blob-path]').forEach((row) => row.addEventListener('click', () => navigate(`#/repo/${context.org}/${context.repo}/code?ref=${encodeURIComponent(ref)}&blob=${encodeURIComponent(row.dataset.blobPath)}`)));
 }
 
-function renderMarkdown(text = '') {
-  let html = escapeHtml(text);
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>').replace(/^## (.+)$/gm, '<h2>$1</h2>').replace(/^# (.+)$/gm, '<h1>$1</h1>');
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>');
-  html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>').replace(/(?:<li>.*<\/li>\n?)+/g, (list) => `<ul>${list}</ul>`);
-  html = html.split(/\n{2,}/).map((block) => /^<(h\d|ul|pre)/.test(block) ? block : `<p>${block.replaceAll('\n', '<br>')}</p>`).join('');
-  return html;
-}
+// `renderMarkdown` used to live here, in nine lines that knew about headings,
+// bold, inline code and lists and nothing else. It is now `markdown.js`, shared
+// with the issue thread, so a README and a comment render the same way — and so
+// that the rules about links and remote images live in one place.
 
 async function renderRepoIssues(context) {
   const data = await api(`/api/repos/${context.org}/${context.repo}/issues`);
-  const body = `<div class="card-header"><div><h2>Issues</h2><p>Track work, bugs and product decisions</p></div><button class="btn btn-primary" data-repo-action="new-issue">＋ New issue</button></div>${data.issues.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Issue</th><th>Priority</th><th>Author</th><th>Status</th><th>Created</th></tr></thead><tbody>${data.issues.map((issue) => `<tr data-route="#/repo/${encodeURIComponent(context.org)}/${encodeURIComponent(context.repo)}/issues?issue=${issue.number}" style="cursor:pointer"><td><b>#${issue.number} ${escapeHtml(issue.title)}</b><div class="muted" style="margin-top:5px">${escapeHtml(issue.body).slice(0, 150)}</div></td><td><span class="badge ${issue.priority}">${issue.priority}</span></td><td>${escapeHtml(issue.authorName)}</td><td><span class="badge ${issue.status}">${issue.status}</span></td><td>${formatDate(issue.createdAt)}</td></tr>`).join('')}</tbody></table></div>` : emptyState('◉', 'No issues yet', 'Create an issue to track a bug, task or product decision.', '<button class="btn btn-primary" data-repo-action="new-issue">New issue</button>')}`;
+  const body = `<div class="card-header"><div><h2>Issues</h2><p>Track work, bugs and product decisions</p></div><button class="btn btn-primary" data-repo-action="new-issue">＋ New issue</button></div>${data.issues.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Issue</th><th>Priority</th><th>Author</th><th>Status</th><th>Created</th></tr></thead><tbody>${data.issues.map((issue) => `<tr data-route="#/repo/${encodeURIComponent(context.org)}/${encodeURIComponent(context.repo)}/issues?issue=${issue.number}" style="cursor:pointer"><td><b>#${issue.number} ${escapeHtml(issue.title)}</b><div class="muted" style="margin-top:5px">${escapeHtml(String(issue.body || '').slice(0, 150))}</div></td><td><span class="badge ${issue.priority}">${issue.priority}</span></td><td>${escapeHtml(issue.authorName)}</td><td><span class="badge ${issue.status}">${issue.status}</span></td><td>${formatDate(issue.createdAt)}</td></tr>`).join('')}</tbody></table></div>` : emptyState('◉', 'No issues yet', 'Create an issue to track a bug, task or product decision.', '<button class="btn btn-primary" data-repo-action="new-issue">New issue</button>')}`;
   app.innerHTML = shell(repoHeader(context, 'issues', body)); bindShell(); bindRepoActions(context, context.repository.defaultBranch);
 }
 

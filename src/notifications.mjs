@@ -5,6 +5,7 @@ import { emailTransport } from './email-resend.mjs';
 import { recordSmtpRejection } from './email-provider-events.mjs';
 import { httpError, normalizeEmail, originAllowed } from './security.mjs';
 import { leaseGate } from './job-leases.mjs';
+import { getEffectiveRepositoryAccess } from './repository-access.mjs';
 
 export const NOTIFICATION_CATEGORIES = Object.freeze([
   'organization',
@@ -12,6 +13,7 @@ export const NOTIFICATION_CATEGORIES = Object.freeze([
   'pull_request',
   'status',
   'operations',
+  'issue',
 ]);
 
 const CATEGORY_SET = new Set(NOTIFICATION_CATEGORIES);
@@ -21,53 +23,189 @@ const DEFAULT_EMAIL = Object.freeze({
   pull_request: false,
   status: false,
   operations: true,
+  // Same as pull requests: in the bell by default, not in the inbox. A tracker
+  // sends far more of these than anything else here, and a product whose first
+  // week is a hundred emails is a product people filter.
+  issue: false,
 });
+
+// The constraint is generated from the list above rather than written out three
+// times. `issue` was the first category added after these tables existed, and
+// adding it meant discovering that a CHECK cannot be altered in SQLite — the
+// table has to be rebuilt. Deriving it means the rebuild below is driven by the
+// constant, so the next category costs nothing and cannot drift from it.
+const CATEGORY_CHECK = `CHECK(category IN (${NOTIFICATION_CATEGORIES.map((category) => `'${category}'`).join(',')}))`;
+
+/**
+ * The categories the stored table actually accepts, read from its own DDL.
+ *
+ * The schema is the record of what has been applied — there is no separate
+ * migrations table to fall out of step with it.
+ */
+function storedCategories(db, table) {
+  const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)?.sql;
+  const match = String(sql ?? '').match(/category TEXT NOT NULL CHECK\(category IN \(([^)]*)\)\)/);
+  if (!match) return null;
+  return match[1].split(',').map((value) => value.trim().replace(/^'|'$/g, ''));
+}
+
+/**
+ * Widens a table's category constraint to the current list.
+ *
+ * SQLite has no `ALTER TABLE … DROP CONSTRAINT`, so the table is rebuilt: rename
+ * it aside, create it again with the new constraint, copy the rows across, drop
+ * the old one. That is the procedure the SQLite manual describes, and the
+ * dangerous part of it is the rename.
+ *
+ * **Renaming a table rewrites the `REFERENCES` clause of every table that
+ * points at it.** With foreign keys enabled — which they are — SQLite does that
+ * whatever `legacy_alter_table` says. So after `email_outbox` is renamed,
+ * `email_delivery_attempts` references `email_outbox__old`, and dropping the
+ * old table cascades every delivery attempt in the database out of existence.
+ * That is not a theory: it deleted the rows the first time this was written, in
+ * a scratch database, which is the only place it will ever happen.
+ *
+ * So a table that has dependants rebuilds them too, using their own stored DDL,
+ * before the old parent is dropped. `dependants` names them.
+ *
+ * Indexes are dropped along with the old table; the caller creates them again
+ * with `CREATE INDEX IF NOT EXISTS` immediately afterwards, which is why the
+ * index statements are separated from the table statements.
+ *
+ * The whole thing runs inside `withSchemaLock`'s transaction, so a failure
+ * anywhere leaves every table exactly as it was. **To roll back, deploy the
+ * previous release: a shorter list rebuilds the tables in the other
+ * direction.** Narrowing is refused rather than attempted while rows still use
+ * the category being removed, because the alternative is deleting somebody's
+ * notifications to make a schema fit.
+ */
+function syncCategoryConstraint(db, { table, ddl, columns, dependants = [] }) {
+  const current = storedCategories(db, table);
+  if (!current) return false;
+  const wanted = new Set(NOTIFICATION_CATEGORIES);
+  if (current.length === wanted.size && current.every((category) => wanted.has(category))) return false;
+
+  const orphaned = current.filter((category) => !wanted.has(category));
+  if (orphaned.length) {
+    const inUse = db.prepare(
+      `SELECT DISTINCT category FROM ${table} WHERE category IN (${orphaned.map(() => '?').join(',')})`,
+    ).all(...orphaned).map((row) => row.category);
+    if (inUse.length) {
+      throw new Error(
+        `Cannot narrow ${table}.category: rows still use ${inUse.join(', ')}. `
+        + 'Migrate or remove those rows before deploying a release that drops the category.',
+      );
+    }
+  }
+
+  // Read before the rename, because the rename is what corrupts them.
+  const dependantDdl = dependants.map((name) => ({
+    name,
+    sql: db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)?.sql,
+    columns: db.prepare(`PRAGMA table_info(${name})`).all().map((row) => row.name),
+  })).filter((entry) => entry.sql);
+
+  const list = columns.join(', ');
+  db.exec(`ALTER TABLE ${table} RENAME TO ${table}__old`);
+  db.exec(ddl);
+  db.exec(`INSERT INTO ${table} (${list}) SELECT ${list} FROM ${table}__old`);
+
+  for (const dependant of dependantDdl) {
+    const names = dependant.columns.join(', ');
+    db.exec(`ALTER TABLE ${dependant.name} RENAME TO ${dependant.name}__old`);
+    db.exec(dependant.sql);
+    db.exec(`INSERT INTO ${dependant.name} (${names}) SELECT ${names} FROM ${dependant.name}__old`);
+    db.exec(`DROP TABLE ${dependant.name}__old`);
+  }
+
+  // Only now, with nothing pointing at it, so nothing cascades.
+  db.exec(`DROP TABLE ${table}__old`);
+  return true;
+}
+
+const NOTIFICATION_PREFERENCES_DDL = `
+  CREATE TABLE notification_preferences (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    category TEXT NOT NULL ${CATEGORY_CHECK},
+    in_app_enabled INTEGER NOT NULL DEFAULT 1 CHECK(in_app_enabled IN (0,1)),
+    email_enabled INTEGER NOT NULL DEFAULT 0 CHECK(email_enabled IN (0,1)),
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, category)
+  )`;
+
+const NOTIFICATIONS_DDL = `
+  CREATE TABLE notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    category TEXT NOT NULL ${CATEGORY_CHECK},
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    link TEXT,
+    dedupe_key TEXT,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    read_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, dedupe_key)
+  )`;
+
+const EMAIL_OUTBOX_DDL = `
+  CREATE TABLE email_outbox (
+    id TEXT PRIMARY KEY,
+    user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    to_email TEXT NOT NULL,
+    category TEXT NOT NULL ${CATEGORY_CHECK},
+    subject TEXT NOT NULL,
+    text_body TEXT NOT NULL,
+    html_body TEXT,
+    dedupe_key TEXT UNIQUE,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','sent','failed','cancelled')),
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 8,
+    next_attempt_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_attempt_at TEXT,
+    sent_at TEXT,
+    last_error TEXT,
+    provider_response TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`;
+
+const CATEGORY_TABLES = [
+  {
+    table: 'notification_preferences',
+    ddl: NOTIFICATION_PREFERENCES_DDL,
+    columns: ['user_id', 'category', 'in_app_enabled', 'email_enabled', 'updated_at'],
+  },
+  {
+    table: 'notifications',
+    ddl: NOTIFICATIONS_DDL,
+    columns: ['id', 'user_id', 'category', 'title', 'body', 'link', 'dedupe_key', 'metadata_json', 'read_at', 'created_at'],
+  },
+  {
+    table: 'email_outbox',
+    ddl: EMAIL_OUTBOX_DDL,
+    columns: [
+      'id', 'user_id', 'to_email', 'category', 'subject', 'text_body', 'html_body', 'dedupe_key',
+      'status', 'attempt_count', 'max_attempts', 'next_attempt_at', 'last_attempt_at', 'sent_at',
+      'last_error', 'provider_response', 'created_at', 'updated_at',
+    ],
+    // `email_delivery_attempts` has a foreign key into this table, so renaming
+    // it aside would point that key at the temporary name.
+    dependants: ['email_delivery_attempts'],
+  },
+];
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_EMAIL_BODY = 2 * 1024 * 1024;
 
 export function migrateNotifications(db) {
+  // Tables first, then the category constraint, then the indexes. That order is
+  // load-bearing: widening the constraint rebuilds the table, and a rebuilt
+  // table has lost its indexes, so they have to be created after rather than in
+  // the same statement.
   db.exec(`
-    CREATE TABLE IF NOT EXISTS notification_preferences (
-      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      category TEXT NOT NULL CHECK(category IN ('organization','security','pull_request','status','operations')),
-      in_app_enabled INTEGER NOT NULL DEFAULT 1 CHECK(in_app_enabled IN (0,1)),
-      email_enabled INTEGER NOT NULL DEFAULT 0 CHECK(email_enabled IN (0,1)),
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (user_id, category)
-    );
-    CREATE TABLE IF NOT EXISTS notifications (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      category TEXT NOT NULL CHECK(category IN ('organization','security','pull_request','status','operations')),
-      title TEXT NOT NULL,
-      body TEXT NOT NULL,
-      link TEXT,
-      dedupe_key TEXT,
-      metadata_json TEXT NOT NULL DEFAULT '{}',
-      read_at TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(user_id, dedupe_key)
-    );
-    CREATE TABLE IF NOT EXISTS email_outbox (
-      id TEXT PRIMARY KEY,
-      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
-      to_email TEXT NOT NULL,
-      category TEXT NOT NULL CHECK(category IN ('organization','security','pull_request','status','operations')),
-      subject TEXT NOT NULL,
-      text_body TEXT NOT NULL,
-      html_body TEXT,
-      dedupe_key TEXT UNIQUE,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','sent','failed','cancelled')),
-      attempt_count INTEGER NOT NULL DEFAULT 0,
-      max_attempts INTEGER NOT NULL DEFAULT 8,
-      next_attempt_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      last_attempt_at TEXT,
-      sent_at TEXT,
-      last_error TEXT,
-      provider_response TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
+    ${NOTIFICATION_PREFERENCES_DDL.replace('CREATE TABLE ', 'CREATE TABLE IF NOT EXISTS ')};
+    ${NOTIFICATIONS_DDL.replace('CREATE TABLE ', 'CREATE TABLE IF NOT EXISTS ')};
+    ${EMAIL_OUTBOX_DDL.replace('CREATE TABLE ', 'CREATE TABLE IF NOT EXISTS ')};
     CREATE TABLE IF NOT EXISTS email_delivery_attempts (
       id TEXT PRIMARY KEY,
       outbox_id TEXT NOT NULL REFERENCES email_outbox(id) ON DELETE CASCADE,
@@ -79,6 +217,11 @@ export function migrateNotifications(db) {
       started_at TEXT NOT NULL,
       completed_at TEXT NOT NULL
     );
+  `);
+
+  for (const table of CATEGORY_TABLES) syncCategoryConstraint(db, table);
+
+  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_notifications_user_created
       ON notifications(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
@@ -801,6 +944,79 @@ export function notifyPullRequestReview(db, config, { orgSlug, repoSlug, number,
     },
   });
   return result.notification || result.email ? 1 : 0;
+}
+
+/**
+ * Everybody already in the conversation, when somebody adds to it.
+ *
+ * Not everybody with write access. A tracker produces far more of these than
+ * pull requests do, and a product whose first week is a hundred notifications
+ * about issues nobody opened is a product where the bell gets muted and then
+ * the real ones are missed too. So this reaches the people who opened it, the
+ * person it is assigned to, and the people who have already replied.
+ *
+ * **An imported comment does not make anybody a participant.** The account that
+ * ran an import owns every row it carried across, so counting those would
+ * subscribe one person to five hundred conversations they have never read, on
+ * the strength of having pressed a button once.
+ *
+ * **Access is re-checked per recipient.** The title of a private issue is
+ * private, and somebody who was in the conversation last month may have been
+ * removed from the repository since. The notification is the one thing that
+ * would still reach them.
+ */
+export function notifyIssueComment(db, config, { orgSlug, repoSlug, number, actorId, commentId = null }) {
+  migrateNotifications(db);
+  const issue = db.prepare(`
+    SELECT i.id, i.number, i.title, i.author_id AS authorId, i.assignee_id AS assigneeId,
+      r.id AS repositoryId, r.slug AS repoSlug, o.slug AS orgSlug
+    FROM issues i JOIN repositories r ON r.id = i.repository_id
+    JOIN organizations o ON o.id = r.organization_id
+    WHERE o.slug = ? AND r.slug = ? AND i.number = ?
+  `).get(orgSlug, repoSlug, Number(number));
+  if (!issue) return 0;
+
+  const recipients = new Set();
+  if (issue.authorId) recipients.add(issue.authorId);
+  if (issue.assigneeId) recipients.add(issue.assigneeId);
+  try {
+    const participants = db.prepare(
+      'SELECT DISTINCT author_id AS authorId FROM issue_comments WHERE issue_id = ? AND imported_author IS NULL',
+    ).all(issue.id);
+    for (const participant of participants) if (participant.authorId) recipients.add(participant.authorId);
+  } catch {
+    // The tracker has no comments table yet. The author and assignee are still
+    // worth telling.
+  }
+  recipients.delete(actorId);
+
+  const actor = db.prepare('SELECT display_name AS name FROM users WHERE id = ?').get(actorId);
+  const who = actor?.name || 'Someone';
+  const link = `#/repo/${issue.orgSlug}/${issue.repoSlug}/issues?issue=${issue.number}`;
+
+  let created = 0;
+  for (const userId of recipients) {
+    const access = getEffectiveRepositoryAccess(db, { userId, repositoryId: issue.repositoryId });
+    if (!access || access.permission === 'none') continue;
+    const result = createNotification(db, config, {
+      userId,
+      category: 'issue',
+      title: `${who} commented on #${issue.number} in ${issue.repoSlug}`,
+      body: issue.title,
+      link,
+      // One notification per comment per person. Without the comment id every
+      // reply on the same issue would collapse into the first one, and a
+      // conversation would look like it stopped after its first answer.
+      dedupeKey: commentId ? `issue-comment:${commentId}:${userId}` : null,
+      metadata: { issueId: issue.id, repositoryId: issue.repositoryId, number: issue.number, commentId },
+      email: {
+        subject: `[${issue.repoSlug}] #${issue.number} ${issue.title}`,
+        text: `${who} commented on an issue you are following in ${issue.orgSlug}/${issue.repoSlug}.\n\n#${issue.number} ${issue.title}\n\nOpen KukGit: ${config.baseUrl}/${link}`,
+      },
+    });
+    if (result.notification || result.email) created += 1;
+  }
+  return created;
 }
 
 export function notifyStatusFailure(db, config, { orgSlug, repoSlug, sha, context, state }) {

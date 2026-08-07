@@ -121,7 +121,11 @@ function parseCompound(source) {
 
 function parseSelectorList(selector) {
   return splitTop(String(selector), ',').map((part) => {
-    if (/[>~+]/.test(part)) {
+    // Bracketed sections are removed before looking for a combinator, because
+    // `+`, `~` and `>` are all ordinary characters inside an attribute value.
+    // Without this, `[data-rxn="+1"]` reads as an adjacent-sibling selector and
+    // the harness refuses a selector that is perfectly ordinary.
+    if (/[>~+]/.test(String(part).replace(/\[[^\]]*\]/g, ''))) {
       // Silently matching the wrong elements is how a harness lies. Our own code
       // does not use combinators; when it starts to, this is the reminder.
       throw new Error(`browser shim: combinators are not supported ("${part}")`);
@@ -313,6 +317,23 @@ class KgElement {
    * which is what makes `kgDurationOptions(90)` observable from a test: the
    * default that markup chose is the value the next request will carry.
    */
+  /**
+   * A form's named controls, the way `form.elements.slug` reads them.
+   *
+   * Without this a module that reaches for its input by name gets `undefined`,
+   * binds no listener, and fails at submit with a message about a property of
+   * undefined — which reads like a bug in the module rather than a gap in the
+   * harness.
+   */
+  get elements() {
+    const named = {};
+    for (const field of this.querySelectorAll('input, select, textarea, button')) {
+      const name = field.getAttribute('name');
+      if (name && !(name in named)) named[name] = field;
+    }
+    return named;
+  }
+
   get value() {
     if (this.explicitValue !== undefined) return this.explicitValue;
     if (this.tagName === 'SELECT') {
@@ -497,6 +518,18 @@ class KgElement {
       }
     }
   }
+
+  /**
+   * Focus and blur, which do nothing here but must exist.
+   *
+   * A module that focuses its first input after rendering — which is ordinary
+   * courtesy on a sign-in card — throws without these, *after* the render. The
+   * failure lands in whatever catch block is nearest, so the page shows an
+   * error about the identity service being unreachable when the identity
+   * service answered perfectly.
+   */
+  focus() { this.ownerDocument && (this.ownerDocument.activeElement = this); }
+  blur() { if (this.ownerDocument?.activeElement === this) this.ownerDocument.activeElement = null; }
 
   /** What a person clicking would do: dispatch a bubbling click. */
   click() {
@@ -840,6 +873,20 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
   // either hang or silently take the "cancel" branch and assert that nothing
   // happened — which is true, and about the wrong thing.
   const confirmations = [];
+  /**
+   * `prompt`, for the controls that make somebody type a value back.
+   *
+   * A confirmation somebody can click through is not the same as one that
+   * makes them type the address they are about to unsuppress. Answers are
+   * taken from a queue so a screen that asks twice — the address, then the
+   * reason — can be driven; `null` is Cancel, which is the case that must
+   * change nothing.
+   */
+  set('prompt', (message) => {
+    harness.prompts.push(String(message ?? ''));
+    return harness.promptAnswers.length ? harness.promptAnswers.shift() : harness.promptAnswer;
+  });
+
   set('confirm', (message) => {
     confirmations.push(String(message ?? ''));
     return harness.confirmAnswer;
@@ -851,6 +898,73 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
   set('fetch', makeFetch(routes, calls));
   set('window', globalThis);
 
+  /**
+   * A WebSocket nobody connects.
+   *
+   * The realtime module opens one and reconnects with exponential backoff when
+   * it drops. Without a stub the module throws on import and its reconnection
+   * policy — the part that decides whether a flapping connection becomes a
+   * request storm — cannot be tested at all. Every socket it opens is recorded,
+   * and a test drives them by hand.
+   */
+  const sockets = [];
+  class KgWebSocket {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
+    static CLOSED = 3;
+
+    constructor(url) {
+      this.url = String(url);
+      this.readyState = KgWebSocket.CONNECTING;
+      this.sent = [];
+      this.closed = null;
+      this.listeners = new Map();
+      sockets.push(this);
+    }
+
+    addEventListener(type, handler) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(handler);
+    }
+
+    removeEventListener(type, handler) {
+      const handlers = this.listeners.get(type) ?? [];
+      const index = handlers.indexOf(handler);
+      if (index >= 0) handlers.splice(index, 1);
+    }
+
+    emit(type, event) {
+      for (const handler of [...(this.listeners.get(type) ?? [])]) handler.call(this, event);
+      this[`on${type}`]?.call(this, event);
+    }
+
+    send(data) { this.sent.push(String(data)); }
+
+    close(code, reason) {
+      const wasOpen = this.readyState !== KgWebSocket.CLOSED;
+      this.readyState = KgWebSocket.CLOSED;
+      this.closed = { code, reason };
+      // A real socket fires `close` when it is closed from either end, and a
+      // module that reconnects hangs off that event.
+      if (wasOpen) this.emit('close', { type: 'close', code: code ?? 1000 });
+    }
+
+    /** What the server doing each of these looks like from in here. */
+    open() { this.readyState = KgWebSocket.OPEN; this.emit('open', { type: 'open' }); }
+    message(payload) { this.emit('message', { type: 'message', data: typeof payload === 'string' ? payload : JSON.stringify(payload) }); }
+    drop(code = 1006) { this.readyState = KgWebSocket.CLOSED; this.emit('close', { type: 'close', code }); }
+    fail() { this.emit('error', { type: 'error' }); }
+  }
+  set('WebSocket', KgWebSocket);
+  // Modules announce connection state on the window with a CustomEvent.
+  set('CustomEvent', class KgCustomEvent {
+    constructor(type, options = {}) {
+      this.type = String(type);
+      this.detail = options.detail ?? null;
+    }
+  });
+
   // Three modules copy a one-time secret to the clipboard — an invitation link,
   // an SSH clone URL, a token. What lands there is worth asserting, and a test
   // cannot assert on a clipboard that does not exist.
@@ -858,6 +972,9 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
   set('navigator', {
     clipboard: { writeText: async (value) => { clipboard.push(String(value)); } },
     userAgent: 'KukGit test harness',
+    // A module that reconnects checks this before trying; offline is a state a
+    // test needs to be able to put it in.
+    onLine: true,
   });
 
   // Several modules start a poll on import — a minute-long `setInterval` that
@@ -870,6 +987,30 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
   // every two seconds cannot be tested by waiting two seconds, and a test that
   // did would be a test that sometimes waited 1.99. `advanceTimers` moves a
   // clock the module cannot tell from the real one.
+  // Timeouts as well as intervals. A module that schedules a reconnect leaves
+  // a pending timer behind, and Node keeps the process alive for it — so the
+  // tests all pass and the file itself fails, which reads like a hang rather
+  // than a leak.
+  const timeouts = new Set();
+  const savedSetTimeout = globalThis.setTimeout;
+  const savedClearTimeout = globalThis.clearTimeout;
+  globalThis.setTimeout = (fn, delay = 0, ...rest) => {
+    const handle = savedSetTimeout(fn, delay, ...rest);
+    // Only the module's own long timers. `settle()` schedules zero-delay ones
+    // and awaits them, so unref'ing those would let the loop drain while a
+    // test is still waiting on one — which fails as "promise still pending"
+    // and looks nothing like the leak it was meant to fix.
+    if (Number(delay) >= 50) {
+      handle?.unref?.();
+      timeouts.add(handle);
+    }
+    return handle;
+  };
+  globalThis.clearTimeout = (handle) => {
+    timeouts.delete(handle);
+    return savedClearTimeout(handle);
+  };
+
   const intervals = new Map();
   let intervalHandle = 0;
   let clock = 0;
@@ -890,10 +1031,26 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
     removeEventListener: globalThis.removeEventListener,
     dispatchEvent: globalThis.dispatchEvent,
   };
-  globalThis.addEventListener = (type, handler) => { if (type === 'hashchange') hashListeners.push(handler); };
+  // Window listeners of every type, not only hashchange. Modules announce
+  // their own state on the window — "the socket connected", "the socket went
+  // away" — and a window that cannot dispatch throws inside the handler that
+  // was announcing it, which looks like a bug in the module.
+  const windowListeners = new Map();
+  globalThis.addEventListener = (type, handler) => {
+    if (type === 'hashchange') hashListeners.push(handler);
+    if (!windowListeners.has(type)) windowListeners.set(type, []);
+    windowListeners.get(type).push(handler);
+  };
   globalThis.removeEventListener = (type, handler) => {
     const index = hashListeners.indexOf(handler);
     if (type === 'hashchange' && index >= 0) hashListeners.splice(index, 1);
+    const handlers = windowListeners.get(type) ?? [];
+    const at = handlers.indexOf(handler);
+    if (at >= 0) handlers.splice(at, 1);
+  };
+  globalThis.dispatchEvent = (event) => {
+    for (const handler of [...(windowListeners.get(event?.type) ?? [])]) handler.call(globalThis, event);
+    return true;
   };
 
   const harness = {
@@ -903,10 +1060,18 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
 
     /** What `window.confirm` answers next, and what it has been asked. */
     confirmAnswer: true,
+
+    /** What `window.prompt` answers, in order, then `promptAnswer` for the rest. */
+    promptAnswers: [],
+    promptAnswer: null,
+    prompts: [],
     confirmations,
 
     /** Everything written to the clipboard, in order. */
     clipboard,
+
+    /** Every WebSocket the page opened, in order, ready to be driven. */
+    sockets,
 
     /** Requests made so far, as `"GET /api/thing"` strings. */
     requests() { return calls.map((call) => `${call.method} ${call.path}`); },
@@ -990,6 +1155,10 @@ export function installBrowser({ html = '', hash = '#/', origin = 'https://git.k
       globalThis.setInterval = savedSetInterval;
       globalThis.clearInterval = savedClearInterval;
       intervals.clear();
+      for (const handle of timeouts) savedClearTimeout(handle);
+      timeouts.clear();
+      globalThis.setTimeout = savedSetTimeout;
+      globalThis.clearTimeout = savedClearTimeout;
       for (const handle of frames) clearTimeout(handle);
       frames.clear();
       document.observers.clear();

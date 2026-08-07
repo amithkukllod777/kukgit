@@ -169,7 +169,9 @@ test('an artifact does not cross a repository boundary', async (t) => {
     `/api/workflow-runs/kuklabs/app/${context.runId}/artifacts/${artifactId}`,
     { cookie: outsiderCookie },
   );
-  assert.equal(refused.status, 403);
+  // 404: a private repository does not confirm its own existence to somebody
+  // with no access to it.
+  assert.equal(refused.status, 404);
   assert.doesNotMatch(refused.body.toString(), /internal/);
 
   // A second repository whose path is used to name the first repository's run.
@@ -333,5 +335,7 @@ test('usage is readable by a repository reader and only for that repository', as
   const refused = await request(context, '/api/repositories/kuklabs/app/ci-storage', {
     cookie: `kukgit_session=${createSession(context.db, outsider).token}`,
   });
-  assert.equal(refused.status, 403);
+  // How much a private repository is storing is a fact about that repository,
+  // and so is whether it exists.
+  assert.equal(refused.status, 404);
 });

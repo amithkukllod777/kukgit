@@ -303,10 +303,12 @@ test('reading a log needs repository read, and cancelling needs write', async (t
   const outsider = addUser(context.db, 'outsider@example.com');
   const outsiderCookie = `kukgit_session=${createSession(context.db, outsider).token}`;
   const refused = await request(context, `${base}/jobs/${context.job.jobId}/logs`, { cookie: outsiderCookie });
-  // 403 rather than 404 matches how every other repository route in KukGit
-  // answers; what matters here is that no log content crosses the boundary.
-  assert.equal(refused.status, 403);
-  assert.equal(refused.payload.error.code, 'REPOSITORY_ACCESS_DENIED');
+  // 404 rather than 403: the repository is private and this caller has no
+  // access at all, so confirming it exists is confirming what the organization
+  // owns. What mattered before and still matters is that no log content
+  // crosses the boundary.
+  assert.equal(refused.status, 404);
+  assert.equal(refused.payload.error.code, 'REPO_NOT_FOUND');
   assert.doesNotMatch(refused.raw, /visible output/);
 
   const reader = addUser(context.db, 'reader@example.com');

@@ -213,7 +213,15 @@ function resetAnchor() {
   diffState.anchor = null;
 }
 
-async function renderDiffPanel(forceSummary = false) {
+/**
+ * `reuseSelected` is for a change that is only about how the patch is drawn.
+ *
+ * Unified and side-by-side are the same bytes arranged differently, so
+ * re-fetching the file to switch between them is a round trip per click on a
+ * patch that may be a megabyte. Whitespace is not this: it changes what the
+ * server computes, so that path still reloads.
+ */
+async function renderDiffPanel(forceSummary = false, reuseSelected = false) {
   const route = diffState.route;
   if (!route || !diffState.pullNumber) return;
   let summary;
@@ -225,8 +233,8 @@ async function renderDiffPanel(forceSummary = false) {
   } else {
     summary = diffState.payload.summary || await loadSummary(route, diffState.pullNumber, 0);
   }
-  let selectedPayload = null;
-  if (diffState.selectedPath) selectedPayload = await loadSelected(route, diffState.pullNumber, diffState.selectedPath);
+  let selectedPayload = reuseSelected && diffState.payload?.selectedFile ? diffState.payload : null;
+  if (!selectedPayload && diffState.selectedPath) selectedPayload = await loadSelected(route, diffState.pullNumber, diffState.selectedPath);
   diffState.payload = { ...(selectedPayload || summary), summary };
   const content = document.querySelector('.content');
   document.querySelector('#kg-pr-diffs-panel')?.remove();
@@ -289,8 +297,8 @@ function bindDiffPanel(summary, selectedPayload) {
     resetAnchor();
     await renderDiffPanel(true);
   });
-  document.querySelector('#kg-diff-unified')?.addEventListener('click', () => { diffState.mode = 'unified'; renderDiffPanel(false).catch(() => {}); });
-  document.querySelector('#kg-diff-side')?.addEventListener('click', () => { diffState.mode = 'side'; renderDiffPanel(false).catch(() => {}); });
+  document.querySelector('#kg-diff-unified')?.addEventListener('click', () => { diffState.mode = 'unified'; renderDiffPanel(false, true).catch(() => {}); });
+  document.querySelector('#kg-diff-side')?.addEventListener('click', () => { diffState.mode = 'side'; renderDiffPanel(false, true).catch(() => {}); });
   document.querySelector('#kg-diff-whitespace')?.addEventListener('click', () => { diffState.whitespace = diffState.whitespace === 'ignore' ? 'show' : 'ignore'; resetAnchor(); renderDiffPanel(false).catch(() => {}); });
   document.querySelectorAll('[data-diff-file]').forEach((button) => button.addEventListener('click', async () => {
     diffState.selectedPath = button.dataset.diffFile;

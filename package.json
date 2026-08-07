@@ -17,6 +17,7 @@
     "deploy": "./scripts/deploy.sh",
     "rehearse": "node scripts/recovery-rehearsal.mjs",
     "runner": "node scripts/runner.mjs",
+    "runner:install": "./scripts/runner-install.sh",
     "lfs:storage": "node scripts/lfs-storage.mjs",
     "drill": "node scripts/rollout-drill.mjs",
     "scan": "node scripts/secret-scan.mjs",

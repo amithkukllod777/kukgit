@@ -158,15 +158,15 @@ test('somebody outside the organization sees nothing at all', async (t) => {
   db.prepare("INSERT INTO users (id, email, display_name, password_hash) VALUES (?, ?, 'Stranger', '')").run(stranger, 'stranger@example.com');
 
   const response = await fetch(url(), { headers: as(stranger) });
-  assert.equal(response.status, 403);
+  // 404, not 403: whether a private repository exists is not something to
+  // confirm to somebody who cannot see it, and its organization and slug are
+  // in the URL that produced the answer. This test asked for 403 when it was
+  // written, and recorded in docs/TODO.md that the answer was wrong; that has
+  // now been fixed in `requireRepositoryAccess` for every route at once.
+  assert.equal(response.status, 404);
   // Refused, and nothing of the conversation comes back with the refusal.
   const payload = await response.json();
   assert.equal(JSON.stringify(payload).includes('Login is slow'), false);
-  //
-  // Note: 403 here, not 404 — which does confirm to a stranger that this
-  // private repository exists. That is `requireRepositoryAccess`'s behaviour
-  // for every handler in KukGit, not this one's, so it is written down in
-  // docs/TODO.md rather than changed underneath twenty other routes.
 });
 
 test('only the author may edit, and the edit is visible', async (t) => {

@@ -3,6 +3,7 @@ import { audit, uid } from './db.mjs';
 import { permissionAtLeast, requireRepositoryAccess } from './repository-access.mjs';
 import { httpError, originAllowed } from './security.mjs';
 import { labelsForIssue, migrateIssueTaxonomy } from './issue-taxonomy.mjs';
+import { notifyIssueComment } from './notifications.mjs';
 
 /**
  * The conversation on an issue.
@@ -203,6 +204,21 @@ export function createIssueCommentsApiHandler({ config, db }) {
             targetId: issue.id,
             metadata: { repository: params.repo, number: issue.number, commentId: id },
           });
+          // Telling people is not the same thing as storing the reply, so a
+          // notification that fails does not lose the comment. The failure is
+          // logged with the request id and the writer still gets a 201, because
+          // from their side the thing they did worked.
+          try {
+            notifyIssueComment(db, config, {
+              orgSlug: params.org,
+              repoSlug: params.repo,
+              number: issue.number,
+              actorId: user.id,
+              commentId: id,
+            });
+          } catch (error) {
+            console.error(`[${requestId}] issue comment notification`, error);
+          }
           return sendJson(res, 201, { comments: listIssueComments(db, issue.id) });
         }
       }

@@ -195,6 +195,24 @@ export function requireRepositoryAccess(db, userId, reference, requiredPermissio
     throw httpError(403, `This repository is disabled pending an abuse review. ${access.disabled.reason ?? ''}`.trim(), 'REPOSITORY_DISABLED');
   }
   if (!permissionAtLeast(access.permission, requiredPermission)) {
+    // 404 when the caller has no access at all to a repository that is not
+    // public — because 403 confirms it exists, and its organization and slug
+    // are in the URL that produced the answer. That is enough to enumerate
+    // what a private organization owns by asking, one name at a time.
+    //
+    // 403 in the other two cases, deliberately. A public repository's
+    // existence is public, so hiding it teaches nothing and confuses somebody
+    // who can see it in a browser. And a caller who already has *some* access
+    // and is missing a stronger permission has been told the repository exists
+    // by the fact that they can read it — "write permission is required" is
+    // the useful answer there, and "not found" would be a lie they can
+    // disprove by refreshing the page.
+    //
+    // The same reasoning the abuse-disabled branch above already follows:
+    // a fact about a private repository is not a fact to hand a stranger.
+    if (access.permission === 'none' && access.repository.visibility !== 'public') {
+      throw httpError(404, 'Repository not found.', 'REPO_NOT_FOUND');
+    }
     throw httpError(403, `Repository ${requiredPermission} permission is required.`, 'REPOSITORY_ACCESS_DENIED');
   }
   return access;
