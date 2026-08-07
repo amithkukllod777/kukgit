@@ -1,6 +1,7 @@
 import { requireUser } from './auth.mjs';
 import { audit, uid } from './db.mjs';
 import { assertSlug, httpError, originAllowed } from './security.mjs';
+import { assertSignupVerified } from './signup.mjs';
 
 const MAX_BODY_BYTES = 64 * 1024;
 const COMPANY_SIZES = new Set(['solo', '2-10', '11-50', '51-200', '201-1000', '1000+']);
@@ -122,6 +123,12 @@ function requireVerifiedCreator(db, userId) {
   if (identity.authSource === 'authkit' && !identity.emailVerified) {
     throw httpError(403, 'Verify your Kuklabs Account email before creating an organization.', 'ORGANIZATION_VERIFIED_EMAIL_REQUIRED');
   }
+  // Self-service signups owe proof of their address. Checked on `auth_source`
+  // rather than on `email_verified` alone: accounts made by an operator or by a
+  // provider sign-in had their address chosen by somebody trusted, and refusing
+  // every one of them to introduce this rule would be an outage rather than a
+  // migration.
+  assertSignupVerified(db, userId, 'create an organization');
   return identity;
 }
 

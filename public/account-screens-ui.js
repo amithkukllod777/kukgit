@@ -128,28 +128,75 @@ function backLink(text = 'Back to sign in') {
 
 /* ------------------------------------------------------------ verify email */
 
+/**
+ * One attempt per token, and the *result* of it.
+ *
+ * Not a set of tokens already tried. That was the first version and it turned
+ * a link that had just worked into "already used" the moment anything redrew
+ * the page — the token really had been spent, by us, a tick earlier.
+ *
+ * What is kept is the promise of the finished screen. A remount joins the same
+ * attempt instead of starting another, and renders whatever it produced.
+ */
+const attempts = new Map();
+
+/**
+ * What this page's one attempt ended up showing.
+ *
+ * The token leaves the address bar as soon as it is spent, so a remount arrives
+ * with no token at all — and "no token" reads as "you have not opened a link",
+ * which replaced a confirmed address with "nothing to confirm" a moment after
+ * confirming it. The route remembers its own outcome instead.
+ */
+let verifyOutcome = null;
+
+async function confirmToken(token) {
+  try {
+    const result = await post('/api/account/verify-email/confirm', { token });
+    return card(`<h2>Address confirmed</h2>
+      <div class="kg-account-good">${accEscape(result.email || 'Your address')} is now verified.</div>
+      <p class="kg-account-note">You can sign in, and you can now be added to organizations by email.</p>
+      ${backLink('Continue to sign in')}`);
+  } catch (error) {
+    return card(`<h2>That link did not work</h2>
+      <div class="kg-account-bad">${accEscape(error.message)}</div>
+      <p class="kg-account-note">Links work once and expire after 24 hours. Sign in and ask for a new one.</p>
+      ${backLink()}`);
+  }
+}
+
 async function renderVerifyEmail(root, token) {
   if (!token) {
+    if (verifyOutcome) {
+      root.innerHTML = verifyOutcome;
+      return;
+    }
     root.innerHTML = card(`<h2>Nothing to confirm</h2>
       <p>This page needs the link from the email we sent you. Open that link, or sign in and ask for another.</p>
       ${backLink()}`);
     return;
   }
+  // No test kills this line, because the token normally leaves the address bar
+  // the moment it is spent and a remount never sees it again. It is here for
+  // the case where it does not: `forgetToken` swallows a missing history API,
+  // and on a browser without one the token stays in the URL and every remount
+  // would spend it again.
+  if (!attempts.has(token)) attempts.set(token, confirmToken(token));
   root.innerHTML = card('<h2>Confirming your address…</h2><p class="kg-account-note">One moment.</p>');
-  try {
-    const result = await post('/api/account/verify-email/confirm', { token });
-    forgetToken('verify-email');
-    root.innerHTML = card(`<h2>Address confirmed</h2>
-      <div class="kg-account-good">${accEscape(result.email || 'Your address')} is now verified.</div>
-      <p class="kg-account-note">You can sign in, and you can now be added to organizations by email.</p>
-      ${backLink('Continue to sign in')}`);
-  } catch (error) {
-    forgetToken('verify-email');
-    root.innerHTML = card(`<h2>That link did not work</h2>
-      <div class="kg-account-bad">${accEscape(error.message)}</div>
-      <p class="kg-account-note">Links work once and expire after 24 hours. Sign in and ask for a new one.</p>
-      ${backLink()}`);
-  }
+  const html = await attempts.get(token);
+  // Everything after the answer is conditional on still being on this screen.
+  // `forgetToken` rewrites the address, and doing that for somebody who has
+  // navigated away drags them back to a page they left — which then makes the
+  // result land on top of wherever they went. One check, because the two
+  // failures are the same failure.
+  if (accountRoute()?.name !== 'verify-email') return;
+  verifyOutcome = html;
+  forgetToken('verify-email');
+  // Asked again after the await: the application may have redrawn `#app` while
+  // this was in flight, and writing into an element nobody is looking at is how
+  // a result appears to vanish.
+  const current = document.querySelector('#app');
+  if (current) current.innerHTML = html;
 }
 
 /* ---------------------------------------------------------- forgot password */
@@ -267,7 +314,14 @@ export async function mountAccountScreen() {
   }
   accountStyles();
   const key = `${route.name}:${route.token ?? ''}`;
-  if (rendered === key) return;
+  // Both halves matter. The key alone said "I have rendered this", which is not
+  // the same as "it is on the page" — and on a real page it is not the same at
+  // all: this module runs before `app.js` finishes asking who is signed in, so
+  // it renders into an empty `#app` and then `renderLogin()` overwrites it. The
+  // observer fired on that write, the key matched, and this returned without
+  // doing anything. The screen was simply gone, on the live instance, while
+  // every test passed — because no test ran `app.js` alongside it.
+  if (rendered === key && document.querySelector('#kg-account-card')) return;
   rendered = key;
 
   if (route.name === 'verify-email') return renderVerifyEmail(root, route.token);

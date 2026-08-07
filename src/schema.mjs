@@ -1,6 +1,7 @@
 import { withSchemaLock } from './db.mjs';
 import { migrateAccountVerification } from './account-verification.mjs';
 import { migratePhoneVerification } from './phone-verification.mjs';
+import { migrateSignup } from './signup.mjs';
 import { migrateTwoFactor } from './two-factor.mjs';
 import { migrateUserIdentities } from './user-identities.mjs';
 import { migrateOAuthSignIn } from './oauth-signin.mjs';
@@ -78,6 +79,7 @@ export function applySchema(db, config) {
   migrateUserIdentities(db);
   migratePhoneVerification(db);
   migrateTwoFactor(db);
+  migrateSignup(db);
   migrateOAuthSignIn(db);
   migrateCollaboration(db);
   migrateOrganizationOnboarding(db);

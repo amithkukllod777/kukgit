@@ -161,6 +161,21 @@ export function requireUser(db, req) {
   return user;
 }
 
+/**
+ * The sources whose passwords KukGit itself holds.
+ *
+ * A list rather than `=== 'local'`, and a list rather than `!== 'authkit'`. The
+ * check exists because an AuthKit-managed account has a sentinel where its hash
+ * should be, so checking a password against it is meaningless — but written as
+ * "must be local" it also refused self-service signups, which do have a real
+ * hash here. That bug shipped as far as a test.
+ *
+ * Fail-closed is kept: a source nobody has added to this list cannot sign in
+ * with a password, which is the right answer for a value this code has never
+ * seen.
+ */
+const LOCAL_PASSWORD_SOURCES = new Set(['local', 'signup']);
+
 export function authenticate(db, email, password) {
   const normalized = normalizeEmail(email);
   const authSourceColumn = authSchema(db).userAuthSource ? ', auth_source AS authSource' : '';
@@ -168,7 +183,7 @@ export function authenticate(db, email, password) {
     SELECT id, email, display_name AS displayName, password_hash AS passwordHash${authSourceColumn}
     FROM users WHERE email = ?
   `).get(normalized);
-  if (!user || (user.authSource && user.authSource !== 'local') || !verifyPassword(password, user.passwordHash)) {
+  if (!user || (user.authSource && !LOCAL_PASSWORD_SOURCES.has(user.authSource)) || !verifyPassword(password, user.passwordHash)) {
     throw httpError(401, 'Incorrect email or password.', 'INVALID_CREDENTIALS');
   }
   // Signing in is the only moment the plaintext is available, so it is the only

@@ -270,3 +270,127 @@ test('the link goes on the sign-in form or nowhere', async (t) => {
   // dashboard is not a feature, it is a stray element.
   assert.equal(browser.present('a[href="#/forgot-password"]'), false);
 });
+
+/*
+ * With `app.js` running too, which is the only way this module ever actually
+ * runs. Every test above mounts it against a hand-written page, and that is
+ * exactly the blind spot the bug below lived in.
+ */
+
+/**
+ * `/api/auth/me` answers slowly, because on a real page it does.
+ *
+ * That delay is the whole bug. This module schedules on two animation frames
+ * and renders almost immediately; `app.js` cannot draw anything until it knows
+ * who is signed in. So this module's screen lands first and `renderLogin()`
+ * overwrites it — and whether the screen survives depends entirely on what
+ * happens on the remount. An instant answer hides that ordering completely,
+ * which is why every test in this file passed while the screen was missing on
+ * the live instance.
+ */
+const APP_WORLD = (overrides = {}) => ({
+  // Six macrotask ticks rather than a wall-clock delay: the scheduler here uses
+  // two animation frames, and counting ticks orders the two renders the same way
+  // every run, on every machine, without depending on timer resolution.
+  '/api/auth/me': async () => {
+    for (let tick = 0; tick < 6; tick += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+    return { body: { user: null } };
+  },
+  '/api/auth/sign-in-hints': { body: { demoAccount: null } },
+  '/api/dashboard': { body: {} },
+  '*': { status: 404, body: {} },
+  ...overrides,
+});
+
+async function realPage(t, { hash, routes = {} } = {}) {
+  const browser = installBrowser({
+    hash,
+    html: '<div id="app"></div><div id="toast-root"></div>',
+    routes: APP_WORLD(routes),
+  });
+  t.after(() => browser.restore());
+  // This module first, then `app.js`. Not because `index.html` lists them that
+  // way — it does not — but because that is the order the *renders* land in on
+  // a real page: this module schedules on two animation frames, while `app.js`
+  // has to wait for `/api/auth/me` before it draws anything. Whoever writes to
+  // `#app` last wins, and on the live instance it was `app.js`.
+  await importFresh('../public/account-screens-ui.js');
+  await importFresh('../public/app.js');
+  await browser.settle();
+  return browser;
+}
+
+test('the reset screen survives the sign-in page rendering underneath it', async (t) => {
+  const browser = await realPage(t, { hash: '#/forgot-password' });
+
+  // The bug: this module runs before `app.js` finishes asking who is signed in,
+  // renders into an empty `#app`, and is then overwritten by `renderLogin()`.
+  // The remount saw its own key and returned. On the live instance the screen
+  // was simply never there, and every other test in this file passed.
+  assert.equal(browser.present('#kg-forgot-form'), true, 'the reset form is on the page');
+  assert.match(browser.html(), /Reset your password/);
+});
+
+test('a verification link still confirms with the whole application running', async (t) => {
+  const browser = await realPage(t, {
+    hash: '#/verify-email?token=good-token',
+    routes: { '/api/account/verify-email/confirm': { body: { verified: true, email: 'amit@kuklabs.com' } } },
+  });
+
+  assert.match(browser.html(), /Address confirmed/);
+  // And exactly once, however many times the page was redrawn underneath it.
+  assert.equal(browser.countPath('/api/account/verify-email/confirm'), 1);
+});
+
+test('a token is never sent twice, even if the card is overwritten mid-flight', async (t) => {
+  const browser = await realPage(t, {
+    hash: '#/verify-email?token=good-token',
+    routes: { '/api/account/verify-email/confirm': { body: { verified: true, email: 'a@b.com' } } },
+  });
+
+  // Whatever else redraws the page, the token has been spent and must not be
+  // spent again — the second attempt would report a working link as used.
+  browser.document.querySelector('#app').innerHTML = '<p>something else took the page</p>';
+  await browser.settle();
+  await browser.settle();
+
+  assert.equal(browser.countPath('/api/account/verify-email/confirm'), 1);
+});
+
+test('the sign-in page is left alone on every other route', async (t) => {
+  const browser = await realPage(t, { hash: '#/' });
+  assert.equal(browser.present('#login-form'), true);
+  assert.equal(browser.present('.kg-account'), false);
+  // And the way to reach the reset screen is on it.
+  assert.ok(browser.document.querySelector('#login-form a[href="#/forgot-password"]'));
+});
+
+test('navigating away mid-confirm does not have the result land on top of it', async (t) => {
+  // Without `app.js`. What is being checked belongs to this module alone, and
+  // dragging the whole application in makes the test fail for a reason of its
+  // own: `renderCurrentRoute` reads `state.user.displayName`, so a signed-out
+  // visitor who changes the hash before `/api/auth/me` answers crashes it. Real,
+  // narrow, and not this.
+  const browser = page(t, {
+    hash: '#/verify-email?token=good-token',
+    routes: {
+      '/api/account/verify-email/confirm': async () => {
+        for (let tick = 0; tick < 8; tick += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+        return { body: { verified: true, email: 'a@b.com' } };
+      },
+    },
+  });
+  await importFresh('../public/account-screens-ui.js');
+  // Long enough for the mount to start the request — two animation frames — and
+  // not long enough for the eight-tick answer to arrive. Without this the module
+  // has not run at all when the navigation happens, and the test passes while
+  // exercising nothing.
+  await browser.settle(3);
+
+  // Away before the answer comes back — a slow confirm and an impatient person.
+  browser.navigate('#/');
+  await browser.settle();
+
+  // The confirmation must not paint itself over the page they went to.
+  assert.ok(!browser.html().includes('Address confirmed'));
+});
