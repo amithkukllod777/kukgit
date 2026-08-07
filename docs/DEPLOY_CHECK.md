@@ -27,9 +27,9 @@ So the checklist runs.
 ## Warnings do not fail
 
 Failures block; warnings do not. Most warnings are the correct choice for an
-internal trial and the wrong one for real users — local auth mode, no backup
-destination, no base URL. A check that blocks on both stops being read, and then
-it stops being run.
+internal trial and the wrong one for real users — no off-instance backup
+destination or incomplete operational settings. A check that blocks on both
+stops being read, and then it stops being run.
 
 ## What it checks
 
@@ -37,7 +37,7 @@ it stops being run.
 | --- | --- |
 | Node and git | versions, because `node:sqlite` needs 22.5+ and everything shells out to git |
 | Base URL | set, absolute, and HTTPS in production |
-| Auth mode | AuthKit in production — production identity is One Kuklabs Account |
+| Auth mode | `local` or `authkit`; local production also requires working email delivery |
 | Founder password | set and not the published default, in local mode |
 | Development Git token | see below |
 | The five keys | set, long enough, and **different from each other** |
@@ -67,8 +67,9 @@ outside production, the default value is a **failure**, not a warning.
 
 ## What it does not check
 
-- **That AuthKit answers.** The URL and key are validated; nothing calls out to
-  it. Reaching AuthKit needs credentials this check has no business holding.
+- **That the selected identity provider works end to end.** In AuthKit mode the
+  URL and key are validated but the service is not called. In local mode the
+  check can see that email is configured, not that a message reaches an inbox.
 - **That TLS terminates correctly.** It checks the base URL says `https`, not
   that a certificate exists and is valid.
 - **That the reverse proxy passes what it should.** `KUKGIT_TRUST_PROXY` is

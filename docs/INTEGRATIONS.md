@@ -75,13 +75,20 @@ sign-in button that does not work, so the two are different decisions.
 
 ## Sign-in with Google and GitHub
 
-Production identity is **One Kuklabs Account** — that is a standing constraint,
-not a preference. Google and GitHub belong **inside** AuthKit, federated there,
-not beside it as a second way into KukGit.
+KukGit owns its first-party accounts, and GitHub/Google are optional sign-in
+paths in `local` mode. The callback routes, buttons, state-token protection,
+verified-email linking and duplicate-account conflict handling are implemented.
 
-Storing the credentials here is fine and is what this page is for. Wiring them
-as a KukGit-side sign-in path would create a second identity system in
-production, and that needs a decision, not an implementation.
+Credentials may come from the environment or this console. The configured
+callback URLs are:
+
+```text
+<KUKGIT_BASE_URL>/api/auth/github/callback
+<KUKGIT_BASE_URL>/api/auth/google/callback
+```
+
+In `authkit` mode these KukGit-side provider routes are not the identity owner;
+provider federation belongs to AuthKit instead.
 
 ## Plan and price identifiers
 
@@ -99,9 +106,6 @@ given plan is not offered for that plan at checkout — see
 
 ## What this does not do yet
 
-- **Google and GitHub sign-in are stored and unused.** No sign-in flow reads
-  them. Production identity is One Kuklabs Account, and these belong federated
-  inside AuthKit rather than beside it.
 - **No connection test.** A key that is set is a key that is stored, not a key
   that is known to work, and the console does not claim otherwise.
 - **No integration here has run against its real provider.** Resend, Razorpay
@@ -112,4 +116,4 @@ given plan is not offered for that plan at checkout — see
 
 - [Billing](BILLING.md) — where the payment credentials will be used
 - [Secrets vault](SECRETS_VAULT.md) — the same encryption, for repository secrets
-- [One Kuklabs Account](ONE_KUKLABS_ACCOUNT.md) — the production identity mandate
+- [One Kuklabs Account](ONE_KUKLABS_ACCOUNT.md) — the optional delegated identity mode

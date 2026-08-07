@@ -6,7 +6,8 @@ The KukGit Instance Admin Console gives authorized Kuklabs operators one place t
 
 Instance administration is independent from organization and repository roles.
 
-Configure a comma-separated allowlist of verified One Kuklabs Account email addresses:
+Configure a comma-separated allowlist of verified operator email addresses in
+the selected identity mode:
 
 ```env
 KUKGIT_INSTANCE_ADMIN_EMAILS=support@kuklabs.com,security@kuklabs.com
@@ -20,7 +21,7 @@ A user who is an organization Owner but is not on this allowlist cannot access `
 
 ### Instance overview
 
-- total users and One Kuklabs Account links
+- total users and linked external identities, including optional AuthKit links
 - organization count
 - active, archived and trashed repositories
 - active, expiring and permanent external access
@@ -62,7 +63,7 @@ Repositories, members or audit events from another organization are not included
 A user detail view contains:
 
 - public product-profile fields
-- One Kuklabs Account link state
+- local account source and optional external identity-link state
 - organization memberships
 - direct repository grants
 - active session count
@@ -166,7 +167,7 @@ The retry confirmation value must equal the target delivery ID. The support-note
 ### User cannot access a repository
 
 1. Open the user detail.
-2. Confirm One Kuklabs Account linking and active product session count.
+2. Confirm the account source, relevant identity links and active session count.
 3. Review organization membership and direct repository access.
 4. Open the tenant detail and check external-access expiry.
 5. Search the audit stream for the user ID, repository ID or request ID.
@@ -217,7 +218,7 @@ Request IDs make customer-reported failures easier to correlate without disclosi
 ## Operational safeguards
 
 - Keep the instance-admin allowlist minimal.
-- Require MFA on every allowed One Kuklabs Account.
+- Require MFA on every allowed operator account in the selected identity mode.
 - Remove operators immediately when duties change.
 - Review `instance_support.*` audit events regularly.
 - Never use a shared support login.

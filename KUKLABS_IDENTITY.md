@@ -2,23 +2,27 @@
 
 KukGit follows the Kuklabs identity mandate.
 
-## One Kuklabs Account
+## KukGit accounts and optional One Kuklabs Account
 
-Production authentication must use the shared Kuklabs Account/AuthKit contract. KukGit must not create an independent customer identity silo.
+KukGit owns its first-party customer accounts. Production may use KukGit-local
+email/password identity or the optional shared Kuklabs Account/AuthKit contract.
+The choice is explicit per instance; neither mode may silently fall back to the
+other.
 
-Required production login options:
+Current identity capabilities:
 
-- mobile number or email
-- password
-- Google sign-in
-- account recovery
-- MFA
+- email and password in local mode
+- optional Google and GitHub sign-in in local mode
+- optional AuthKit delegation
+- email verification and password recovery
+- TOTP MFA with recovery codes
+- optional verified phone link; phone-number sign-in is not implemented
 - organization and tenant membership
-- global logout and session revocation
+- logout and session revocation within the selected identity boundary
 
 ## Tenant model
 
-- `user`: one human identity across Kuklabs products
+- `user`: one KukGit product identity; optional provider links may connect it to a verified external identity
 - `company/organization`: a tenant that owns repositories and subscriptions
 - `membership`: user-to-organization role
 - `product access`: KukGit entitlement and plan
@@ -27,7 +31,11 @@ One user may belong to multiple organizations. A repository belongs to exactly o
 
 ## Data architecture
 
-The shared Kuklabs identity, company registry, plans and entitlements remain authoritative. Git objects, build artifacts and package blobs are high-volume product data and may use dedicated KukGit storage services while preserving shared identity and tenant IDs.
+KukGit is authoritative for its users, organizations, plans and entitlements.
+Verified AuthKit, GitHub, Google, phone and future provider links attach to that
+product user without replacing repository foreign keys or silently merging
+unverified addresses. Git objects, build artifacts and package blobs use
+dedicated KukGit storage boundaries.
 
 ## Branding
 

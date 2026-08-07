@@ -1,153 +1,162 @@
 # Getting KukGit to Production
 
-What is finished, what is left, and — specifically — **which parts cannot be
-finished by writing code**. Those need a machine, a credential, a decision or a
-vendor, and no amount of engineering removes that.
+Updated: 2026-08-07
 
-[DEPLOYMENT.md](DEPLOYMENT.md) covers *how* to run an instance. This covers *what
-is yours to do*, and in what order.
+This is the current production gate for `main`. [DEPLOYMENT.md](DEPLOYMENT.md)
+explains how to configure an instance; this document says what must be proved
+before external users depend on it.
 
-## 1. Things only you can supply
+## 1. Decisions and infrastructure only an operator can supply
 
-None of these are code. Every one blocks production.
-
-| | Why it is yours |
+| Requirement | Why code cannot supply it |
 | --- | --- |
-| **A Linux host** | Bare metal or a VM with nested virtualisation if hosted CI is ever wanted. Everything else can be a plain VM. |
-| **AuthKit reachable at a real HTTPS URL** | Production identity is One Kuklabs Account. KukGit does not own a password system and will refuse to start with `KUKGIT_AUTH_MODE=local` in production. |
-| **Six independent secret keys** | Listed below. Generating them is a one-time act only you should perform. |
-| **An SMTP sender with SPF, DKIM and DMARC** | Invitations and security notifications are useless if they land in spam. The domain reputation is yours. |
-| **Off-instance backup storage** | A `.kgbak` on the same disk as the database is not a backup. |
-| **A TLS certificate and a domain** | `git.kuklabs.com` or whatever it is called. |
+| **A Linux host and persistent storage** | Git repositories, SQLite metadata and filesystem-backed objects must survive deployments. |
+| **A TLS certificate and domain** | Production cookies and Git credentials require HTTPS. |
+| **An explicit identity mode** | `local` and `authkit` are both supported. Production still defaults to `authkit` when the variable is omitted, so do not rely on omission. |
+| **A real email sender** | Local signup, email verification, password reset, invitations and security notices need deliverable mail. |
+| **Independent secret keys** | Encryption and signing boundaries must not share material. |
+| **Off-instance backup storage** | A `.kgbak` on the same failed volume is not a backup. |
+| **Real provider credentials** | Resend, Razorpay and Stripe adapters are tested against fixtures, but a real transaction or delivery requires the provider. |
 
-### The keys
+### Choose the identity mode
+
+KukGit owns first-party accounts. For an external-customer deployment, select
+`local` deliberately and provide HTTPS, Secure cookies, founder credentials and
+working Resend or SMTP delivery:
 
 ```bash
-for key in AUTHKIT_ENCRYPTION SECRETS_ENCRYPTION WEBHOOK_ENCRYPTION LFS_AUTH \
-           EMAIL_PROVIDER_WEBHOOK_SECRET POSTGRESQL_RUNTIME_SHADOW_SAMPLING; do
-  printf 'KUKGIT_%s_KEY=%s\n' "$key" "$(openssl rand -base64 48)"
+NODE_ENV=production
+KUKGIT_AUTH_MODE=local
+KUKGIT_BASE_URL=https://git.example.com
+KUKGIT_COOKIE_SECURE=true
+KUKGIT_ADMIN_EMAIL=founder@example.com
+KUKGIT_ADMIN_PASSWORD=<long-private-password>
+KUKGIT_RESEND_API_KEY=<real-key>
+```
+
+One Kuklabs Account remains available as optional `authkit` mode. Use it only
+when the shared service's availability and rate limit fit the deployment:
+
+```bash
+NODE_ENV=production
+KUKGIT_AUTH_MODE=authkit
+KUKGIT_BASE_URL=https://git.example.com
+KUKGIT_COOKIE_SECURE=true
+KUKGIT_AUTHKIT_BASE_URL=https://auth.kuklabs.com
+KUKGIT_AUTHKIT_PRODUCT_ID=kukgit
+KUKGIT_AUTHKIT_ENCRYPTION_KEY=<independent-random-key>
+```
+
+Read [Deployment](DEPLOYMENT.md) for the complete configuration and
+[One Kuklabs Account](ONE_KUKLABS_ACCOUNT.md) for the optional integration's
+availability and rate-limit boundaries.
+
+### Generate the keys separately
+
+The current deploy check validates these five values and refuses duplicates:
+
+```bash
+for key in KUKGIT_AUTHKIT_ENCRYPTION_KEY KUKGIT_SECRETS_ENCRYPTION_KEY \
+           KUKGIT_WEBHOOK_ENCRYPTION_KEY KUKGIT_LFS_AUTH_KEY \
+           KUKGIT_EMAIL_PROVIDER_WEBHOOK_SECRET; do
+  printf '%s=%s\n' "$key" "$(openssl rand -base64 48)"
 done
 ```
 
-**Generate each one separately.** Reusing a key means one compromise opens more
-than one kind of stored material — and `npm run deploy:check` fails if two of
-them are the same value, because pasting one result five times is exactly how
-this goes wrong and it looks correct in an environment file.
+`KUKGIT_SECRETS_ENCRYPTION_KEY` must be retained separately from backup
+archives. Backups contain ciphertext, not this key; losing it means every
+stored secret must be entered again.
 
-`KUKGIT_SECRETS_ENCRYPTION_KEY` deserves separate handling: backups contain the
-ciphertext, not the key. A restored instance needs the same key, so store it
-**with the archives' care but not with the archives**. Losing it means every
-stored secret must be re-entered — there is no recovery path, by design.
+## 2. Before the first external user
 
-## 2. Order of work
+1. **Restore trustworthy repository CI.** GitHub-hosted Actions for this
+   repository have been failing before their first step because the account has
+   not received a runner. Resolve the account-level problem or install a trusted
+   self-hosted runner, then execute `.github/workflows/ci.yml` from the exact
+   commit being released.
+2. **Run the local equivalent with PostgreSQL available.** Install dependencies,
+   start PostgreSQL 16 with `npm run postgres:dev`, export the printed
+   `KUKGIT_TEST_POSTGRES_URL`, and run `npm run ci`. A skipped PostgreSQL step is
+   not a full pass.
+3. **Run `npm run deploy:check` on the target host** with the exact production
+   environment. Fix failures and review every warning.
+4. **Prove recovery.** Run `npm run rehearse` against a production-sized archive
+   and sign off the manual transport, identity and email checks in its evidence.
+5. **Send backups off-instance.** Verify restore access from a machine other
+   than the application host and confirm retention pruning.
+6. **Exercise the selected identity mode.** For `local`, test signup, email
+   verification, password reset, TOTP and recovery codes. For `authkit`, test
+   login, refresh rotation, service outage and central device revocation.
+7. **Run provider smoke tests.** Confirm a Resend delivery and, before accepting
+   payment, one Razorpay and one Stripe test-mode checkout plus webhook.
+8. **Wire monitoring.** Alert on readiness, critical instance health, storage,
+   failed delivery queues, backups and recovery age.
 
-### Before the first external user
+## 3. Deployment topology
 
-1. **Merge or close [PR #70](https://github.com/amithkukllod777/kukgit/pull/70).**
-   It is mergeable and locally green, but its PostgreSQL integration job has never
-   executed. The rule in [TODO.md](TODO.md) — *a PR whose jobs never execute
-   remains unvalidated* — is the right rule; it just needs the runner back.
-2. **Restore GitHub Actions** (or move CI elsewhere). Everything merged recently
-   was verified locally because hosted jobs cannot start. That is a survivable
-   gap for one person and an unacceptable one for a team.
-3. **Run the recovery rehearsal against a production-sized archive**:
-   `npm run rehearse`. Sign off the manual checks in the evidence file — the ones
-   needing a live AuthKit and a real credential. A drill nobody signed off did not
-   happen.
-4. **Decide the metadata backend.** SQLite is authoritative and works. Do not
-   start the PostgreSQL cutover because it is on a list; start it when SQLite is
-   actually the constraint. `storage.database_bytes` in
-   `GET /api/instance-admin/health` tells you when.
+Job leases, stranded-row recovery, cross-instance notification fan-out,
+concurrent migration locking and connection draining are implemented. They
+remove the earlier guarantee that two processes would double-send every job.
 
-### Before more than one instance
+That is not proof of high availability. Start private alpha with one application
+instance unless the real load balancer, shared data volume or object store,
+rollout drain and failure recovery have been rehearsed together. PostgreSQL is
+not yet the authoritative runtime, and the SQLite storage topology remains the
+binding operational decision.
 
-The single hard blocker: every background worker is an in-process interval, so
-**two instances against one volume double-fire all of them** — two copies of each
-email, two webhook deliveries, two expiry sweeps.
+## 4. Signup and public exposure boundary
 
-The fix is designed and not yet built: the `job_leases` model in
-[OPERATIONS_BOUNDARY.md](OPERATIONS_BOUNDARY.md). Until it exists, run exactly one
-application instance. `GET /api/instance-admin/health` reports
-`instance.singleNode: true` so this is visible from the running system.
+The repository now includes first-party signup, verified email, password reset,
+TOTP recovery, OAuth sign-in, abuse reports, reversible moderation, secret
+scanning, push protection, status/incident pages, billing/metering and
+S3-compatible LFS storage.
 
-### Before public signup
+Public exposure still requires operational work:
 
-- rate limits are in place; **abuse reporting and moderation are not**
-- secret scanning and push protection do not exist
-- there is no billing, metering or quota enforcement
-- object storage is not implemented; repositories and LFS live on the instance
-  volume, which is the binding constraint on both scale and recovery time
+- Resend, Razorpay and Stripe have not been verified against real providers
+- repository, LFS, CI, artifact and package quota enforcement is incomplete
+- hosted multi-tenant runners have no selected or penetrated sandbox
+- operating-system, container and Git-side vulnerability coverage is incomplete
+- package/container registries, release assets and code search are not built
+- PostgreSQL cutover and backend-aware recovery remain open under issue #43
 
-## 3. CI: what exists and what it needs
+## 5. Workflow execution
 
-Four of the CI pieces are built and tested: the [workflow format](WORKFLOWS.md),
-the [secrets vault](SECRETS_VAULT.md), [run scheduling and job
-authorization](WORKFLOW_RUNS.md), and [build logs](BUILD_LOGS.md).
+Workflow parsing, secrets, scheduling, authorization, logs, triggers, artifacts,
+caches, required-check publication and the self-hosted runner agent are built.
+Private alpha jobs run on machines the operator controls with
+`npm run runner` or the systemd installer.
 
-**Nothing executes yet.** A runner is missing, and there are two different
-runners with two different risk profiles.
+Hosted multi-tenant execution is later work. Do not write a custom sandbox.
+Select and validate Firecracker, gVisor or Kata on a real host, then test escape,
+egress and resource-exhaustion boundaries before accepting untrusted jobs.
 
-### Self-hosted runner — private alpha
+## 6. Private-alpha release checklist
 
-The customer runs the agent on their own machine. The code it executes is their
-own, so instance isolation is not the boundary being trusted. This is what
-GitHub shipped for its first years, and it is enough for alpha.
+- [ ] identity mode selected explicitly and exercised end to end
+- [ ] email delivery authenticated with SPF, DKIM and DMARC
+- [ ] five deploy-check keys generated independently and stored safely
+- [ ] `npm run deploy:check` passes on the target host
+- [ ] `npm run ci` passes with no skipped PostgreSQL step
+- [ ] the release commit executes successfully in repository CI
+- [ ] production-sized recovery rehearsal signed off
+- [ ] backups stored and restored off-instance
+- [ ] monitoring and paging connected
+- [ ] self-hosted runner installed only on trusted execution hosts
+- [ ] real-provider smoke tests completed for every enabled integration
 
-What it needs: an agent that claims a job, writes each `run:` script to a file and
-executes it (never assembling a shell string), streams output to
-`/api/workflow-jobs/self/logs`, heartbeats, and honours the cancellation flag in
-the heartbeat response. All four server-side halves already exist.
+## 7. Honest current state
 
-This is ordinary engineering and can be built and tested normally.
-
-### Hosted runner — public beta, not before
-
-Running untrusted code for other people is a different problem, and it cannot be
-finished by writing code.
-
-**Do not write the sandbox.** Nobody does. Pick one:
-
-| | Isolation | License |
-| --- | --- | --- |
-| **Firecracker** microVM | strongest; one VM per job (AWS Lambda, Fly.io) | Apache 2.0 |
-| **gVisor** (`runsc`) | user-space kernel, lighter than a VM | Apache 2.0 |
-| **Kata Containers** | VM-backed containers | Apache 2.0 |
-| Hardened Podman/Docker | weakest — trusted code only | Apache 2.0 |
-
-All four are licence-compatible with commercial use. Writing your own means
-repeating ten years of other people's security fixes.
-
-Then, on a real host: escape attempts, egress bypass, resource exhaustion, and a
-third-party penetration test before the first untrusted job runs. **An unverified
-sandbox is worse than none, because it looks finished.**
-
-## 4. What "done" looks like for the alpha
-
-- [ ] PR #70 resolved
-- [ ] CI executing again, on any provider
-- [ ] recovery rehearsal run against production data, manual checks signed off
-- [ ] six keys generated, stored separately, and the vault key stored apart from backups
-- [ ] SMTP sending with SPF/DKIM/DMARC passing
-- [ ] backups landing off-instance and pruned on a schedule
-- [ ] alerting wired to `GET /api/instance-admin/health`, paging on `critical`
-- [ ] self-hosted runner agent shipped
-- [ ] one instance, and a written note saying why it is one
-
-Everything above the runner line is operational work. It is not glamorous and it
-is the part that decides whether the first outage is a bad afternoon or a bad
-quarter.
-
-## 5. Honest state
-
-| | |
+| Area | Current state |
 | --- | --- |
-| Tests | 300, all passing |
-| Runtime npm dependencies | none |
-| Authoritative metadata store | SQLite |
-| Instances supported | one |
-| CI | format, secrets, scheduling, authorization and logs — no execution |
-| PostgreSQL | Stages 1–6 delivered, Stage 7 unvalidated, cutover not enabled |
+| Authentication | KukGit-owned local accounts and optional AuthKit; both production-capable |
+| Runtime dependency | `pg` plus its transitive packages; loaded only for PostgreSQL paths |
+| Authoritative metadata | SQLite |
+| PostgreSQL | Stages 1–7 delivered; production cutover and backend-aware restore not enabled |
+| Workflow execution | Self-hosted runner delivered; hosted multi-tenant runner not delivered |
+| Multi-instance foundation | Leases, fan-out, migration locking and drain implemented; deployment-specific HA not proved |
+| Provider validation | Fixture-tested; real Resend/Razorpay/Stripe validation outstanding |
+| Repository CI | Local parity command exists; hosted Actions execution remains an external blocker |
 
-Read [TODO.md](TODO.md) for the item-level list and
-[ROADMAP.md](ROADMAP.md) for phase direction. Where those two ever disagree,
-treat it as a bug in the documents and fix it — one of them is wrong.
+Do not copy a hard-coded test count into a release decision. Run `npm run ci`
+from the commit being released and keep its complete result as evidence.
