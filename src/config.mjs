@@ -75,6 +75,18 @@ export function loadConfig(overrides = {}) {
   // than a constant, and an instance that has not set it does not offer phone
   // verification at all.
   const firebaseProjectId = String(overrides.firebaseProjectId ?? process.env.KUKGIT_FIREBASE_PROJECT_ID ?? '').trim();
+  // Also public, and also configuration rather than a constant: a Firebase web
+  // API key is a project identifier, not a secret — it is in every browser
+  // bundle Google ships. What protects the project is the authorised-domain
+  // list and App Check, neither of which lives here.
+  const firebaseApiKey = String(overrides.firebaseApiKey ?? process.env.KUKGIT_FIREBASE_API_KEY ?? '').trim();
+  // Where the sign-in handler lives. Defaults to Google's, and is worth setting
+  // to a domain of your own once one exists — the default puts a Google-branded
+  // host in front of a customer mid-flow.
+  const firebaseAuthDomain = String(
+    overrides.firebaseAuthDomain ?? process.env.KUKGIT_FIREBASE_AUTH_DOMAIN
+    ?? (firebaseProjectId ? `${firebaseProjectId}.firebaseapp.com` : ''),
+  ).trim();
   const authkitBaseUrlRaw = String(overrides.authkitBaseUrl ?? process.env.KUKGIT_AUTHKIT_BASE_URL ?? '').trim();
   const authkitProductId = String(overrides.authkitProductId ?? process.env.KUKGIT_AUTHKIT_PRODUCT_ID ?? 'kukgit').trim().toLowerCase();
   const authkitEncryptionKey = overrides.authkitEncryptionKey ?? process.env.KUKGIT_AUTHKIT_ENCRYPTION_KEY ?? (isProduction ? '' : 'kukgit-development-authkit-encryption-key-change-me');
@@ -286,6 +298,8 @@ export function loadConfig(overrides = {}) {
     authkitRefreshTtlDays,
     authkitSessionCheckSeconds,
     firebaseProjectId,
+    firebaseApiKey,
+    firebaseAuthDomain,
     organizationOwnerLimit,
     runtimeWriteServiceEnabled,
     realtimeHeartbeatMs,

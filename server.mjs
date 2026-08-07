@@ -22,6 +22,7 @@ import { openDatabase } from './src/db.mjs';
 import { applySchema } from './src/schema.mjs';
 import { createAccountApiHandler } from './src/account-api.mjs';
 import { createOAuthApiHandler } from './src/oauth-api.mjs';
+import { createPhoneVerifyPageHandler } from './src/phone-verify-page.mjs';
 import { smtpConfigured } from './src/email-transport.mjs';
 
 import { createEmailProviderEventsApiHandler } from './src/email-provider-events-safe.mjs';
@@ -157,6 +158,11 @@ const accountApi = createAccountApiHandler({ config, db });
 // one of its four paths — `/api/auth/login` and `/api/auth/signup` belong to
 // that handler and must reach it whichever order these are mounted in.
 const oauthApi = createOAuthApiHandler({ config, db });
+// A page on its own so that allowing Google's hosts for phone verification does
+// not allow them for the whole application. It sets its own
+// Content-Security-Policy, which means it must answer before `app` sets the
+// strict one.
+const phoneVerifyPage = createPhoneVerifyPageHandler({ config, db });
 const secureAuthKitLoginApi = createSecureAuthKitLoginApiHandler({ config, db });
 const authKitApi = createAuthKitApiHandler({ config, db });
 const emailProviderEventsApi = createEmailProviderEventsApiHandler({ config, db });
@@ -254,6 +260,7 @@ const repositoryAccessGuard = createRepositoryAccessGuard({ config, db, app: gov
 async function dispatch(req, res) {
   if (await accountApi(req, res)) return;
   if (await oauthApi(req, res)) return;
+  if (await phoneVerifyPage(req, res)) return;
   if (await secureAuthKitLoginApi(req, res)) return;
   if (await authKitApi(req, res)) return;
   if (await emailProviderEventsApi(req, res)) return;
