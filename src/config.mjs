@@ -167,8 +167,29 @@ export function loadConfig(overrides = {}) {
   if (!['local', 'authkit'].includes(authMode)) {
     throw new Error('KUKGIT_AUTH_MODE must be local or authkit.');
   }
+  // Local accounts used to be refused outright in production, when the mandate
+  // was that Kuklabs Account owned identity. That reversed on 2026-08-07 — see
+  // CLAUDE.md — because AuthKit is a router on the KukBook ERP rather than a
+  // service, so an ERP deploy is a KukGit sign-in outage, and because asking an
+  // outside customer to open an account on Kuklabs' accounting system is not a
+  // thing that sells.
+  //
+  // What replaces the refusal is the set of conditions that made it reasonable.
+  // Local accounts in production mean this instance holds passwords and sends
+  // the emails that prove an address and reset one, so:
   if (isProduction && authMode === 'local') {
-    throw new Error('Local KukGit password authentication is disabled in production. Use KUKGIT_AUTH_MODE=authkit.');
+    if (!cookieSecure) {
+      // The same requirement AuthKit mode has. A session cookie without
+      // `Secure` is one that leaves on the first plain-HTTP request anything
+      // makes — a link in an email, a bookmark, a redirect.
+      throw new Error('KUKGIT_COOKIE_SECURE must be true when KukGit holds passwords in production.');
+    }
+    if (!/^https:\/\//i.test(String(baseUrl))) {
+      // Every verification and reset link is built from this. Over http they
+      // are one-time credentials sent in the clear, and the browser will not
+      // send the Secure cookie back anyway.
+      throw new Error('KUKGIT_BASE_URL must be https when KukGit holds passwords in production.');
+    }
   }
   if (!/^[a-z0-9_-]{2,32}$/.test(authkitProductId)) {
     throw new Error('KUKGIT_AUTHKIT_PRODUCT_ID must contain 2-32 lowercase letters, numbers, underscores or hyphens.');

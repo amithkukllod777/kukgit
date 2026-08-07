@@ -106,17 +106,47 @@ function baseUrlCheck(isProduction) {
   return check('base_url', 'pass', `Base URL ${url.origin}`);
 }
 
+/**
+ * Which identity backend this instance runs on.
+ *
+ * Both are supported and neither is a warning by itself. KukGit owns its own
+ * accounts; Kuklabs Account is an optional sign-in path. What is checked is
+ * that whichever one is chosen has what it needs.
+ */
 function authModeCheck(isProduction) {
-  const mode = environmentValue('KUKGIT_AUTH_MODE') || 'local';
-  if (isProduction && mode !== 'authkit') {
-    return check('auth_mode', 'fail', `Auth mode is '${mode}' in production.`,
-      'KUKGIT_AUTH_MODE=authkit — production identity is One Kuklabs Account, and a product-specific password backend is not an option here.');
+  const mode = environmentValue('KUKGIT_AUTH_MODE') || (isProduction ? 'authkit' : 'local');
+  if (mode === 'authkit') {
+    if (!environmentValue('KUKGIT_AUTHKIT_BASE_URL')) {
+      return check('auth_mode', 'fail', 'Auth mode is authkit with no AuthKit URL set.',
+        'KUKGIT_AUTHKIT_BASE_URL=<the Kuklabs Account base URL>');
+    }
+    return check('auth_mode', 'pass', 'Auth mode is authkit.');
   }
-  if (mode !== 'authkit') {
-    return check('auth_mode', 'warn', `Auth mode is '${mode}'. Fine for an internal trial, not for real users.`,
-      'Switch to authkit before anybody outside Kuklabs signs in.');
+  if (mode !== 'local') {
+    return check('auth_mode', 'fail', `Auth mode '${mode}' is not a mode.`, 'KUKGIT_AUTH_MODE=local or authkit');
   }
-  return check('auth_mode', 'pass', 'Auth mode is authkit.');
+  if (!isProduction) return check('auth_mode', 'pass', 'Auth mode is local.');
+  // Holding passwords means sending the mail that proves an address and resets
+  // one. Without a way to send it, "verified email" is a claim nobody can act
+  // on and a forgotten password is an account nobody can get back into.
+  if (!emailIsDeliverable()) {
+    return check('auth_mode', 'fail', 'KukGit holds the passwords here, and nothing is configured to send email.',
+      'Set up Resend or SMTP — without it nobody can verify an address or reset a password.');
+  }
+  return check('auth_mode', 'pass', 'Auth mode is local, with email delivery configured.');
+}
+
+/**
+ * Whether anything is set up to actually send a message.
+ *
+ * Read from the environment rather than from `instance_settings`, because this
+ * runs before the process starts and there is no database open. An instance
+ * that configures Resend through the admin UI instead will show a warning here
+ * and be fine; that is the right way round for a check that cannot see the
+ * whole picture.
+ */
+function emailIsDeliverable() {
+  return Boolean(environmentValue('KUKGIT_RESEND_API_KEY') || environmentValue('KUKGIT_SMTP_HOST'));
 }
 
 /**
