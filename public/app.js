@@ -1,5 +1,6 @@
 import { renderMarkdown } from './markdown.js';
 import { signedOutPage } from './brand-hero.js';
+import { isMarketingRoute, renderMarketingRoute } from './marketing-ui.js';
 
 const app = document.querySelector('#app');
 const toastRoot = document.querySelector('#toast-root');
@@ -917,13 +918,26 @@ async function renderCurrentRoute() {
 }
 
 async function bootstrap() {
+  const marketingRoute = isMarketingRoute();
+  const path = String(location.pathname || '/').replace(/\/+$/, '') || '/';
+  const marketingHome = marketingRoute && path === '/';
+
+  if (marketingRoute && !marketingHome) {
+    renderMarketingRoute(app);
+    return;
+  }
+
   try {
     const data = await api('/api/auth/me');
-    if (!data.user) return renderLogin();
+    if (!data.user) {
+      if (marketingHome) return renderMarketingRoute(app);
+      return renderLogin();
+    }
     state.user = data.user;
     state.organizations = data.organizations || [];
     await renderCurrentRoute();
   } catch (error) {
+    if (marketingHome) return renderMarketingRoute(app);
     app.innerHTML = `<div class="empty-state" style="padding-top:20vh"><div class="empty-icon">⚠</div><h3>KukGit server is unavailable</h3><p>${escapeHtml(error.message)}. Start the server with <code>npm start</code>.</p></div>`;
   }
 }
