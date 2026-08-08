@@ -17,18 +17,31 @@
  * markup, so importing it cannot make either page fail to render.
  */
 
-/** The left column: the brand, the pitch, and what the product is. */
+function markHtml() {
+  return `<span class="brand-logo mk-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="7" cy="6" r="2.4"/><circle cx="7" cy="18" r="2.4"/><circle cx="17.5" cy="12" r="2.4"/><path d="M7 8.4v7.2M9.3 6.9l6 3.6M9.3 17.1l6-3.6"/></svg></span>`;
+}
+
+function sunHtml() {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>';
+}
+
+function shieldHtml() {
+  return '<svg class="mk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z"/><path d="m9 12 2 2 4-4"/></svg>';
+}
+
+/** The right column from the approved Lovable authentication prototype. */
 export function heroHtml() {
   return `<section class="login-hero">
-      <a class="brand-lockup" href="/"><img class="brand-logo" src="/assets/kuklabs-k.png" alt="" /> KukGit</a>
+      <div class="mk-grid-lines" aria-hidden="true"></div>
       <div class="login-copy">
-        <div class="eyebrow">KukGit v0.2.0 · Private alpha</div>
-        <h1>Build, review and ship code with <span class="gradient-text">clarity.</span></h1>
-        <p>KukGit brings Git hosting, team collaboration, repository governance and operational tooling into one readable workspace.</p>
+        ${shieldHtml()}
+        <h1>One account for every Kuklabs product.</h1>
+        <p>Enforced two-factor authentication, device and session management, SSO for organisations and a full audit trail — configured once, applied everywhere.</p>
         <div class="login-points">
-          <div class="login-point"><b>Git hosting</b><span>Repositories, branches, commits and Git smart HTTP transport.</span></div>
-          <div class="login-point"><b>Governed review</b><span>Pull requests, review threads, status checks and protected branches.</span></div>
-          <div class="login-point"><b>Recoverable operations</b><span>Auditable activity, verified backups and maintenance controls.</span></div>
+          <div class="login-point"><b>SAML &amp; OIDC single sign-on</b></div>
+          <div class="login-point"><b>Passkey and TOTP second factors</b></div>
+          <div class="login-point"><b>Session revocation across devices</b></div>
+          <div class="login-point"><b>Recovery codes stored offline</b></div>
         </div>
       </div>
     </section>`;
@@ -41,5 +54,19 @@ export function heroHtml() {
  * the same route — see `test/public-page-routes.test.mjs`, which counts them.
  */
 export function signedOutPage(panel) {
-  return `<main class="login-page">${heroHtml()}<section class="login-panel"><a class="login-back" href="/">← Back to website</a>${panel}</section></main>`;
+  return `<main class="login-page"><section class="login-panel">
+    <div class="login-top"><a class="brand-lockup" href="/">${markHtml()}<span><b>KukGit</b><small>Powered by Kuklabs</small></span></a><button class="login-theme-toggle" type="button" aria-label="Switch theme">${sunHtml()}</button></div>
+    <div class="login-form-wrap">${panel}</div>
+    <p class="login-legal">© 2026 Kuklabs Inc. · <u>Terms</u> · <u>Privacy</u></p>
+  </section>${heroHtml()}</main>`;
+}
+
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('click', (event) => {
+    const button = event.target?.closest?.('.login-theme-toggle');
+    if (!button) return;
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('kukgit-theme', next); } catch { /* Storage can be blocked. */ }
+  });
 }

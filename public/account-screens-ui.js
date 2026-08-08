@@ -206,7 +206,8 @@ function signupAcceptedCard(message) {
 function renderSignup(root) {
   root.innerHTML = card(`<div class="kg-account-top"><span>Already have an account?</span><a href="#/">Sign in →</a></div>
     <h2>Create your KukGit account</h2>
-    <p>Free while KukGit is in private alpha. Hosting for your own repositories, and for the organizations you are invited to.</p>
+    <p>One Kuklabs Account works across KukGit and every other Kuklabs product.</p>
+    <div class="login-tabs"><a href="#/">Sign in</a><a class="active" href="#/signup">Sign up</a></div>
     <div id="kg-oauth-slot"></div>
     <form id="kg-signup-form" class="kg-account-form">
       <div class="field">
@@ -525,6 +526,11 @@ async function addSignupLink() {
   // link. "Create an account" sitting next to "Forgot password?" read as two
   // items on a menu; this reads as the answer to a question somebody arriving
   // without an account is actually asking.
+  const tabSlot = form.querySelector('#kg-signup-slot');
+  if (tabSlot) {
+    tabSlot.innerHTML = '<a href="#/signup">Sign up</a>';
+    return;
+  }
   form.insertAdjacentHTML('beforeend', '<div class="kg-account-links"><span>New to KukGit?</span><a href="#/signup">Create an account</a></div>');
 }
 

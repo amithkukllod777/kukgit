@@ -139,14 +139,14 @@ async function fillDemoAccount() {
 
 function renderLogin() {
   app.innerHTML = signedOutPage(`<form class="login-card" id="login-form">
-          <h2>Welcome to KukGit</h2>
-          <p>Sign in with your KukGit account. Kuklabs Account remains an option an instance may offer, not one it needs.</p>
+          <h2>Sign in to KukGit</h2>
+          <p>One Kuklabs Account works across KukGit and every other Kuklabs product.</p>
+          <div class="login-tabs"><a class="active" href="/login">Sign in</a><span id="kg-signup-slot"></span></div>
           <!-- Where oauth-sign-in-ui.js puts the provider buttons. A slot,
                rather than letting it insert at the top of the form, so they
                land under the heading instead of above it: a card that opens
                with two buttons and only then says what page it is reads as
                two pages stacked. -->
-          <div id="kg-oauth-slot"></div>
           <div class="field"><label>Email address</label><input class="input" name="email" type="email" autocomplete="username" required /></div>
           <div class="field">
             <div class="field-head"><label>Password</label><span id="kg-forgot-slot"></span></div>
@@ -154,6 +154,8 @@ function renderLogin() {
           </div>
           <div class="login-demo" id="login-demo" hidden></div>
           <button class="btn btn-primary btn-block" type="submit">Sign in to KukGit <span>→</span></button>
+          <div id="kg-oauth-slot"></div>
+          <p class="login-security"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="16" height="12" x="4" y="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span>KukGit never stores your password in plain text. Sign-in attempts from new devices can require a one-time verification code.</span></p>
         </form>`);
   fillDemoAccount();
   document.querySelector('#login-form').addEventListener('submit', async (event) => {
@@ -191,10 +193,7 @@ function renderLogin() {
  * address bar is one in browser history on a shared machine.
  */
 function renderSecondFactor(challenge) {
-  app.innerHTML = `
-    <main class="login-page">
-      <section class="login-panel" style="grid-column:1/-1">
-        <form class="login-card" id="second-factor-form">
+  app.innerHTML = signedOutPage(`<form class="login-card" id="second-factor-form">
           <h2>One more step</h2>
           <p>Enter the six-digit code from your authenticator app. If your phone is gone, use one of your recovery codes instead.</p>
           <div class="field"><label>Code</label><input class="input" name="code" inputmode="text"
@@ -202,9 +201,7 @@ function renderSecondFactor(challenge) {
           <div class="login-demo" id="second-factor-error" hidden></div>
           <button class="btn btn-primary btn-block" type="submit">Continue <span>→</span></button>
           <div style="display:flex;justify-content:center;margin-top:4px"><a href="#/" id="second-factor-cancel">Start again</a></div>
-        </form>
-      </section>
-    </main>`;
+        </form>`);
 
   document.querySelector('#second-factor-cancel').addEventListener('click', (event) => {
     event.preventDefault();
