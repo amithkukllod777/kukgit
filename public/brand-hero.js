@@ -18,7 +18,7 @@
  */
 
 function markHtml() {
-  return `<span class="brand-logo mk-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="7" cy="6" r="2.4"/><circle cx="7" cy="18" r="2.4"/><circle cx="17.5" cy="12" r="2.4"/><path d="M7 8.4v7.2M9.3 6.9l6 3.6M9.3 17.1l6-3.6"/></svg></span>`;
+  return '<span class="brand-logo mk-mark" aria-hidden="true"><img src="/assets/kukgit-logo.jpg" alt="" /></span>';
 }
 
 function sunHtml() {
@@ -29,19 +29,49 @@ function shieldHtml() {
   return '<svg class="mk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z"/><path d="m9 12 2 2 4-4"/></svg>';
 }
 
+function codeVisualHtml() {
+  return `<div class="login-dev-visual" aria-label="KukGit code review preview">
+      <div class="login-code-window">
+        <div class="login-code-toolbar">
+          <span class="login-window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <code>src/auth/session-policy.ts</code>
+          <span class="login-code-branch">main</span>
+        </div>
+        <div class="login-code-body">
+          <div class="login-code-lines" aria-hidden="true">
+            <div><span>1</span><code><b>export async function</b> verifySession(token) {</code></div>
+            <div><span>2</span><code>&nbsp; <b>const</b> session = <em>await</em> auth.verify(token);</code></div>
+            <div><span>3</span><code>&nbsp; enforce(<u>session.twoFactorVerified</u>);</code></div>
+            <div class="code-add"><span>4</span><code>+ rotateIfUntrusted(session.device);</code></div>
+            <div><span>5</span><code>&nbsp; <b>return</b> session;</code></div>
+            <div><span>6</span><code>}</code></div>
+          </div>
+          <div class="login-review-card">
+            <span class="login-review-icon">&#10003;</span>
+            <span><b>KukAI review passed</b><small>Session rotation and 2FA policy verified</small></span>
+          </div>
+        </div>
+      </div>
+      <div class="login-check-chip"><span>&#10003;</span> All checks passed</div>
+    </div>`;
+}
+
 /** The right column from the approved Lovable authentication prototype. */
 export function heroHtml() {
   return `<section class="login-hero">
       <div class="mk-grid-lines" aria-hidden="true"></div>
-      <div class="login-copy">
-        ${shieldHtml()}
-        <h1>One account for every Kuklabs product.</h1>
-        <p>Enforced two-factor authentication, device and session management, SSO for organisations and a full audit trail — configured once, applied everywhere.</p>
-        <div class="login-points">
-          <div class="login-point"><b>SAML &amp; OIDC single sign-on</b></div>
-          <div class="login-point"><b>Passkey and TOTP second factors</b></div>
-          <div class="login-point"><b>Session revocation across devices</b></div>
-          <div class="login-point"><b>Recovery codes stored offline</b></div>
+      <div class="login-hero-inner">
+        ${codeVisualHtml()}
+        <div class="login-copy">
+          ${shieldHtml()}
+          <h1>One account for every Kuklabs product.</h1>
+          <p>Enforced two-factor authentication, device and session management, SSO for organisations and a full audit trail — configured once, applied everywhere.</p>
+          <div class="login-points">
+            <div class="login-point"><b>SAML &amp; OIDC single sign-on</b></div>
+            <div class="login-point"><b>Passkey and TOTP second factors</b></div>
+            <div class="login-point"><b>Session revocation across devices</b></div>
+            <div class="login-point"><b>Recovery codes stored offline</b></div>
+          </div>
         </div>
       </div>
     </section>`;

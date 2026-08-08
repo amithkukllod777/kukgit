@@ -124,8 +124,10 @@ test('it looks like the rest of KukGit, not like a box on an empty page', async 
   // cannot drift: hero on the left, card in the panel on the right.
   assert.equal(browser.present('.login-page'), true);
   assert.equal(browser.present('.login-hero'), true);
+  assert.equal(browser.present('.login-dev-visual'), true);
   assert.equal(browser.present('.login-panel .login-card'), true);
   assert.match(browser.html(), /One account for every Kuklabs product/);
+  assert.ok(browser.document.querySelector('.brand-lockup img[src="/assets/kukgit-logo.jpg"]'));
   assert.ok(browser.document.querySelector('.brand-lockup[href="/"]'));
 });
 
