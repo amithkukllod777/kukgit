@@ -241,7 +241,7 @@ function shell(content) {
   return `
     <div class="app-shell">
       <aside class="sidebar" id="sidebar">
-        <div class="sidebar-brand"><img class="brand-logo" src="/assets/kuklabs-k.png" alt="KukGit" /><div><strong>KukGit</strong><span>Developer platform</span></div></div>
+        <div class="sidebar-brand"><img class="brand-logo" src="/assets/kukgit-logo.jpg" alt="KukGit" /><div><strong>KukGit</strong><span>Developer platform</span></div></div>
         <button class="workspace-switcher" id="workspace-switcher" type="button" aria-label="Open organizations">
           <span class="workspace-mark">${initials(org?.name || 'Kuklabs')}</span>
           <span class="workspace-copy"><b>${escapeHtml(org?.name || 'Personal workspace')}</b><span>${escapeHtml(org?.role || 'Member')} workspace</span></span>

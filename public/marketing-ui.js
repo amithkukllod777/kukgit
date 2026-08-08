@@ -60,7 +60,7 @@ function icon(name, className = '') {
 }
 
 function mark(className = '') {
-  return `<span class="mk-mark ${className}" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="7" cy="6" r="2.4"/><circle cx="7" cy="18" r="2.4"/><circle cx="17.5" cy="12" r="2.4"/><path d="M7 8.4v7.2M9.3 6.9l6 3.6M9.3 17.1l6-3.6"/></svg></span>`;
+  return `<span class="mk-mark ${className}" aria-hidden="true"><img src="/assets/kukgit-logo.jpg" alt="" /></span>`;
 }
 
 function logo(subtitle = '') {

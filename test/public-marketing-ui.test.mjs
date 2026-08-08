@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { importFresh, installBrowser } from '../test-support/browser.mjs';
 import { isMarketingRoute, renderMarketingRoute } from '../public/marketing-ui.js';
@@ -23,6 +24,14 @@ test('plain public paths belong to the marketing website while legacy app hashes
   assert.equal(isMarketingRoute('/', '#/repositories'), false);
   assert.equal(isMarketingRoute('/app', ''), false);
   assert.equal(isMarketingRoute('/login', ''), false);
+});
+
+test('the approved KukGit artwork is served without altering the source file', () => {
+  const logo = fs.readFileSync(new URL('../public/assets/kukgit-logo.jpg', import.meta.url));
+  assert.equal(
+    crypto.createHash('sha256').update(logo).digest('hex'),
+    '5f9c0e24b568c56cafc32eedbda04e75ff7e476cc430567649f2dee0a05abb00',
+  );
 });
 
 test('the public home page renders the approved Lovable prototype', (t) => {
@@ -103,8 +112,14 @@ test('the public design and authentication refinements load after the applicatio
 
   assert.ok(html.indexOf('/styles.css') < html.indexOf('/software-redesign.css'));
   assert.ok(html.indexOf('/software-redesign.css') < html.indexOf('/marketing.css'));
+  assert.match(html, /rel="icon"[^>]*type="image\/jpeg"[^>]*\/assets\/kukgit-logo\.jpg/);
   assert.match(css, /\.mk-hero h1\s*\{[^}]*font-size:\s*52px/s);
   assert.match(css, /\.login-page\s*\{[^}]*grid-template-columns:\s*1fr 1\.05fr/s);
   assert.match(hero, /class="brand-lockup" href="\/"/);
+  assert.match(hero, /\/assets\/kukgit-logo\.jpg/);
+  assert.match(hero, /KukGit code review preview/);
+  assert.match(hero, /KukAI review passed/);
   assert.match(hero, /One account for every Kuklabs product/);
+  assert.match(css, /\.login-hero\s*\{[^}]*height:\s*100vh/s);
+  assert.match(css, /\.login-dev-visual\s*\{/);
 });

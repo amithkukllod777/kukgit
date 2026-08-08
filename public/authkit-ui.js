@@ -46,7 +46,7 @@ function injectAuthKitStyles() {
   style.id = 'kg-authkit-styles';
   style.textContent = `
     .kg-authkit-brand { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
-    .kg-authkit-brand img { width:34px; height:34px; border-radius:10px; }
+    .kg-authkit-brand img { width:40px; height:40px; object-fit:contain; }
     .kg-authkit-brand div { display:grid; gap:1px; }
     .kg-authkit-brand b { font-size:17px; }
     .kg-authkit-brand span { color:var(--muted); font-size:11px; }
@@ -67,7 +67,7 @@ function loginMarkup() {
   const signup = authKitUiState.mode === 'signup';
   return `
     <div class="kg-authkit-brand">
-      <img src="/assets/kuklabs-k.png" alt="KukGit" />
+      <img src="/assets/kukgit-logo.jpg" alt="KukGit" />
       <div><b>One Kuklabs Account</b><span>Use the same identity across every Kuklabs product</span></div>
     </div>
     <h2>${signup ? 'Create your Kuklabs Account' : 'Welcome to KukGit'}</h2>
@@ -93,7 +93,7 @@ function loginMarkup() {
 
 function otpMarkup() {
   return `
-    <div class="kg-authkit-brand"><img src="/assets/kuklabs-k.png" alt="KukGit" /><div><b>Verify your account</b><span>One Kuklabs Account</span></div></div>
+    <div class="kg-authkit-brand"><img src="/assets/kukgit-logo.jpg" alt="KukGit" /><div><b>Verify your account</b><span>One Kuklabs Account</span></div></div>
     <h2>Enter the 6-digit code</h2>
     <p>We sent a verification code for <b>${authEscape(authKitUiState.identifier)}</b>.</p>
     <form id="kg-authkit-otp-form">
@@ -106,7 +106,7 @@ function otpMarkup() {
 
 function unavailableMarkup(message) {
   return `
-    <div class="kg-authkit-brand"><img src="/assets/kuklabs-k.png" alt="KukGit" /><div><b>One Kuklabs Account</b><span>Identity service</span></div></div>
+    <div class="kg-authkit-brand"><img src="/assets/kukgit-logo.jpg" alt="KukGit" /><div><b>One Kuklabs Account</b><span>Identity service</span></div></div>
     <h2>Sign-in service unavailable</h2>
     <p>${authEscape(message)}</p>
     <button class="btn btn-primary btn-block" type="button" id="kg-authkit-retry">Try again</button>
