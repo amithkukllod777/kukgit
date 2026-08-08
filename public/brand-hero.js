@@ -20,15 +20,15 @@
 /** The left column: the brand, the pitch, and what the product is. */
 export function heroHtml() {
   return `<section class="login-hero">
-      <div class="brand-lockup"><img class="brand-logo" src="/assets/kuklabs-k.png" alt="Kuklabs K" /> KukGit</div>
+      <a class="brand-lockup" href="/"><img class="brand-logo" src="/assets/kuklabs-k.png" alt="" /> KukGit</a>
       <div class="login-copy">
-        <div class="eyebrow">AI Developer Operating System</div>
-        <h1>Build, review and deploy with <span class="gradient-text">one intelligent platform.</span></h1>
-        <p>KukGit combines secure Git hosting, team collaboration, repository intelligence and deployment workflows inside the Kuklabs ecosystem.</p>
+        <div class="eyebrow">KukGit v0.2.0 · Private alpha</div>
+        <h1>Build, review and ship code with <span class="gradient-text">clarity.</span></h1>
+        <p>KukGit brings Git hosting, team collaboration, repository governance and operational tooling into one readable workspace.</p>
         <div class="login-points">
-          <div class="login-point"><b>Real Git hosting</b><span>Bare repositories, branches, commits and Git smart HTTP transport.</span></div>
-          <div class="login-point"><b>AI repo health</b><span>Security, quality, DevOps and documentation checks in one score.</span></div>
-          <div class="login-point"><b>Business ready</b><span>Organizations, roles, private repositories and auditable activity.</span></div>
+          <div class="login-point"><b>Git hosting</b><span>Repositories, branches, commits and Git smart HTTP transport.</span></div>
+          <div class="login-point"><b>Governed review</b><span>Pull requests, review threads, status checks and protected branches.</span></div>
+          <div class="login-point"><b>Recoverable operations</b><span>Auditable activity, verified backups and maintenance controls.</span></div>
         </div>
       </div>
     </section>`;
@@ -41,5 +41,5 @@ export function heroHtml() {
  * the same route — see `test/public-page-routes.test.mjs`, which counts them.
  */
 export function signedOutPage(panel) {
-  return `<main class="login-page">${heroHtml()}<section class="login-panel">${panel}</section></main>`;
+  return `<main class="login-page">${heroHtml()}<section class="login-panel"><a class="login-back" href="/">← Back to website</a>${panel}</section></main>`;
 }
