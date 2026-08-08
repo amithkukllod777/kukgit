@@ -9,15 +9,35 @@ const state = {
   repositories: [],
   route: null,
   loading: false,
+  settingsObserver: null,
+  repoSettingsObserver: null,
 };
 
 const navItems = [
-  { id: 'overview', label: 'Overview', icon: '⌂', route: '#/' },
-  { id: 'repositories', label: 'Repositories', icon: '◇', route: '#/repositories' },
-  { id: 'issues', label: 'Issues', icon: '◉', route: '#/issues' },
+  { id: 'overview', label: 'Home', icon: '⌂', route: '#/' },
+  { id: 'repositories', label: 'Repositories', icon: '▱', route: '#/repositories' },
+  { id: 'issues', label: 'Issues', icon: '○', route: '#/issues' },
   { id: 'pulls', label: 'Pull requests', icon: '⑂', route: '#/pulls' },
-  { id: 'ai', label: 'AI Center', icon: '✦', route: '#/ai' },
+  { id: 'ai', label: 'AI', icon: '✦', route: '#/ai' },
 ];
+
+function savedTheme() {
+  try { return localStorage.getItem('kukgit-theme') || 'light'; }
+  catch { return 'light'; }
+}
+
+function applyTheme(theme) {
+  const next = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', next === 'dark' ? '#111318' : '#f6f7f9');
+  try { localStorage.setItem('kukgit-theme', next); } catch { /* Storage can be blocked. */ }
+  document.querySelector('#theme-toggle')?.setAttribute('aria-label', next === 'dark' ? 'Use light theme' : 'Use dark theme');
+  document.querySelector('#theme-toggle')?.setAttribute('title', next === 'dark' ? 'Use light theme' : 'Use dark theme');
+  const icon = document.querySelector('#theme-toggle [data-theme-icon]');
+  if (icon) icon.textContent = next === 'dark' ? '☀' : '☾';
+}
+
+applyTheme(savedTheme());
 
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
@@ -227,52 +247,113 @@ function renderSecondFactor(challenge) {
 
 function shell(content) {
   const active = activeNav(state.route);
+  const org = state.organizations[0];
   return `
     <div class="app-shell">
       <aside class="sidebar" id="sidebar">
-        <div class="sidebar-brand"><img class="brand-logo" src="/assets/kuklabs-k.png" alt="Kuklabs" /><div><strong>KukGit</strong><span>Developer Cloud</span></div></div>
-        <div class="sidebar-section">Workspace</div>
+        <div class="sidebar-brand"><img class="brand-logo" src="/assets/kuklabs-k.png" alt="KukGit" /><div><strong>KukGit</strong><span>Developer platform</span></div></div>
+        <button class="workspace-switcher" id="workspace-switcher" type="button" aria-label="Open organizations">
+          <span class="workspace-mark">${initials(org?.name || 'Kuklabs')}</span>
+          <span class="workspace-copy"><b>${escapeHtml(org?.name || 'Personal workspace')}</b><span>${escapeHtml(org?.role || 'Member')} workspace</span></span>
+          <span aria-hidden="true">⌄</span>
+        </button>
+        <div class="sidebar-section">Platform</div>
         <nav class="nav">
           ${navItems.map((item) => `<button class="nav-link ${active === item.id ? 'active' : ''}" data-route="${item.route}"><span class="nav-icon">${item.icon}</span>${item.label}</button>`).join('')}
         </nav>
-        <div class="sidebar-section">Manage</div>
+        <div class="sidebar-section">Workspace</div>
         <nav class="nav">
-          <button class="nav-link ${state.route.segments[0] === 'organizations' ? 'active' : ''}" data-route="#/organizations"><span class="nav-icon">▦</span>Organizations</button>
-          <button class="nav-link ${state.route.segments[0] === 'audit' ? 'active' : ''}" data-route="#/audit"><span class="nav-icon">◌</span>Audit log</button>
+          <button class="nav-link ${state.route.segments[0] === 'organizations' ? 'active' : ''}" data-route="#/organizations"><span class="nav-icon">▦</span>Organizations & teams</button>
+          <button class="nav-link ${state.route.segments[0] === 'audit' ? 'active' : ''}" data-route="#/audit"><span class="nav-icon">◷</span>Audit log</button>
           <button class="nav-link ${state.route.segments[0] === 'settings' ? 'active' : ''}" data-route="#/settings"><span class="nav-icon">⚙</span>Settings</button>
         </nav>
         <div class="sidebar-spacer"></div>
-        <div class="sidebar-card"><b>✦ KukAI Reviewer</b><p>Scan any repository for code health, security and delivery gaps.</p><button class="btn btn-primary btn-block" data-route="#/ai">Open AI Center</button></div>
+        <div class="sidebar-utility">
+          <button class="nav-link" id="sidebar-help" type="button"><span class="nav-icon">?</span>Help & documentation</button>
+        </div>
         <div class="sidebar-user">
           <div class="avatar">${initials(state.user.displayName)}</div>
           <div class="sidebar-user-name"><b>${escapeHtml(state.user.displayName)}</b><span>${escapeHtml(state.user.email)}</span></div>
-          <button class="btn btn-ghost icon-btn" id="logout-btn" title="Sign out">↪</button>
+          <button class="btn btn-ghost icon-btn" id="account-menu" title="Account settings" aria-label="Account settings">•••</button>
         </div>
       </aside>
       <main class="main">
         <header class="topbar">
-          <button class="btn btn-ghost icon-btn mobile-menu" id="mobile-menu">☰</button>
-          <div class="search"><input id="global-search" placeholder="Search repositories, issues and pull requests" /><span class="search-shortcut">Ctrl K</span></div>
-          <div class="topbar-actions"><button class="btn btn-primary" data-action="new-repo">＋ New repository</button></div>
+          <button class="btn btn-ghost icon-btn mobile-menu" id="mobile-menu" aria-label="Open navigation">☰</button>
+          <div class="search"><input id="global-search" placeholder="Search repositories, issues and pull requests" aria-label="Global search" /><span class="search-shortcut">Ctrl K</span></div>
+          <div class="topbar-actions">
+            <button class="btn btn-ghost icon-btn" id="command-trigger" title="Open command menu" aria-label="Open command menu">⌘</button>
+            <button class="btn btn-ghost icon-btn" id="theme-toggle" title="Use dark theme" aria-label="Use dark theme"><span data-theme-icon>☾</span></button>
+            <button class="btn btn-primary topbar-create" data-action="new-repo"><span class="desktop-label">＋ New repository</span><span class="mobile-label">＋</span></button>
+          </div>
         </header>
         <section class="content">${content}</section>
       </main>
+      <nav class="mobile-bottom-nav" aria-label="Primary navigation">
+        ${navItems.slice(0, 4).map((item) => `<button class="${active === item.id ? 'active' : ''}" data-route="${item.route}"><span>${item.icon}</span>${item.label === 'Pull requests' ? 'Pulls' : item.label}</button>`).join('')}
+      </nav>
     </div>`;
 }
 
 function bindShell() {
-  document.querySelectorAll('[data-route]').forEach((element) => element.addEventListener('click', () => navigate(element.dataset.route)));
+  document.querySelectorAll('[data-route]').forEach((element) => element.addEventListener('click', () => {
+    navigate(element.dataset.route);
+    document.querySelector('#sidebar')?.classList.remove('open');
+  }));
   document.querySelectorAll('[data-action="new-repo"]').forEach((element) => element.addEventListener('click', openRepositoryModal));
-  document.querySelector('#logout-btn')?.addEventListener('click', async () => {
-    await api('/api/auth/logout', { method: 'POST' });
-    state.user = null;
-    renderLogin();
-  });
+  document.querySelector('#workspace-switcher')?.addEventListener('click', () => navigate('#/organizations'));
+  document.querySelector('#account-menu')?.addEventListener('click', () => navigate('#/settings'));
+  document.querySelector('#sidebar-help')?.addEventListener('click', () => toast('Documentation', 'Product documentation is available from the public KukGit docs area.'));
+  document.querySelector('#command-trigger')?.addEventListener('click', openCommandPalette);
+  document.querySelector('#theme-toggle')?.addEventListener('click', () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
   document.querySelector('#mobile-menu')?.addEventListener('click', () => document.querySelector('#sidebar')?.classList.toggle('open'));
   const search = document.querySelector('#global-search');
   search?.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && search.value.trim()) navigate(`#/repositories?q=${encodeURIComponent(search.value.trim())}`);
   });
+  applyTheme(document.documentElement.dataset.theme || savedTheme());
+}
+
+function openCommandPalette() {
+  if (document.querySelector('#command-palette')) return;
+  const commands = [
+    ['⌂', 'Home', 'Workspace overview', '#/'],
+    ['▱', 'Repositories', 'Browse and manage code', '#/repositories'],
+    ['○', 'Issues', 'Track work across repositories', '#/issues'],
+    ['⑂', 'Pull requests', 'Review proposed changes', '#/pulls'],
+    ['✦', 'AI', 'Open repository intelligence', '#/ai'],
+    ['▦', 'Organizations & teams', 'Manage people and access', '#/organizations'],
+    ['◷', 'Audit log', 'Review workspace activity', '#/audit'],
+    ['⚙', 'Settings', 'Account, security and preferences', '#/settings'],
+  ];
+  const wrapper = document.createElement('div');
+  wrapper.className = 'modal-backdrop';
+  wrapper.id = 'command-palette';
+  wrapper.innerHTML = `<div class="modal command-palette" role="dialog" aria-modal="true" aria-label="Command menu"><div class="command-search"><span aria-hidden="true">⌕</span><input id="command-search-input" autocomplete="off" placeholder="Type a command or search pages…" /></div><div class="command-results" id="command-results"></div></div>`;
+  document.body.append(wrapper);
+  const input = wrapper.querySelector('#command-search-input');
+  const results = wrapper.querySelector('#command-results');
+  let filtered = commands;
+  let selected = 0;
+  const draw = () => {
+    results.innerHTML = filtered.length ? filtered.map(([icon, title, copy, route], index) => `<button class="command-item ${index === selected ? 'active' : ''}" data-command-route="${route}"><span aria-hidden="true">${icon}</span><span><b>${title}</b><br>${copy}</span></button>`).join('') : '<div class="command-empty">No matching command.</div>';
+    results.querySelectorAll('[data-command-route]').forEach((button) => button.addEventListener('click', () => { wrapper.remove(); navigate(button.dataset.commandRoute); }));
+  };
+  input.addEventListener('input', () => {
+    const query = input.value.trim().toLowerCase();
+    filtered = commands.filter(([, title, copy]) => `${title} ${copy}`.toLowerCase().includes(query));
+    selected = 0;
+    draw();
+  });
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') wrapper.remove();
+    if (event.key === 'ArrowDown') { event.preventDefault(); selected = Math.min(selected + 1, filtered.length - 1); draw(); }
+    if (event.key === 'ArrowUp') { event.preventDefault(); selected = Math.max(selected - 1, 0); draw(); }
+    if (event.key === 'Enter' && filtered[selected]) { event.preventDefault(); wrapper.remove(); navigate(filtered[selected][3]); }
+  });
+  wrapper.addEventListener('click', (event) => { if (event.target === wrapper) wrapper.remove(); });
+  draw();
+  input.focus();
 }
 
 function pageHeader(title, subtitle, actions = '') {
@@ -281,6 +362,23 @@ function pageHeader(title, subtitle, actions = '') {
 
 function emptyState(icon, title, copy, action = '') {
   return `<div class="empty-state"><div class="empty-icon">${icon}</div><h3>${title}</h3><p>${copy}</p>${action}</div>`;
+}
+
+function bindListFilters({ search = '#list-search', status = '#list-status', rows = '[data-filter-row]' } = {}) {
+  const searchInput = document.querySelector(search);
+  const statusInput = document.querySelector(status);
+  const update = () => {
+    const query = String(searchInput?.value || '').trim().toLowerCase();
+    const selected = String(statusInput?.value || 'all');
+    document.querySelectorAll(rows).forEach((row) => {
+      const matchesQuery = !query || String(row.dataset.filterText || row.textContent).toLowerCase().includes(query);
+      const matchesStatus = selected === 'all' || row.dataset.filterStatus === selected;
+      row.hidden = !(matchesQuery && matchesStatus);
+    });
+  };
+  searchInput?.addEventListener('input', update);
+  statusInput?.addEventListener('change', update);
+  update();
 }
 
 function activityText(item) {
@@ -305,13 +403,17 @@ function activityText(item) {
 async function renderDashboard() {
   const data = await api('/api/dashboard');
   const metrics = data.metrics;
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const firstName = String(state.user.displayName || 'there').trim().split(/\s+/)[0];
+  const openPulls = metrics.openPulls ?? metrics.openPullRequests ?? 0;
   const content = `
-    ${pageHeader('Good evening, Amit', 'Here is the current health of your KukGit developer workspace.', '<button class="btn" data-route="#/repositories">View repositories</button><button class="btn btn-primary" data-action="new-repo">＋ New repository</button>')}
+    ${pageHeader(`${greeting}, ${escapeHtml(firstName)}`, 'Review active repositories, open work and recent workspace activity.', '<button class="btn" data-route="#/repositories">View repositories</button><button class="btn btn-primary" data-action="new-repo">＋ New repository</button>')}
     <div class="grid metrics-grid">
-      <div class="metric-card" style="--glow:rgba(21,152,255,.27)"><div class="metric-top"><span>Repositories</span><span class="metric-icon">◇</span></div><div class="metric-value">${metrics.repositories}</div><div class="metric-foot good">Ready for team collaboration</div></div>
-      <div class="metric-card" style="--glow:rgba(247,201,72,.2)"><div class="metric-top"><span>Open issues</span><span class="metric-icon">◉</span></div><div class="metric-value">${metrics.openIssues}</div><div class="metric-foot">Across all organizations</div></div>
-      <div class="metric-card" style="--glow:rgba(167,40,255,.2)"><div class="metric-top"><span>Pull requests</span><span class="metric-icon">⑂</span></div><div class="metric-value">${metrics.openPulls}</div><div class="metric-foot">Awaiting review or merge</div></div>
-      <div class="metric-card" style="--glow:rgba(61,220,151,.2)"><div class="metric-top"><span>AI health score</span><span class="metric-icon">✦</span></div><div class="metric-value">${metrics.aiHealth ?? '—'}</div><div class="metric-foot ${metrics.aiHealth >= 80 ? 'good' : ''}">${metrics.aiHealth == null ? 'Run your first repository analysis' : 'Average latest repository score'}</div></div>
+      <div class="metric-card"><div class="metric-top"><span>Repositories</span><span class="metric-icon">▱</span></div><div class="metric-value">${metrics.repositories}</div><div class="metric-foot">Across your accessible workspaces</div></div>
+      <div class="metric-card"><div class="metric-top"><span>Open issues</span><span class="metric-icon">○</span></div><div class="metric-value">${metrics.openIssues}</div><div class="metric-foot">Work that still needs attention</div></div>
+      <div class="metric-card"><div class="metric-top"><span>Open pull requests</span><span class="metric-icon">⑂</span></div><div class="metric-value">${openPulls}</div><div class="metric-foot">Awaiting review or merge</div></div>
+      <div class="metric-card"><div class="metric-top"><span>Repository health</span><span class="metric-icon">✦</span></div><div class="metric-value">${metrics.aiHealth ?? '—'}</div><div class="metric-foot ${metrics.aiHealth >= 80 ? 'good' : ''}">${metrics.aiHealth == null ? 'No repository analysis yet' : 'Average latest analysis score'}</div></div>
     </div>
     <div class="grid dashboard-grid">
       <div>
@@ -320,7 +422,7 @@ async function renderDashboard() {
           <div class="repo-list">${data.repositories.length ? data.repositories.map(repoRow).join('') : emptyState('◇', 'No repositories yet', 'Create your first KukGit repository or import an existing public repository.', '<button class="btn btn-primary" data-action="new-repo">Create repository</button>')}</div>
         </section>
         <section class="card">
-          <div class="card-header"><div><h2>Developer Cloud roadmap</h2><p>Foundation modules already included in this build</p></div><span class="badge public">MVP foundation</span></div>
+          <div class="card-header"><div><h2>Platform capabilities</h2><p>Core modules available in the current v0.2.0 build</p></div><span class="badge">v0.2.0</span></div>
           <div class="card-body">
             <div class="analysis-metrics">
               <div class="analysis-mini"><b>Git</b><span>Smart HTTP transport</span></div>
@@ -349,7 +451,7 @@ async function renderDashboard() {
 }
 
 function repoRow(repo) {
-  return `<div class="repo-row" data-repo="${escapeHtml(repo.orgSlug)}/${escapeHtml(repo.slug)}"><div class="repo-main"><div class="repo-title"><span class="repo-icon">◇</span><span class="repo-org">${escapeHtml(repo.orgSlug)} /</span> ${escapeHtml(repo.name)}</div><div class="repo-desc">${escapeHtml(repo.description || 'No description provided.')}</div><div class="repo-meta"><span>⑂ ${escapeHtml(repo.defaultBranch)}</span><span>Updated ${formatDate(repo.updatedAt)}</span></div></div><div class="repo-side"><span class="badge ${repo.visibility}">${repo.visibility}</span><span class="muted" style="font-size:9px">Open →</span></div></div>`;
+  return `<div class="repo-row" data-repo="${escapeHtml(repo.orgSlug)}/${escapeHtml(repo.slug)}" data-filter-row data-filter-status="${escapeHtml(repo.visibility)}" data-filter-text="${escapeHtml(`${repo.orgSlug} ${repo.name} ${repo.description || ''}`)}"><div class="repo-main"><div class="repo-title"><span class="repo-icon">▱</span><span class="repo-org">${escapeHtml(repo.orgSlug)} /</span> ${escapeHtml(repo.name)}</div><div class="repo-desc">${escapeHtml(repo.description || 'No description provided.')}</div><div class="repo-meta"><span>⑂ ${escapeHtml(repo.defaultBranch)}</span><span>Updated ${formatDate(repo.updatedAt)}</span></div></div><div class="repo-side"><span class="badge ${repo.visibility}">${repo.visibility}</span><span class="repo-open">Open →</span></div></div>`;
 }
 
 function bindRepoRows() {
@@ -368,26 +470,28 @@ async function renderRepositories() {
     ${pageHeader('Repositories', 'Host, import and manage repositories across your Kuklabs organizations.', '<button class="btn" data-action="import-repo">⇩ Import repository</button><button class="btn btn-primary" data-action="new-repo">＋ New repository</button>')}
     <section class="card">
       <div class="card-header"><div><h2>${repositories.length} repositor${repositories.length === 1 ? 'y' : 'ies'}</h2><p>${query ? `Filtered by “${escapeHtml(query)}”` : 'Public, internal and private codebases'}</p></div><div style="display:flex;gap:8px"><span class="badge private">Private</span><span class="badge public">Public</span></div></div>
+      <div class="list-toolbar"><input class="input" id="list-search" type="search" value="${escapeHtml(query)}" placeholder="Filter repositories…" aria-label="Filter repositories" /><select class="select" id="list-status" aria-label="Filter by visibility"><option value="all">All visibility</option><option value="private">Private</option><option value="internal">Internal</option><option value="public">Public</option></select></div>
       <div class="repo-list">${repositories.length ? repositories.map(repoRow).join('') : emptyState('◇', query ? 'No matching repositories' : 'Create your first repository', query ? 'Try another search phrase.' : 'Start a new codebase or import an existing repository.', '<button class="btn btn-primary" data-action="new-repo">New repository</button>')}</div>
     </section>`;
   app.innerHTML = shell(content);
   bindShell();
   bindRepoRows();
+  bindListFilters();
   document.querySelectorAll('[data-action="import-repo"]').forEach((button) => button.addEventListener('click', () => openRepositoryModal('import')));
 }
 
 async function renderGlobalIssues() {
   const data = await api('/api/issues');
   const content = `${pageHeader('Issues', 'Track bugs, improvements and product work across every repository.', '')}
-    <section class="card"><div class="card-header"><div><h2>All issues</h2><p>${data.issues.length} total</p></div></div>${data.issues.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Issue</th><th>Repository</th><th>Priority</th><th>Status</th><th>Created</th></tr></thead><tbody>${data.issues.map((issue) => `<tr data-route="#/repo/${issue.orgSlug}/${issue.repoSlug}/issues"><td><b>#${issue.number} ${escapeHtml(issue.title)}</b></td><td>${escapeHtml(issue.orgSlug)}/${escapeHtml(issue.repoSlug)}</td><td><span class="badge ${issue.priority}">${issue.priority}</span></td><td><span class="badge ${issue.status}">${issue.status}</span></td><td>${formatDate(issue.createdAt)}</td></tr>`).join('')}</tbody></table></div>` : emptyState('◉', 'No issues yet', 'Issues created in any repository will appear here.')}</section>`;
-  app.innerHTML = shell(content); bindShell();
+    <section class="card"><div class="card-header"><div><h2>All issues</h2><p>${data.issues.length} total</p></div></div><div class="list-toolbar"><input class="input" id="list-search" type="search" placeholder="Search issues…" aria-label="Search issues" /><select class="select" id="list-status" aria-label="Filter issues by status"><option value="all">All status</option><option value="open">Open</option><option value="closed">Closed</option></select></div>${data.issues.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Issue</th><th>Repository</th><th>Priority</th><th>Status</th><th>Created</th></tr></thead><tbody>${data.issues.map((issue) => `<tr data-filter-row data-filter-status="${escapeHtml(issue.status)}" data-filter-text="${escapeHtml(`#${issue.number} ${issue.title} ${issue.orgSlug} ${issue.repoSlug} ${issue.priority}`)}" data-route="#/repo/${issue.orgSlug}/${issue.repoSlug}/issues?issue=${issue.number}"><td><b>#${issue.number} ${escapeHtml(issue.title)}</b></td><td>${escapeHtml(issue.orgSlug)}/${escapeHtml(issue.repoSlug)}</td><td><span class="badge ${issue.priority}">${issue.priority}</span></td><td><span class="badge ${issue.status}">${issue.status}</span></td><td>${formatDate(issue.createdAt)}</td></tr>`).join('')}</tbody></table></div>` : emptyState('○', 'No issues yet', 'Issues created in any repository will appear here.')}</section>`;
+  app.innerHTML = shell(content); bindShell(); bindListFilters();
 }
 
 async function renderGlobalPulls() {
   const data = await api('/api/pulls');
   const content = `${pageHeader('Pull requests', 'Review and merge proposed code changes across your workspace.', '')}
-    <section class="card"><div class="card-header"><div><h2>All pull requests</h2><p>${data.pullRequests.length} total</p></div></div>${data.pullRequests.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Pull request</th><th>Repository</th><th>Branches</th><th>Status</th><th>Created</th></tr></thead><tbody>${data.pullRequests.map((pr) => `<tr data-route="#/repo/${pr.orgSlug}/${pr.repoSlug}/pulls"><td><b>#${pr.number} ${escapeHtml(pr.title)}</b></td><td>${escapeHtml(pr.orgSlug)}/${escapeHtml(pr.repoSlug)}</td><td><code>${escapeHtml(pr.headBranch)} → ${escapeHtml(pr.baseBranch)}</code></td><td><span class="badge ${pr.status}">${pr.status}</span></td><td>${formatDate(pr.createdAt)}</td></tr>`).join('')}</tbody></table></div>` : emptyState('⑂', 'No pull requests yet', 'Create a branch with changes and open a pull request from a repository.')}</section>`;
-  app.innerHTML = shell(content); bindShell();
+    <section class="card"><div class="card-header"><div><h2>All pull requests</h2><p>${data.pullRequests.length} total</p></div></div><div class="list-toolbar"><input class="input" id="list-search" type="search" placeholder="Search pull requests…" aria-label="Search pull requests" /><select class="select" id="list-status" aria-label="Filter pull requests by status"><option value="all">All status</option><option value="open">Open</option><option value="merged">Merged</option><option value="closed">Closed</option></select></div>${data.pullRequests.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Pull request</th><th>Repository</th><th>Branches</th><th>Status</th><th>Created</th></tr></thead><tbody>${data.pullRequests.map((pr) => `<tr data-filter-row data-filter-status="${escapeHtml(pr.status)}" data-filter-text="${escapeHtml(`#${pr.number} ${pr.title} ${pr.orgSlug} ${pr.repoSlug} ${pr.headBranch} ${pr.baseBranch}`)}" data-route="#/repo/${pr.orgSlug}/${pr.repoSlug}/pulls"><td><b>#${pr.number} ${escapeHtml(pr.title)}</b></td><td>${escapeHtml(pr.orgSlug)}/${escapeHtml(pr.repoSlug)}</td><td><code>${escapeHtml(pr.headBranch)} → ${escapeHtml(pr.baseBranch)}</code></td><td><span class="badge ${pr.status}">${pr.status}</span></td><td>${formatDate(pr.createdAt)}</td></tr>`).join('')}</tbody></table></div>` : emptyState('⑂', 'No pull requests yet', 'Create a branch with changes and open a pull request from a repository.')}</section>`;
+  app.innerHTML = shell(content); bindShell(); bindListFilters();
 }
 
 async function getRepoContext() {
@@ -498,8 +602,48 @@ function analysisView(analysis) {
 }
 
 async function renderRepoSettings(context) {
-  const body = `<div class="card-body"><h2 style="margin-top:0">Repository settings</h2><p class="muted">Foundation controls for repository identity and Git access.</p><div class="divider"></div><div class="field"><label>Repository name</label><input class="input" value="${escapeHtml(context.repository.name)}" disabled /></div><div class="field"><label>Visibility</label><input class="input" value="${escapeHtml(context.repository.visibility)}" disabled /></div><div class="field"><label>Default branch</label><input class="input" value="${escapeHtml(context.repository.defaultBranch)}" disabled /></div><div class="field"><label>Git smart HTTP URL</label><input class="input" value="${escapeHtml(context.repository.cloneUrl)}" readonly /></div><div class="login-demo">Push authentication uses a server-side development token in this MVP. Production will replace this with personal access tokens, deploy keys and SSH certificates.</div></div>`;
-  app.innerHTML = shell(repoHeader(context, 'settings', body)); bindShell(); bindRepoActions(context, context.repository.defaultBranch);
+  const body = `<div class="repo-settings-layout">
+    <aside class="repo-settings-nav" aria-label="Repository settings sections">
+      <div class="settings-nav-title">Repository</div>
+      <a class="active" href="#repo-general" data-repo-settings-target="repo-general">General</a>
+      <a href="#kg-repository-access-panel" data-repo-settings-target="kg-repository-access-panel">Access</a>
+      <a href="#kg-governance-panel" data-repo-settings-target="kg-governance-panel">Branch protection</a>
+      <a href="#kg-status-checks-panel" data-repo-settings-target="kg-status-checks-panel">Required checks</a>
+      <a href="#kg-review-threads-panel" data-repo-settings-target="kg-review-threads-panel">Review policy</a>
+      <div class="settings-nav-title">Integrations</div>
+      <a href="#kg-webhooks-panel" data-repo-settings-target="kg-webhooks-panel">Webhooks</a>
+      <a href="#kg-deploy-ssh-panel" data-repo-settings-target="kg-deploy-ssh-panel">Deploy keys</a>
+      <a href="#kg-lfs-panel" data-repo-settings-target="kg-lfs-panel">Git LFS</a>
+      <div class="settings-nav-title">Lifecycle</div>
+      <a href="#kg-lifecycle-panel" data-repo-settings-target="kg-lifecycle-panel">Danger zone</a>
+    </aside>
+    <div class="repo-settings-content" id="repo-settings-content">
+      <section class="repo-settings-section" id="repo-general">
+        <div class="card-header"><div><h2>General</h2><p>Repository identity and Git access</p></div></div>
+        <div class="card-body"><dl class="settings-kv"><dt>Name</dt><dd>${escapeHtml(context.repository.name)}</dd><dt>Visibility</dt><dd><span class="badge ${escapeHtml(context.repository.visibility)}">${escapeHtml(context.repository.visibility)}</span></dd><dt>Default branch</dt><dd><code>${escapeHtml(context.repository.defaultBranch)}</code></dd><dt>HTTPS clone URL</dt><dd><code>${escapeHtml(context.repository.cloneUrl)}</code></dd></dl></div>
+      </section>
+    </div>
+  </div>`;
+  app.innerHTML = shell(repoHeader(context, 'settings', body));
+  bindShell();
+  bindRepoActions(context, context.repository.defaultBranch);
+  document.querySelectorAll('[data-repo-settings-target]').forEach((link) => link.addEventListener('click', (event) => {
+    event.preventDefault();
+    const target = document.querySelector(`#${link.dataset.repoSettingsTarget}`);
+    if (!target) return toast('Section is loading', 'This repository settings panel is still being prepared.');
+    document.querySelectorAll('[data-repo-settings-target]').forEach((item) => item.classList.toggle('active', item === link));
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+  const root = document.querySelector('.content');
+  const destination = document.querySelector('#repo-settings-content');
+  const moveExtensionPanels = () => {
+    for (const panel of [...root.children]) {
+      if (panel.matches('.card[id^="kg-"]')) destination.append(panel);
+    }
+  };
+  moveExtensionPanels();
+  state.repoSettingsObserver = new MutationObserver(moveExtensionPanels);
+  state.repoSettingsObserver.observe(root, { childList: true });
 }
 
 function bindRepoActions(context, ref) {
@@ -522,9 +666,15 @@ async function renderAICenter() {
 
 async function renderOrganizations() {
   const data = await api('/api/orgs');
-  const content = `${pageHeader('Organizations', 'Companies and teams that own repositories inside KukGit.', '')}
-  <div class="grid">${data.organizations.map((org) => `<section class="card"><div class="card-body" data-kg-org-card="${escapeHtml(org.slug)}"><div style="display:flex;gap:14px;align-items:center"><div class="avatar">${initials(org.name)}</div><div style="flex:1"><h3 style="margin:0">${escapeHtml(org.name)}</h3><div class="muted" style="font-size:10px;margin-top:5px">@${escapeHtml(org.slug)} · ${escapeHtml(org.plan)} plan</div></div><span class="badge public">${escapeHtml(org.role)}</span></div></div></section>`).join('')}</div>`;
+  const content = `${pageHeader('Organizations & teams', 'Manage workspaces, membership, roles, invitations and usage.', '')}
+  <div class="org-grid">${data.organizations.map((org) => `<section class="card org-card"><div class="card-body" data-kg-org-card="${escapeHtml(org.slug)}"><div class="org-card-head"><div class="avatar">${initials(org.name)}</div><div class="org-card-copy"><h3>${escapeHtml(org.name)}</h3><div class="muted">@${escapeHtml(org.slug)} · ${escapeHtml(org.plan)} plan</div></div><span class="badge public">${escapeHtml(org.role)}</span></div><div class="org-card-actions"><button class="btn" type="button" data-org-manage="${escapeHtml(org.slug)}">Manage workspace</button></div></div></section>`).join('')}</div>`;
   app.innerHTML = shell(content); bindShell();
+  document.querySelectorAll('[data-org-manage]').forEach((button) => button.addEventListener('click', () => {
+    const panels = [...document.querySelectorAll('#kg-collaboration-panel')];
+    const panel = panels.find((candidate) => candidate.dataset.org === button.dataset.orgManage) || panels[0];
+    if (!panel) return toast('Workspace details are loading', 'Members, teams and invitations will appear below.');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
 }
 
 async function renderAudit() {
@@ -535,9 +685,58 @@ async function renderAudit() {
 }
 
 function renderSettings() {
-  const content = `${pageHeader('Platform settings', 'Current foundation configuration and upcoming production controls.', '')}
-  <div class="grid dashboard-grid"><section class="card"><div class="card-header"><div><h2>Identity</h2><p>Authenticated founder account</p></div></div><div class="card-body"><div class="field"><label>Name</label><input class="input" value="${escapeHtml(state.user.displayName)}" disabled /></div><div class="field"><label>Email</label><input class="input" value="${escapeHtml(state.user.email)}" disabled /></div><div class="login-demo">Next: One Kuklabs Account, Google sign-in, mobile/email login, MFA and organization invitations.</div></div></section><aside><section class="card"><div class="card-header"><div><h3>Foundation status</h3></div></div><div class="card-body"><div class="activity-list"><div class="ai-action"><span>Git smart HTTP</span><span class="text-good">Ready</span></div><div class="ai-action"><span>SQLite metadata</span><span class="text-good">Ready</span></div><div class="ai-action"><span>Organization RBAC</span><span class="text-good">Ready</span></div><div class="ai-action"><span>CI runners</span><span>Next phase</span></div><div class="ai-action"><span>Package registry</span><span>Next phase</span></div></div></div></section></aside></div>`;
-  app.innerHTML = shell(content); bindShell();
+  const content = `${pageHeader('Settings', 'Manage your account, security, developer credentials and notification preferences.', '')}
+  <div class="settings-layout">
+    <aside class="settings-nav" aria-label="Settings sections">
+      <div class="settings-nav-title">Account</div>
+      <a class="active" href="#account-profile" data-settings-target="account-profile">Profile</a>
+      <a href="#kg-phone-panel" data-settings-target="kg-phone-panel">Phone number</a>
+      <a href="#kg-2fa-panel" data-settings-target="kg-2fa-panel">Two-factor authentication</a>
+      <div class="settings-nav-title">Developer</div>
+      <a href="#kg-user-ssh-panel" data-settings-target="kg-user-ssh-panel">SSH keys</a>
+      <a href="#kg-token-panel" data-settings-target="kg-token-panel">Access tokens</a>
+      <div class="settings-nav-title">Preferences</div>
+      <a href="#account-appearance" data-settings-target="account-appearance">Appearance</a>
+      <a href="#kg-notification-settings" data-settings-target="kg-notification-settings">Notifications</a>
+    </aside>
+    <div class="settings-content" id="settings-content">
+      <section class="card settings-section" id="account-profile">
+        <div class="card-header"><div><h2>Profile</h2><p>Your signed-in KukGit account</p></div><span class="badge public">Active</span></div>
+        <div class="card-body"><dl class="settings-kv"><dt>Name</dt><dd>${escapeHtml(state.user.displayName)}</dd><dt>Email</dt><dd>${escapeHtml(state.user.email)}</dd><dt>Account provider</dt><dd>One Kuklabs Account</dd></dl><div class="divider"></div><button class="btn btn-danger" id="settings-sign-out">Sign out of KukGit</button></div>
+      </section>
+      <section class="card settings-section" id="account-appearance">
+        <div class="card-header"><div><h2>Appearance</h2><p>Choose how KukGit looks on this device</p></div></div>
+        <div class="card-body"><div class="field"><label for="settings-theme">Theme</label><select class="select" id="settings-theme"><option value="light">Light</option><option value="dark">Dark</option></select><div class="field-hint">This preference is stored only in this browser.</div></div></div>
+      </section>
+    </div>
+  </div>`;
+  app.innerHTML = shell(content);
+  bindShell();
+  const themeSelect = document.querySelector('#settings-theme');
+  if (themeSelect) themeSelect.value = document.documentElement.dataset.theme || 'light';
+  themeSelect?.addEventListener('change', () => applyTheme(themeSelect.value));
+  document.querySelector('#settings-sign-out')?.addEventListener('click', async () => {
+    await api('/api/auth/logout', { method: 'POST' });
+    state.user = null;
+    renderLogin();
+  });
+  document.querySelectorAll('[data-settings-target]').forEach((link) => link.addEventListener('click', (event) => {
+    event.preventDefault();
+    const target = document.querySelector(`#${link.dataset.settingsTarget}`);
+    if (!target) return toast('Section is loading', 'This settings panel is still being prepared.');
+    document.querySelectorAll('[data-settings-target]').forEach((item) => item.classList.toggle('active', item === link));
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+  const root = document.querySelector('.content');
+  const destination = document.querySelector('#settings-content');
+  const moveExtensionPanels = () => {
+    for (const panel of [...root.children]) {
+      if (panel.matches('.card') && !panel.closest('.settings-layout')) destination.append(panel);
+    }
+  };
+  moveExtensionPanels();
+  state.settingsObserver = new MutationObserver(moveExtensionPanels);
+  state.settingsObserver.observe(root, { childList: true });
 }
 
 function modal(title, body, footer = '') {
@@ -665,6 +864,10 @@ function renderExtensionRoute() {
 }
 
 async function renderCurrentRoute() {
+  state.settingsObserver?.disconnect();
+  state.settingsObserver = null;
+  state.repoSettingsObserver?.disconnect();
+  state.repoSettingsObserver = null;
   state.route = parseRoute();
   try {
     // `await`, every one of them. `return somePromise()` inside a `try` hands
