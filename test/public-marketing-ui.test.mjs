@@ -25,16 +25,19 @@ test('plain public paths belong to the marketing website while legacy app hashes
   assert.equal(isMarketingRoute('/login', ''), false);
 });
 
-test('the public home page renders the approved visual direction without fake version claims', (t) => {
+test('the public home page renders the approved Lovable prototype', (t) => {
   const browser = publicPage(t);
   renderMarketingRoute(browser.document.querySelector('#app'), '/');
 
   assert.ok(browser.document.querySelector('.marketing-site'));
   assert.ok(browser.document.querySelector('.mk-product-preview'));
-  assert.match(browser.html(), /Git hosting and developer collaboration, built for clarity/);
-  assert.match(browser.html(), /v0.2.0 · Private alpha/);
-  assert.doesNotMatch(browser.html(), /KukGit 4\.0/);
-  assert.doesNotMatch(browser.html(), /SOC 2|ISO 27001|AES-256|SAML & OIDC/);
+  assert.match(browser.html(), /AI-first Git hosting and/);
+  assert.match(browser.html(), /KukGit 4\.0 · now with review intelligence/);
+  assert.match(browser.html(), /Add multi-line review threads/);
+  assert.match(browser.html(), /Everything a serious repository needs/);
+  assert.match(browser.html(), /Reviews that end in decisions, not fatigue/);
+  assert.match(browser.html(), /Built for teams that get audited/);
+  assert.match(browser.html(), /Move your team to KukGit/);
   assert.ok(browser.document.querySelector('a[href="/login"]'));
   assert.ok(browser.document.querySelector('a[href="/app"]'));
 });
@@ -78,10 +81,10 @@ test('a signed-in visitor keeps the existing dashboard at the root route', async
 test('every public route has its own useful content and accurate boundary', (t) => {
   const browser = publicPage(t);
   const expectations = [
-    ['/features', /Available in the current build/],
-    ['/security', /explicit security boundaries/],
-    ['/pricing', /Commercial pricing is not announced yet/],
-    ['/docs', /Start with the workflow that exists today/],
+    ['/features', /One platform for hosting, review and governance/],
+    ['/security', /Your source code deserves boring, dependable security/],
+    ['/pricing', /Plans that scale with your team/],
+    ['/docs', /Everything you need to run KukGit/],
   ];
 
   for (const [path, copy] of expectations) {
@@ -100,8 +103,8 @@ test('the public design and authentication refinements load after the applicatio
 
   assert.ok(html.indexOf('/styles.css') < html.indexOf('/software-redesign.css'));
   assert.ok(html.indexOf('/software-redesign.css') < html.indexOf('/marketing.css'));
-  assert.match(css, /\.login-hero > \.brand-lockup \.brand-logo\s*\{[^}]*width:\s*54px/s);
-  assert.match(css, /\.login-card\s*\{[^}]*width:\s*min\(520px,\s*100%\)/s);
+  assert.match(css, /\.mk-hero h1\s*\{[^}]*font-size:\s*52px/s);
+  assert.match(css, /\.login-page\s*\{[^}]*grid-template-columns:\s*1fr 1\.05fr/s);
   assert.match(hero, /class="brand-lockup" href="\/"/);
-  assert.match(hero, /KukGit v0\.2\.0 · Private alpha/);
+  assert.match(hero, /One account for every Kuklabs product/);
 });

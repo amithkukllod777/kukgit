@@ -125,7 +125,7 @@ test('it looks like the rest of KukGit, not like a box on an empty page', async 
   assert.equal(browser.present('.login-page'), true);
   assert.equal(browser.present('.login-hero'), true);
   assert.equal(browser.present('.login-panel .login-card'), true);
-  assert.match(browser.html(), /KukGit v0\.2\.0 · Private alpha/);
+  assert.match(browser.html(), /One account for every Kuklabs product/);
   assert.ok(browser.document.querySelector('.brand-lockup[href="/"]'));
 });
 
